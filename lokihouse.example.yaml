@@ -1,0 +1,15 @@
+auth_enabled: false
+server:
+  http_listen_port: 3100
+clickhouse:
+  addr: ["localhost:9000"]
+  database: lokihouse
+  username: default
+  # ClickHouse cluster (remote_servers name). Tables become Replicated*MergeTree
+  # <table>_local created ON CLUSTER, plus Distributed tables; list several nodes in addr.
+  # cluster: lokihouse
+  # replicated: true              # false = sharding without replication
+  # replica_path: /clickhouse/tables/{shard}/{database}/{table}   # default: server default_replica_path
+  # replica_name: '{replica}'
+  # settings: {insert_quorum: 2}  # any ClickHouse session setting
+limits_config: {}

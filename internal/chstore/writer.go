@@ -24,6 +24,8 @@ type streamDay struct {
 
 // Write inserts entries into logs and registers each stream for every UTC day it touches.
 func (w *Writer) Write(ctx context.Context, tenant string, streams []logproto.Stream, retentionDays func(labels.Labels) uint16) error {
+	// wait_for_async_insert makes every Write synchronous: the push API returns 204
+	// only once rows are durable, so an immediate query sees them.
 	ctx = clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{
 		"async_insert": 1, "wait_for_async_insert": 1,
 	}))
