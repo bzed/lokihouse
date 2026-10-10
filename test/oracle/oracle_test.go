@@ -5,6 +5,7 @@ package oracle
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -117,32 +118,52 @@ func Get(t *testing.T, u, tenant string) []byte {
 	return body
 }
 
-// WaitQueryable polls a count query on Loki until it equals the fixture size.
+// WaitQueryable polls a range count on Loki until the max per-step value
+// reaches the fixture size (2500 per tenant). The fixture spans 90 minutes, so
+// a 90m lookback counts every entry once it has been flushed. We poll for up
+// to 120s to absorb Loki's filesystem-backend flush latency; 60% of the target
+// is accepted as "ready" since the flush can lag by tens of seconds.
 func WaitQueryable(t *testing.T, loki string, base time.Time) {
 	t.Helper()
 	end := base.Add(95 * time.Minute)
 	v := url.Values{
-		"query": {"sum(count_over_time({app=~\".+\")[1h]))"},
+		"query": {"sum(count_over_time({app=~\".+\")[90m]))"},
 		"start": {strconv.FormatInt(base.UnixNano(), 10)},
 		"end":   {strconv.FormatInt(end.UnixNano(), 10)},
 		"step":  {"60s"},
 	}
-	deadline := time.Now().Add(60 * time.Second)
+	const target = 2500
+	const flushTolerance = 0.6 // accept >= 60% of target (Loki flush lag)
+	deadline := time.Now().Add(120 * time.Second)
 	for time.Now().Before(deadline) {
 		body := Get(t, loki+"/loki/api/v1/query_range?"+v.Encode(), "tenant-a")
 		var res struct {
 			Data struct {
 				Result []struct {
-					Value []any
-				} `json:"value"`
-			} `json:"result"`
+					Values [][]any `json:"values"`
+				} `json:"result"`
+			} `json:"data"`
 		}
 		if err := json.Unmarshal(body, &res); err == nil && len(res.Data.Result) > 0 {
-			if f, ok := res.Data.Result[0].Value[1].(float64); ok && f >= 2000 {
+			maxSeen := 0.0
+			for _, vv := range res.Data.Result[0].Values {
+				if s, ok := vv[1].(string); ok {
+					var f64 float64
+					if _, err := fmt.Sscanf(s, "%f", &f64); err == nil {
+						if f64 > maxSeen {
+							maxSeen = f64
+						}
+					}
+				}
+			}
+			if maxSeen >= float64(target)*flushTolerance {
+				if maxSeen < float64(target) {
+					t.Logf("loki count reached %.0f (target %d); continuing", maxSeen, target)
+				}
 				return
 			}
 		}
-		time.Sleep(time.Second)
+		time.Sleep(2 * time.Second)
 	}
-	t.Logf("loki count did not reach 2000 within 60s; continuing")
+	t.Logf("loki count did not reach %d within 120s; continuing", target)
 }

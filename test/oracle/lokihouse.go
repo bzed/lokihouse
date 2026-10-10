@@ -65,6 +65,8 @@ clickhouse:
   addr: %v
   database: %q
   username: default
+limits_config:
+  max_query_series: 100000
 `, port, chAddr(), db)
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)

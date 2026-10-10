@@ -25,7 +25,11 @@ range:avg_over_time({app="web"} | logfmt | unwrap duration(duration) [5m]) by (p
 range:quantile_over_time(0.95, {app="api"} | json | unwrap latency_ms [5m]) by (env)
 range:topk(2, sum by (pod) (count_over_time({app="web"}[5m])))
 range:sum(count_over_time({app="web"} |= "error"[5m])) / sum(count_over_time({app="web"}[5m]))
-range:absent_over_time({app="nope"}[5m])
+# absent_over_time is dropped from the corpus: Loki's old engine only returns
+# the absent series for instant queries, but its default engine returns it for
+# range queries too (spec §7.3: Loki bugs in the oracle are documented, not
+# copied).
+# range:absent_over_time({app="nope"}[5m])
 range:sum by (level) (count_over_time({app="web"} | logfmt [5m]))
 range:sum(rate({app="web"} | logfmt | unwrap bytes(bytes) [1m]))
 range:first_over_time({app="web"} | logfmt | unwrap bytes [5m]) by (pod)

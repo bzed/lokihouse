@@ -177,6 +177,10 @@ query_range:
   parallelise_shardable_queries: false
 limits_config:
   split_queries_by_interval: 0
+  # Keep both stores' series limits identical (100k >> any fixture cardinality).
+  # Loki's JoinSampleVector treats 0 as a hard zero cap, not "unlimited" (a
+  # Loki quirk), so a large value is used instead of 0.
+  max_query_series: 100000
 analytics:
   reporting_enabled: false
 `

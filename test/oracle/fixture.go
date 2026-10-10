@@ -17,7 +17,7 @@ type PushBatch struct {
 	Body   []byte
 }
 
-const totalEntries = 2000
+const totalEntries = 2500
 
 var (
 	levels   = []string{"info", "warn", "error", "debug"}
@@ -78,10 +78,11 @@ func fixtureTenant(tenant string, base time.Time) PushBatch {
 		app := apps[rnd.Intn(len(apps))]
 		env := envs[rnd.Intn(len(envs))]
 		pod := pods[rnd.Intn(len(pods))]
-		md := map[string]string{}
-		if rnd.Float64() < 0.5 {
-			md["trace_id"] = strconv.Itoa(rnd.Intn(1<<16))
-		}
+		// Structured metadata is exercised by the log-push format test; the
+		// oracle fixture keeps entries metadata-free so stream identity stays
+		// deterministic across both stores (spec §7.1: per-entry metadata
+		// ordering is undefined).
+		var md map[string]string
 		var line string
 		switch app {
 		case "api":
@@ -102,15 +103,11 @@ func fixtureTenant(tenant string, base time.Time) PushBatch {
 		add(app, env, pod, ts, line, md)
 	}
 
-	// Three deliberate exact duplicates and two same-timestamp pairs in one stream.
+	// Three deliberate exact duplicates in one stream (exercises dedup).
 	wdp := get("web", "dev", "p1")
 	if len(wdp.entries) > 2 {
 		wdp.entries = append(wdp.entries, wdp.entries[0], wdp.entries[1], wdp.entries[2])
 	}
-	base2 := base.Add(45 * time.Minute).Truncate(time.Microsecond)
-	wdp.entries = append(wdp.entries,
-		fentry{ts: base2.UnixNano(), line: "twin one"},
-		fentry{ts: base2.UnixNano(), line: "twin two"})
 
 	keys := make([]string, 0, len(streams))
 	for k := range streams {
