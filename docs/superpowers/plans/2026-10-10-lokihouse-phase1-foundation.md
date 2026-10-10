@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Module path: `github.com/bzed/clickhouse-loki`; binary name `lokihouse`; license AGPL-3.0-only (file `LICENSE` copied from Loki).
+- Module path: `github.com/bzed/lokihouse`; binary name `lokihouse`; license AGPL-3.0-only (file `LICENSE` copied from Loki).
 - Loki pinned at commit `fbc3f0770b8c56ebec56fbd0fb16dc3b606822d1` (`github.com/grafana/loki/v3 v3.0.0-20261010092436-fbc3f0770b8c`). Never bump it inside a feature task.
 - `go.mod` must carry all of Loki's `replace` directives (listed in Task 1) or the build fails.
 - Containers: **podman** only, never docker.
@@ -118,7 +118,7 @@ Expected: FAIL with `go: cannot find main module` (no go.mod yet).
 - [ ] **Step 3: Create go.mod with the Loki pin and replaces**
 
 ```bash
-go mod init github.com/bzed/clickhouse-loki
+go mod init github.com/bzed/lokihouse
 cat >> go.mod <<'EOF'
 
 replace github.com/Azure/azure-sdk-for-go => github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
@@ -207,7 +207,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore"
 )
 
 func TestTopology_SingleNode(t *testing.T) {
@@ -269,8 +269,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
-	"github.com/bzed/clickhouse-loki/internal/chstore/chtest"
+	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore/chtest"
 )
 
 func TestMigrate_CreatesTablesIdempotently(t *testing.T) {
@@ -495,7 +495,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore"
 )
 
 func env(k, def string) string {
@@ -598,8 +598,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
-	"github.com/bzed/clickhouse-loki/internal/chstore/chtest"
+	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore/chtest"
 )
 
 func TestStreamIdentity_CanonicalOrder(t *testing.T) {
@@ -806,9 +806,9 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
-	"github.com/bzed/clickhouse-loki/internal/chstore/chtest"
-	"github.com/bzed/clickhouse-loki/internal/ingest"
+	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/lokihouse/internal/ingest"
 )
 
 func defaultLimits(t *testing.T) *validation.Overrides {
@@ -891,8 +891,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/loghttp/push"
 	"github.com/grafana/loki/v3/pkg/validation"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
-	"github.com/bzed/clickhouse-loki/internal/ingest/distcopy"
+	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/ingest/distcopy"
 )
 
 const (
@@ -1178,8 +1178,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
-	"github.com/bzed/clickhouse-loki/internal/chstore/chtest"
+	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore/chtest"
 )
 
 // Yesterday 12:00 UTC. Must stay within the 31-day TTL: ClickHouse drops already-expired rows at insert time.
@@ -1623,8 +1623,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
-	"github.com/bzed/clickhouse-loki/internal/chstore/chtest"
+	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore/chtest"
 )
 
 func TestLabelAndSeries(t *testing.T) {
@@ -1802,10 +1802,10 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/clickhouse-loki/internal/api"
-	"github.com/bzed/clickhouse-loki/internal/chstore"
-	"github.com/bzed/clickhouse-loki/internal/chstore/chtest"
-	"github.com/bzed/clickhouse-loki/internal/ingest"
+	"github.com/bzed/lokihouse/internal/api"
+	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/lokihouse/internal/ingest"
 )
 
 func newServer(t *testing.T, auth bool) *httptest.Server {
@@ -1898,7 +1898,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/logql"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore"
 )
 
 type API struct {
@@ -2070,7 +2070,7 @@ import (
 	"net/http"
 )
 
-// Version is set at build time with -ldflags "-X github.com/bzed/clickhouse-loki/internal/api.Version=...".
+// Version is set at build time with -ldflags "-X github.com/bzed/lokihouse/internal/api.Version=...".
 var Version = "dev"
 
 func buildInfo(w http.ResponseWriter, _ *http.Request) {
@@ -2124,7 +2124,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore"
 )
 
 func TestLoad_DefaultsAndOverrides(t *testing.T) {
@@ -2182,7 +2182,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 	"gopkg.in/yaml.v2"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore"
 )
 
 type Config struct {
@@ -2267,10 +2267,10 @@ import (
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/validation"
 
-	"github.com/bzed/clickhouse-loki/internal/api"
-	"github.com/bzed/clickhouse-loki/internal/chstore"
-	"github.com/bzed/clickhouse-loki/internal/config"
-	"github.com/bzed/clickhouse-loki/internal/ingest"
+	"github.com/bzed/lokihouse/internal/api"
+	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/config"
+	"github.com/bzed/lokihouse/internal/ingest"
 )
 
 func main() {
@@ -2864,8 +2864,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/clickhouse-loki/internal/chstore"
-	"github.com/bzed/clickhouse-loki/internal/chstore/chtest"
+	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore/chtest"
 )
 
 func requireCluster(t *testing.T) {
