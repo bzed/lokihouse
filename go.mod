@@ -29,13 +29,16 @@ replace github.com/grafana/loki/pkg/push => github.com/grafana/loki/pkg/push v0.
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.49.0
 	github.com/buger/jsonparser v1.6.1
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/go-kit/log v0.2.1
 	github.com/grafana/dskit v0.0.0-20260928073014-b6a53f6bee29
 	github.com/grafana/loki/v3 v3.0.0-20261010092436-fbc3f0770b8c
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/prometheus/otlptranslator v1.0.0
 	github.com/prometheus/prometheus v0.314.0-rc.0.0.20260923171314-5f325dd18c88
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/collector/pdata v1.68.0
+	go.yaml.in/yaml/v4 v4.0.0-rc.6
 )
 
 require (
@@ -75,7 +78,6 @@ require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.1 // indirect
 	github.com/c2h5oh/datasize v0.0.0-20231215233829-aa82cc1e6500 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
 	github.com/dennwc/varint v1.0.0 // indirect
@@ -107,6 +109,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.23 // indirect
 	github.com/googleapis/gax-go/v2 v2.26.2 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grafana/gomemcache v0.0.0-20260728143316-9448343bd654 // indirect
 	github.com/grafana/jsonparser v0.0.0-20250909130937-5f438463be34 // indirect
 	github.com/grafana/loki/pkg/push v0.0.0-20250630054201-94c0ba7b0952 // indirect
@@ -222,7 +225,6 @@ require (
 	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	go4.org/netipx v0.0.0-20260823151212-3075585bcbeb // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
