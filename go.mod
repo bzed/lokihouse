@@ -1,4 +1,4 @@
-module github.com/bzed/clickhouse-loki
+module github.com/bzed/lokihouse
 
 go 1.27.1
 
@@ -27,16 +27,19 @@ replace github.com/twmb/franz-go/pkg/kmsg => github.com/twmb/franz-go/pkg/kmsg v
 replace github.com/grafana/loki/pkg/push => github.com/grafana/loki/pkg/push v0.0.0-20261010092436-fbc3f0770b8c
 
 require (
+	github.com/ClickHouse/clickhouse-go/v2 v2.49.0
 	github.com/grafana/loki/v3 v3.0.0-20261010092436-fbc3f0770b8c
 	github.com/stretchr/testify v1.12.1
 )
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
+	github.com/ClickHouse/ch-go v0.74.0 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b // indirect
+	github.com/andybalholm/brotli v1.2.6 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/c2h5oh/datasize v0.0.0-20231215233829-aa82cc1e6500 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -50,6 +53,8 @@ require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
+	github.com/go-faster/city v1.0.1 // indirect
+	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -106,6 +111,8 @@ require (
 	github.com/opentracing-contrib/go-grpc v0.1.4 // indirect
 	github.com/opentracing-contrib/go-stdlib v1.1.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
+	github.com/paulmach/orb v0.13.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.32 // indirect
 	github.com/pires/go-proxyproto v0.15.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_golang v1.24.1 // indirect
@@ -117,6 +124,7 @@ require (
 	github.com/prometheus/prometheus v0.314.0-rc.0.0.20260923171314-5f325dd18c88 // indirect
 	github.com/redis/go-redis/v9 v9.23.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/sercand/kuberesolver/v6 v6.0.1 // indirect
 	github.com/shopspring/decimal v1.5.0 // indirect
 	github.com/sony/gobreaker/v2 v2.4.0 // indirect
