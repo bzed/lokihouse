@@ -19,7 +19,7 @@ import (
 	"github.com/bzed/lokihouse/internal/chstore/chtest"
 )
 
-// Yesterday 12:00 UTC. Must stay within the 31-day TTL: ClickHouse drops already-expired rows at insert time.
+// Yesterday 12:00 UTC.
 var t0 = time.Now().UTC().Truncate(24 * time.Hour).Add(-12 * time.Hour)
 
 func seed(t *testing.T, w *chstore.Writer, tenant string, streams ...logproto.Stream) {

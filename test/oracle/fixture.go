@@ -38,7 +38,7 @@ type fentry struct {
 }
 
 type fstream struct {
-	labels map[string]string
+	labels  map[string]string
 	entries []fentry
 }
 

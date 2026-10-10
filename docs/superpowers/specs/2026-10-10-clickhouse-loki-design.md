@@ -115,24 +115,36 @@ CREATE TABLE logs (
   ts                  DateTime64(9, 'UTC') CODEC(Delta, ZSTD(1)),
   line                String CODEC(ZSTD(3)),
   structured_metadata Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-  line_hash           UInt64 MATERIALIZED cityHash64(line),
-  retention_days      UInt16 DEFAULT 31,
+  entry_hash          UInt64 MATERIALIZED cityHash64(line, mapSort(structured_metadata)), -- Loki dedup identity
+  retention_days      UInt16 DEFAULT 0,             -- 0 = keep forever (Loki default)
   INDEX line_text line TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
 ) ENGINE = ReplacingMergeTree
-PARTITION BY toDate(ts)
-ORDER BY (tenant, stream_id, ts, line_hash)
-TTL toDateTime(ts) + toIntervalDay(retention_days);
+PARTITION BY (toDate(ts), retention_days)
+ORDER BY (tenant, stream_id, ts, entry_hash)
+TTL toDateTime(least(toDate32(ts) + toIntervalDay(if(retention_days = 0, 65535, retention_days)), toDate32('2106-01-01')), 'UTC')
+SETTINGS ttl_only_drop_parts = 1;
 
 CREATE TABLE streams (
-  tenant     LowCardinality(String),
-  day        Date,
-  stream_id  UInt64,
-  labels     Map(LowCardinality(String), String),
-  labels_str String                                   -- canonical {a="b", c="d"} as Loki prints it
+  tenant         LowCardinality(String),
+  day            Date,
+  stream_id      UInt64,
+  labels         Map(LowCardinality(String), String),
+  labels_str     String,                            -- canonical {a="b", c="d"} as Loki prints it
+  retention_days UInt16 DEFAULT 0
 ) ENGINE = ReplacingMergeTree
-PARTITION BY toYYYYMM(day)
-ORDER BY (tenant, day, stream_id);
+PARTITION BY (day, retention_days)
+ORDER BY (tenant, day, stream_id)
+TTL <same expression over toDate32(day)>
+SETTINGS ttl_only_drop_parts = 1;
 ```
+
+Retention is whole UTC days, and `retention_days` is part of the partition key. Every row of a
+partition therefore expires at the same UTC midnight, and ClickHouse drops whole partitions
+(`ttl_only_drop_parts`) instead of rewriting parts. A `TTL … WHERE` clause would defeat this
+because it is a rows-where TTL. The expiry is computed in `Date32` and capped below the 32-bit
+`DateTime` limit; without the cap, long retentions wrap around and expire immediately.
+`entry_hash` covers line and sorted metadata, because Loki dedups on (ts, line, metadata):
+background merges must not collapse entries that differ only in metadata.
 
 ### 5.1 Single server or ClickHouse cluster
 
@@ -186,8 +198,8 @@ Phase 3 adds `stream_stats_hourly`, an AggregatingMergeTree fed by a materialize
 | `sum/avg/min/max/count/topk/bottomk/sort … by/without` | `GROUP BY` / window `row_number()` | 2 |
 | Binary ops, `on/ignoring/group_left/right`, `label_replace`, `vector()` | Loki evaluator in Go over Tier-A sub-results | 2 |
 | Log query `limit` + `direction` | `ORDER BY ts DESC, stream_id LIMIT n` when the pipeline is filter-only; else streamed cursor | 1 |
-| Ingest deduplication | ReplacingMergeTree on `(tenant, stream_id, ts, line_hash)` + Loki's merge iterator dedup at read time | 1 |
-| Retention (global / per tenant / per stream selector) | Row TTL on `retention_days` computed at ingest from Loki's retention rules | 3 |
+| Ingest deduplication | ReplacingMergeTree on `(tenant, stream_id, ts, entry_hash)` + Loki's merge iterator dedup at read time | 1 |
+| Retention (global / per tenant / per stream selector) | Partition-aligned day TTL on `retention_days` computed at ingest (tenant `retention_period` since Phase 1; `retention_stream` in Phase 3) | 1 / 3 |
 | Delete API (`/loki/api/v1/delete`) | Lightweight `DELETE FROM logs WHERE …` + `delete_requests` table + Loki delete-filter on read until the mutation finishes | 3 |
 | Labels / label values / series | `streams` table (day-granular, like Loki's TSDB) | 1 |
 | `index/stats`, `index/volume`, `volume_range` | MV → AggregatingMergeTree `stream_stats_hourly` | 3 |

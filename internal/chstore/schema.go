@@ -16,9 +16,14 @@ import (
 var schemaSQL string
 
 var (
-	schemaTmpl = template.Must(template.New("schema").Funcs(template.FuncMap{"lit": sqlString}).Parse(schemaSQL))
+	schemaTmpl = template.Must(template.New("schema").Funcs(template.FuncMap{"lit": sqlString, "ttl": ttlExpr}).Parse(schemaSQL))
 	stmtSplit  = regexp.MustCompile(`;\s*\n`)
 )
+
+// ttlExpr is the expiry of a row whose UTC day (as Date32) is day; see schema.sql.
+func ttlExpr(day string) string {
+	return "toDateTime(least(" + day + " + toIntervalDay(if(retention_days = 0, 65535, retention_days)), toDate32('2106-01-01')), 'UTC')"
+}
 
 type schemaData struct {
 	Topology
@@ -62,6 +67,17 @@ func Migrate(ctx context.Context, conn driver.Conn, db string, topo Topology) er
 	for _, stmt := range stmts {
 		if err := conn.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("migrate: %w\n%s", err, stmt)
+		}
+	}
+	if topo.Cluster == "" {
+		// CREATE … IF NOT EXISTS is a no-op on an existing cluster database. Without the
+		// cluster settings, pushes would reach Distributed tables asynchronously.
+		var n uint64
+		if err := conn.QueryRow(ctx, "SELECT count() FROM system.tables WHERE database = ? AND name = 'logs' AND engine = 'Distributed'", db).Scan(&n); err != nil {
+			return fmt.Errorf("check topology: %w", err)
+		}
+		if n > 0 {
+			return fmt.Errorf("database %s holds Distributed tables: set clickhouse.cluster", quoteIdent(db))
 		}
 	}
 	return nil

@@ -26,3 +26,12 @@ func TestMigrate_UnknownClusterFails(t *testing.T) {
 	err := chstore.Migrate(context.Background(), conn, "lh_never_created", chstore.Topology{Cluster: "no_such_cluster"})
 	require.ErrorContains(t, err, `cluster "no_such_cluster" not found in system.clusters`)
 }
+
+// A cluster database opened without clickhouse.cluster would insert into Distributed
+// tables without foreground inserts or quorum, silently losing read-your-writes.
+func TestMigrate_ClusterDatabaseNeedsClusterConfig(t *testing.T) {
+	requireCluster(t)
+	conn, db := chtest.New(t)
+	err := chstore.Migrate(context.Background(), conn, db, chstore.Topology{})
+	require.ErrorContains(t, err, "set clickhouse.cluster")
+}

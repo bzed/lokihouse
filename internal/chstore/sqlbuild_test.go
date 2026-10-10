@@ -18,16 +18,16 @@ func TestStreamMatcherSQL(t *testing.T) {
 
 func TestLeadingLineFilterSQL(t *testing.T) {
 	cases := map[string]Fragment{
-		`{a="b"}`:                            {},
-		`{a="b"} |= "x"`:                      {SQL: "position(line, ?) > 0", Args: []any{"x"}},
-		`{a="b"} |= "x" != "y"`:               {SQL: "position(line, ?) > 0 AND position(line, ?) = 0", Args: []any{"x", "y"}},
-		`{a="b"} |= "x" or "z"`:               {SQL: "(position(line, ?) > 0 OR position(line, ?) > 0)", Args: []any{"x", "z"}},
-		`{a="b"} != "x" or "z"`:               {SQL: "position(line, ?) = 0 AND position(line, ?) = 0", Args: []any{"x", "z"}},
-		`{a="b"} |~ "x"`:                      {}, // regex never pushed in Phase 1
-		`{a="b"} |= "x" | json |= "y"`:       {SQL: "position(line, ?) > 0", Args: []any{"x"}},
-		`{a="b"} | json |= "y"`:               {},
-		`{a="b"} |= ip("10.0.0.0/8")`:         {},
-		`{a="b"} |= "x" |~ "r" |= "y"`:       {SQL: "position(line, ?) > 0 AND position(line, ?) > 0", Args: []any{"x", "y"}},
+		`{a="b"}`:                      {},
+		`{a="b"} |= "x"`:               {SQL: "position(line, ?) > 0", Args: []any{"x"}},
+		`{a="b"} |= "x" != "y"`:        {SQL: "position(line, ?) > 0 AND position(line, ?) = 0", Args: []any{"x", "y"}},
+		`{a="b"} |= "x" or "z"`:        {SQL: "(position(line, ?) > 0 OR position(line, ?) > 0)", Args: []any{"x", "z"}},
+		`{a="b"} != "x" or "z"`:        {SQL: "position(line, ?) = 0 AND position(line, ?) = 0", Args: []any{"x", "z"}},
+		`{a="b"} |~ "x"`:               {}, // regex never pushed in Phase 1
+		`{a="b"} |= "x" | json |= "y"`: {SQL: "position(line, ?) > 0", Args: []any{"x"}},
+		`{a="b"} | json |= "y"`:        {},
+		`{a="b"} |= ip("10.0.0.0/8")`:  {},
+		`{a="b"} |= "x" |~ "r" |= "y"`: {SQL: "position(line, ?) > 0 AND position(line, ?) > 0", Args: []any{"x", "y"}},
 	}
 	for q, want := range cases {
 		t.Run(q, func(t *testing.T) {

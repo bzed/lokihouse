@@ -26,7 +26,7 @@ limits_config: {max_line_size: 1024}
 	require.Equal(t, []string{"ch:9000"}, c.ClickHouse.Addr)
 	require.EqualValues(t, 1024, c.LimitsConfig.MaxLineSize)
 	require.Equal(t, 7*24*time.Hour, time.Duration(c.LimitsConfig.RejectOldSamplesMaxAge)) // Loki default kept
-	require.Equal(t, chstore.Topology{}, c.Topology())                                    // single node by default
+	require.Equal(t, chstore.Topology{}, c.Topology())                                     // single node by default
 }
 
 func TestLoad_Cluster(t *testing.T) {

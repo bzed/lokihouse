@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/loki/v3/pkg/loghttp/push"
 	"github.com/grafana/loki/v3/pkg/validation"
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/ingest/distcopy"
@@ -44,7 +46,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	streams, verr := distcopy.Prepare(r.Context(), h.Limits, tenantID, req, time.Now())
 	if len(streams) > 0 {
-		if err := h.Writer.Write(r.Context(), tenantID, streams, nil); err != nil {
+		if err := h.Writer.Write(r.Context(), tenantID, streams, h.retentionDays(tenantID)); err != nil {
 			level.Error(h.Logger).Log("msg", "write failed", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -55,4 +57,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// retentionDays maps the tenant's retention_period onto the row TTL in whole days,
+// rounded up; 0 (Loki's default) keeps rows forever. Per-stream retention is not applied yet.
+func (h *Handler) retentionDays(tenantID string) func(labels.Labels) uint16 {
+	d := min((h.Limits.RetentionPeriod(tenantID)+24*time.Hour-1)/(24*time.Hour), math.MaxUint16)
+	return func(labels.Labels) uint16 { return uint16(d) }
 }

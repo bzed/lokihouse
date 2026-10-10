@@ -96,9 +96,11 @@ in `compare.go`). This covers rate(), sum_over_time(), avg(), etc.
    lokihouse's ClickHouse-backed engine.
 4. **`absent_over_time` on empty selector**: range engine returns the series,
    instant engine returns empty.
-5. **Filesystem backend flush lag**: Loki's filesystem storage can take 60+
-   seconds to make pushed data visible to queries. The oracle waits up to
-   120s with a 60% tolerance before proceeding.
+5. **Old data drops out of single-binary Loki queries.** Entries older than about
+   2h40m stop being returned (flushed out of ingester memory). The original
+   hour-truncated fixture base (up to 3h old) therefore made the oracle depend on
+   the time of day. The fixture now starts 100 minutes before the run, and the
+   oracle waits for the exact entry count instead of accepting 60%.
 
 ## Running the tests
 
@@ -115,10 +117,25 @@ make oracle-cluster
 make cluster-down
 ```
 
+## Post-completion review (2026-10-11)
+
+Fixed after the phase was declared complete:
+
+| Area | Problem | Fix |
+|---|---|---|
+| Retention | Every row had a hard-coded 31-day TTL; Loki's default `retention_period: 0s` keeps data forever | `retention_days` from tenant `retention_period` (0 = forever) |
+| TTL / partitions | Row-level TTL rewrote parts | `PARTITION BY (day, retention_days)`, day-aligned TTL, `ttl_only_drop_parts`; expiry computed in `Date32` and capped at 2106 (the 32-bit `DateTime` TTL wrapped around for long retentions); `streams` expires with its logs |
+| Dedup | Merge key `cityHash64(line)` collapsed entries differing only in structured metadata (Loki keeps both) | `entry_hash = cityHash64(line, mapSort(structured_metadata))` |
+| Insert batching | `streams` rows re-inserted on every push | Per-process (tenant, stream, day) registration cache; streams written before logs; server-side async inserts kept (ClickHouse's recommendation for many small acknowledged inserts, verified active on single node and through `Distributed`) |
+| Log queries | `Rows.Close()` in clickhouse-go drains the whole result, so `limit=100` read the full range | Cursor cancels its query on close |
+| Oracle | Readiness wait accepted 60% of the data; cluster run started lokihouse without `clickhouse.cluster` (no foreground inserts / quorum), masked by sleeps | Exact-count wait; cluster topology passed through; lokihouse refuses a cluster database without `clickhouse.cluster` |
+
+Schema changed: databases created before this review must be recreated (pre-release, no migration).
+
 ## Next phases (see plan §"Follow-up plans")
 
-- **Phase 2:** Tier-A SQL push-down (planner whitelist, windowed range
-  aggregations, vector aggregations, regex parity gate).
+- **Phase 2:** push-down, planned in
+  `docs/superpowers/plans/2026-10-11-lokihouse-phase2-pushdown.md`.
 - **Phase 3:** Tail (websocket), index stats, volume_range, patterns,
   delete API, retention TTL.
 - **Phase 4:** Ruler (rules API, evaluation, recording-rule remote write).

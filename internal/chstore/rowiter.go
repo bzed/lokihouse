@@ -1,6 +1,7 @@
 package chstore
 
 import (
+	"context"
 	"sort"
 	"time"
 
@@ -19,6 +20,7 @@ type row struct {
 // rowReader streams rows from ClickHouse, dropping exact duplicates (Loki merge-iterator semantics).
 type rowReader struct {
 	rows      driver.Rows
+	cancel    context.CancelFunc
 	cur       row
 	groupTS   time.Time
 	groupSID  uint64
@@ -48,9 +50,28 @@ func (r *rowReader) next() bool {
 	return false
 }
 
-func (r *rowReader) close() error { return r.rows.Close() }
+// openCursor runs a query returning (stream_id, ts, line, structured_metadata) rows.
+func openCursor(ctx context.Context, conn driver.Conn, sql string, args ...any) (*rowReader, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	rows, err := conn.Query(ctx, sql, args...)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	return &rowReader{rows: rows, cancel: cancel}, nil
+}
 
-func mdAdapters(ls labels.Labels) []logproto.LabelAdapter { return logproto.FromLabelsToLabelAdapters(ls) }
+// close cancels the query first: clickhouse-go's Rows.Close otherwise drains the
+// whole remaining result, which a log query stopping at its limit does not need.
+func (r *rowReader) close() error {
+	r.cancel()
+	_ = r.rows.Close()
+	return nil
+}
+
+func mdAdapters(ls labels.Labels) []logproto.LabelAdapter {
+	return logproto.FromLabelsToLabelAdapters(ls)
+}
 
 // sortedIDs is used to build deterministic IN lists.
 func sortedIDs(ss []Stream) []uint64 {

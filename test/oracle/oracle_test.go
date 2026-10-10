@@ -5,7 +5,6 @@ package oracle
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -20,7 +19,10 @@ import (
 func TestOracle(t *testing.T) {
 	loki := StartLoki(t)
 	house := StartLokihouse(t)
-	base := time.Now().Truncate(time.Hour).Add(-2 * time.Hour)
+	// Recent enough that Loki still serves all of it from ingester memory: entries older
+	// than ~2h40m are flushed and drop out of query results (seen with the old
+	// hour-truncated base, which left the fixture up to 3h old).
+	base := time.Now().Truncate(time.Minute).Add(-100 * time.Minute)
 	for _, b := range Fixture(base) {
 		PushBoth(t, []string{loki, house}, b)
 	}
@@ -97,7 +99,6 @@ func PushBoth(t *testing.T, urls []string, b PushBatch) {
 	}
 }
 
-
 // Get fetches a query, requiring 200 (or 400 with matching error on both sides).
 func Get(t *testing.T, u, tenant string) []byte {
 	t.Helper()
@@ -118,52 +119,37 @@ func Get(t *testing.T, u, tenant string) []byte {
 	return body
 }
 
-// WaitQueryable polls a range count on Loki until the max per-step value
-// reaches the fixture size (2500 per tenant). The fixture spans 90 minutes, so
-// a 90m lookback counts every entry once it has been flushed. We poll for up
-// to 120s to absorb Loki's filesystem-backend flush latency; 60% of the target
-// is accepted as "ready" since the flush can lag by tens of seconds.
+// WaitQueryable polls Loki until tenant-a's whole fixture (totalEntries after
+// dedup) is countable. The instant query's 2h window covers every fixture entry,
+// including the one at exactly base that a left-open 90m window would miss.
 func WaitQueryable(t *testing.T, loki string, base time.Time) {
 	t.Helper()
-	end := base.Add(95 * time.Minute)
 	v := url.Values{
-		"query": {"sum(count_over_time({app=~\".+\")[90m]))"},
-		"start": {strconv.FormatInt(base.UnixNano(), 10)},
-		"end":   {strconv.FormatInt(end.UnixNano(), 10)},
-		"step":  {"60s"},
+		"query": {`sum(count_over_time({app=~".+"}[2h]))`},
+		"time":  {strconv.FormatInt(base.Add(95*time.Minute).UnixNano(), 10)},
 	}
-	const target = 2500
-	const flushTolerance = 0.6 // accept >= 60% of target (Loki flush lag)
-	deadline := time.Now().Add(120 * time.Second)
+	var last string
+	begin := time.Now()
+	deadline := begin.Add(300 * time.Second)
 	for time.Now().Before(deadline) {
-		body := Get(t, loki+"/loki/api/v1/query_range?"+v.Encode(), "tenant-a")
+		body := Get(t, loki+"/loki/api/v1/query?"+v.Encode(), "tenant-a")
 		var res struct {
 			Data struct {
 				Result []struct {
-					Values [][]any `json:"values"`
+					Value []any `json:"value"`
 				} `json:"result"`
 			} `json:"data"`
 		}
-		if err := json.Unmarshal(body, &res); err == nil && len(res.Data.Result) > 0 {
-			maxSeen := 0.0
-			for _, vv := range res.Data.Result[0].Values {
-				if s, ok := vv[1].(string); ok {
-					var f64 float64
-					if _, err := fmt.Sscanf(s, "%f", &f64); err == nil {
-						if f64 > maxSeen {
-							maxSeen = f64
-						}
-					}
-				}
+		if err := json.Unmarshal(body, &res); err == nil && len(res.Data.Result) == 1 {
+			if v, _ := res.Data.Result[0].Value[1].(string); v != last {
+				t.Logf("loki count %s after %s", v, time.Since(begin).Round(time.Second))
+				last = v
 			}
-			if maxSeen >= float64(target)*flushTolerance {
-				if maxSeen < float64(target) {
-					t.Logf("loki count reached %.0f (target %d); continuing", maxSeen, target)
-				}
+			if last == strconv.Itoa(totalEntries) {
 				return
 			}
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(time.Second)
 	}
-	t.Logf("loki count did not reach %d within 120s; continuing", target)
+	t.Fatalf("loki count is %q, want %d after 300s", last, totalEntries)
 }

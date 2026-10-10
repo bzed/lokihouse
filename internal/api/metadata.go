@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/grafana/loki/v3/pkg/loghttp"
-	serverutil "github.com/grafana/loki/v3/pkg/util/server"
 	"github.com/grafana/loki/v3/pkg/util/marshal"
+	serverutil "github.com/grafana/loki/v3/pkg/util/server"
 )
 
 func (a *API) labels(w http.ResponseWriter, r *http.Request) { a.label(w, r) }

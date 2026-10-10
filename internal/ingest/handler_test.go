@@ -75,4 +75,31 @@ func TestPush_RejectsInvalidLabels(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+func TestPush_TenantRetention(t *testing.T) {
+	conn, _ := chtest.New(t)
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	tenants := map[string]*validation.Limits{"short": {}}
+	*tenants["short"] = l
+	require.NoError(t, tenants["short"].RetentionPeriod.Set("36h"))
+	o, err := validation.NewOverrides(l, fakeTenantLimits(tenants))
+	require.NoError(t, err)
+	h := &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: o, Logger: log.NewNopLogger()}
+	body := `{"streams":[{"stream":{"app":"web"},"values":[["` + itoa(time.Now().UnixNano()) + `","x"]]}]}`
+	for _, tn := range []string{"short", "default"} {
+		rec := push(t, h, tn, body)
+		require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	}
+	var short, def uint16
+	require.NoError(t, conn.QueryRow(context.Background(),
+		"SELECT anyIf(retention_days, tenant='short'), anyIf(retention_days, tenant='default') FROM logs").Scan(&short, &def))
+	require.Equal(t, uint16(2), short, "36h rounds up to 2 days")
+	require.Equal(t, uint16(0), def, "Loki default retention_period 0 keeps data forever")
+}
+
+type fakeTenantLimits map[string]*validation.Limits
+
+func (f fakeTenantLimits) TenantLimits(id string) *validation.Limits  { return f[id] }
+func (f fakeTenantLimits) AllByUserID() map[string]*validation.Limits { return f }
+
 func itoa(i int64) string { return strconv.FormatInt(i, 10) }

@@ -48,12 +48,12 @@ func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req 
 		sql += " AND " + lf.SQL
 		args = append(args, lf.Args...)
 	}
-	sql += " ORDER BY " + order + ", stream_id ASC, line_hash"
-	rows, err := q.Conn.Query(ctx, sql, args...)
+	sql += " ORDER BY " + order + ", stream_id ASC, entry_hash"
+	rr, err := openCursor(ctx, q.Conn, sql, args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("select logs: %w", err)
 	}
-	return &rowReader{rows: rows}, byID, nil
+	return rr, byID, nil
 }
 
 func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter.EntryIterator, error) {
@@ -106,11 +106,11 @@ func (it *entryIter) Next() bool {
 	return false
 }
 
-func (it *entryIter) At() logproto.Entry  { return it.cur }
-func (it *entryIter) Labels() string      { return it.lbls }
-func (it *entryIter) StreamHash() uint64  { return it.hash }
-func (it *entryIter) Err() error          { return it.rr.err }
-func (it *entryIter) Close() error        { return it.rr.close() }
+func (it *entryIter) At() logproto.Entry { return it.cur }
+func (it *entryIter) Labels() string     { return it.lbls }
+func (it *entryIter) StreamHash() uint64 { return it.hash }
+func (it *entryIter) Err() error         { return it.rr.err }
+func (it *entryIter) Close() error       { return it.rr.close() }
 
 func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams) (iter.SampleIterator, error) {
 	expr, err := p.Expr()
