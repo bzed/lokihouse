@@ -1,0 +1,15 @@
+<clickhouse>
+  <listen_host>0.0.0.0</listen_host>
+  <remote_servers>
+    <lokihouse>
+      <shard><internal_replication>true</internal_replication>
+        <replica><host>ch1</host><port>9000</port></replica>
+        <replica><host>ch2</host><port>9000</port></replica></shard>
+      <shard><internal_replication>true</internal_replication>
+        <replica><host>ch3</host><port>9000</port></replica>
+        <replica><host>ch4</host><port>9000</port></replica></shard>
+    </lokihouse>
+  </remote_servers>
+  <zookeeper><node><host>keeper</host><port>9181</port></node></zookeeper>
+  <distributed_ddl><path>/clickhouse/task_queue/ddl</path></distributed_ddl>
+</clickhouse>
