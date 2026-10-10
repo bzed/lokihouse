@@ -3,6 +3,7 @@ package chstore_test
 import (
 	"context"
 	"flag"
+	"fmt"
 	"testing"
 	"time"
 
@@ -106,6 +107,37 @@ func TestSelectSamples_CountOverTime(t *testing.T) {
 	// entries at t0+0s..90s; Loki windows are left-open: (t0, t0+1m] = 10s..60s, (t0+1m, t0+2m] = 70s..90s
 	require.Equal(t, 6.0, m[0].Floats[0].F)
 	require.Equal(t, 3.0, m[0].Floats[1].F)
+}
+
+func TestKeyset_SameResultForAnyChunkSize(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	var es []logproto.Entry
+	for i := range 50 { // 5 timestamps × 10 lines each
+		es = append(es, logproto.Entry{Timestamp: t0.Add(time.Duration(i/10) * time.Second), Line: fmt.Sprint("l", i)})
+	}
+	seed(t, w, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: es}, logproto.Stream{Labels: `{app="b"}`, Entries: es[:20]})
+	seed(t, w, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: es[13:14]}) // exact duplicate in a second part
+	ng := engine(t, &chstore.Querier{Conn: conn})
+	t.Cleanup(func() { chstore.SetLogChunkSize(1000) })
+	for _, dir := range []logproto.Direction{logproto.FORWARD, logproto.BACKWARD} {
+		for _, limit := range []uint32{1, 25, 1000} {
+			chstore.SetLogChunkSize(1000)
+			want := run(t, ng, `{app=~"a|b"}`, t0.Add(-time.Minute), t0.Add(time.Minute), 0, dir, limit)
+			for _, n := range []int{1, 3, 7} {
+				chstore.SetLogChunkSize(n)
+				got := run(t, ng, `{app=~"a|b"}`, t0.Add(-time.Minute), t0.Add(time.Minute), 0, dir, limit)
+				require.Equal(t, want.Data, got.Data, "dir=%v limit=%d chunk=%d", dir, limit, n)
+			}
+			if limit == 1000 {
+				total := 0
+				for _, s := range want.Data.(logqlmodel.Streams) {
+					total += len(s.Entries)
+				}
+				require.Equal(t, 70, total, "duplicate counted once")
+			}
+		}
+	}
 }
 
 func TestSelectSamples_StreamsInTimestampOrder(t *testing.T) {

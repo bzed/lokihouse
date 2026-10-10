@@ -5,7 +5,9 @@ one commit per task. Single-node ClickHouse on localhost:9000; 2x2 podman cluste
 on 19001-19004 (keeper + ch1-ch4).
 
 - [x] Recreate existing ClickHouse databases (post-review schema change)
-- [ ] Task 1: Stream Tier-B samples (samples.go) — commit
+- [x] Task 1: Stream Tier-B samples (samples.go) — commit
+  - Note: plan's expected label order at equal ts was inverted; actual order is
+    by stream_id (cityHash64) as the SQL guarantees. Test fixed, semantics unchanged.
 - [ ] Task 2: Keyset-chunked log reads (keyset.go) — commit
 - [ ] Task 3: Necessary pre-filters from regex/pattern filters — commit
 - [ ] Task 4: Regex parity gate (regexgate.go) — commit

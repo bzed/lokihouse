@@ -20,7 +20,7 @@ type sampleIter struct {
 
 func (it *sampleIter) Next() bool {
 	for it.rr.next() {
-		r := it.rr.cur
+		r := it.rr.cur()
 		se, ok := it.ex[r.streamID]
 		if !ok {
 			se = it.extractor.ForStream(it.byID[r.streamID].Labels)
@@ -41,5 +41,5 @@ func (it *sampleIter) Next() bool {
 func (it *sampleIter) At() logproto.Sample { return it.cur }
 func (it *sampleIter) Labels() string      { return it.lbls }
 func (it *sampleIter) StreamHash() uint64  { return it.hash }
-func (it *sampleIter) Err() error          { return it.rr.err }
+func (it *sampleIter) Err() error          { return it.rr.errOf() }
 func (it *sampleIter) Close() error        { return it.rr.close() }

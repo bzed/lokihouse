@@ -21,7 +21,7 @@ func TestRowReader_CloseCancelsQuery(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 	rr, err := openCursor(context.Background(), conn,
-		"SELECT toUInt64(0), now64(9), toString(number), CAST(map(), 'Map(String, String)') FROM system.numbers")
+		"SELECT toUInt64(0), now64(9), toString(number), CAST(map(), 'Map(String, String)'), toUInt64(0) FROM system.numbers")
 	require.NoError(t, err)
 	require.True(t, rr.next(), "%v", rr.err)
 

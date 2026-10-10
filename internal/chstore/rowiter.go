@@ -11,35 +11,40 @@ import (
 )
 
 type row struct {
-	streamID uint64
-	ts       time.Time
-	line     string
-	md       labels.Labels
+	streamID  uint64
+	ts        time.Time
+	line      string
+	md        labels.Labels
+	entryHash uint64
 }
 
 // rowReader streams rows from ClickHouse, dropping exact duplicates (Loki merge-iterator semantics).
 type rowReader struct {
 	rows      driver.Rows
 	cancel    context.CancelFunc
-	cur       row
+	curRow    row
+	lastRow   row // last raw row read from ClickHouse (before dedup), for keyset continuation
 	groupTS   time.Time
 	groupSID  uint64
 	groupSeen map[string]struct{}
 	err       error
+	count     int // rows yielded by next() since the chunk was opened
 }
 
 func (r *rowReader) next() bool {
 	for r.rows.Next() {
 		var md map[string]string
-		if err := r.rows.Scan(&r.cur.streamID, &r.cur.ts, &r.cur.line, &md); err != nil {
+		if err := r.rows.Scan(&r.curRow.streamID, &r.curRow.ts, &r.curRow.line, &md, &r.curRow.entryHash); err != nil {
 			r.err = err
 			return false
 		}
-		r.cur.md = labels.FromMap(md)
-		if !r.cur.ts.Equal(r.groupTS) || r.cur.streamID != r.groupSID || r.groupSeen == nil {
-			r.groupTS, r.groupSID, r.groupSeen = r.cur.ts, r.cur.streamID, map[string]struct{}{}
+		r.count++
+		r.curRow.md = labels.FromMap(md)
+		r.lastRow = r.curRow
+		if !r.curRow.ts.Equal(r.groupTS) || r.curRow.streamID != r.groupSID || r.groupSeen == nil {
+			r.groupTS, r.groupSID, r.groupSeen = r.curRow.ts, r.curRow.streamID, map[string]struct{}{}
 		}
-		key := r.cur.line + "\xff" + r.cur.md.String()
+		key := r.curRow.line + "\xff" + r.curRow.md.String()
 		if _, dup := r.groupSeen[key]; dup {
 			continue
 		}
@@ -68,6 +73,9 @@ func (r *rowReader) close() error {
 	_ = r.rows.Close()
 	return nil
 }
+
+func (r *rowReader) cur() row   { return r.curRow }
+func (r *rowReader) errOf() error { return r.err }
 
 func mdAdapters(ls labels.Labels) []logproto.LabelAdapter {
 	return logproto.FromLabelsToLabelAdapters(ls)

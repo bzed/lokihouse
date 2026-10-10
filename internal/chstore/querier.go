@@ -2,7 +2,6 @@ package chstore
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -20,39 +19,45 @@ type Querier struct {
 
 var _ logql.Querier = (*Querier)(nil)
 
-// openRows resolves streams and opens an ordered row cursor for the selector.
+// rowSource is a row source shared by the single sample cursor and the
+// keyset-chunked log reader, so entryIter can read from either.
+type rowSource interface {
+	next() bool
+	cur() row
+	errOf() error
+	close() error
+}
+
+// openRows resolves streams and builds the base WHERE clause for the selector.
 func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req interface {
 	GetStart() time.Time
 	GetEnd() time.Time
-}, dir logproto.Direction) (*rowReader, map[uint64]Stream, error) {
+}, dir logproto.Direction) (base string, args []any, byID map[uint64]Stream, err error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 	streams, err := ResolveStreams(ctx, q.Conn, tenantID, sel.Matchers(), req.GetStart(), req.GetEnd())
 	if err != nil || len(streams) == 0 {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
-	byID := make(map[uint64]Stream, len(streams))
+	byID = make(map[uint64]Stream, len(streams))
 	for _, s := range streams {
 		byID[s.ID] = s
+	}
+	base = "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM logs WHERE tenant = ? AND stream_id IN ? AND ts >= ? AND ts < ?"
+	args = []any{tenantID, sortedIDs(streams), req.GetStart().UTC(), req.GetEnd().UTC()}
+	if lf := LeadingLineFilterSQL(sel); !lf.Empty() {
+		base += " AND " + lf.SQL
+		args = append(args, lf.Args...)
 	}
 	order := "ts ASC"
 	if dir == logproto.BACKWARD {
 		order = "ts DESC"
 	}
-	sql := "SELECT stream_id, ts, line, structured_metadata FROM logs WHERE tenant = ? AND stream_id IN ? AND ts >= ? AND ts < ?"
-	args := []any{tenantID, sortedIDs(streams), req.GetStart().UTC(), req.GetEnd().UTC()}
-	if lf := LeadingLineFilterSQL(sel); !lf.Empty() {
-		sql += " AND " + lf.SQL
-		args = append(args, lf.Args...)
-	}
-	sql += " ORDER BY " + order + ", stream_id ASC, entry_hash"
-	rr, err := openCursor(ctx, q.Conn, sql, args...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("select logs: %w", err)
-	}
-	return rr, byID, nil
+	// The base includes the ORDER BY (before LIMIT): a continuation predicate is
+	// appended after the WHERE clause by the keyset reader.
+	return base + " ORDER BY " + order + ", stream_id ASC, entry_hash", args, byID, nil
 }
 
 func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter.EntryIterator, error) {
@@ -64,15 +69,21 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	if err != nil {
 		return nil, err
 	}
-	rr, byID, err := q.openRows(ctx, sel, p.QueryRequest, p.Direction)
-	if err != nil || rr == nil {
+	base, args, byID, err := q.openRows(ctx, sel, p.QueryRequest, p.Direction)
+	if err != nil || len(byID) == 0 {
 		return iter.NoopEntryIterator, err
 	}
-	return &entryIter{rr: rr, byID: byID, pipeline: pipeline, sp: map[uint64]log.StreamPipeline{}}, nil
+	k := &keysetReader{
+		ctx: ctx, conn: q.Conn, base: base, args: args,
+		dir: p.Direction, chunk: chunkSize(p.QueryRequest.Limit),
+	}
+	// cancel the keyset reader with the request context so a cancelled query stops the read
+	k.ctx, k.cancel = context.WithCancel(ctx)
+	return &entryIter{rr: k, byID: byID, pipeline: pipeline, sp: map[uint64]log.StreamPipeline{}}, nil
 }
 
 type entryIter struct {
-	rr       *rowReader
+	rr       rowSource
 	byID     map[uint64]Stream
 	pipeline log.Pipeline
 	sp       map[uint64]log.StreamPipeline
@@ -83,7 +94,7 @@ type entryIter struct {
 
 func (it *entryIter) Next() bool {
 	for it.rr.next() {
-		r := it.rr.cur
+		r := it.rr.cur()
 		sp, ok := it.sp[r.streamID]
 		if !ok {
 			sp = it.pipeline.ForStream(it.byID[r.streamID].Labels)
@@ -108,7 +119,7 @@ func (it *entryIter) Next() bool {
 func (it *entryIter) At() logproto.Entry { return it.cur }
 func (it *entryIter) Labels() string     { return it.lbls }
 func (it *entryIter) StreamHash() uint64 { return it.hash }
-func (it *entryIter) Err() error         { return it.rr.err }
+func (it *entryIter) Err() error         { return it.rr.errOf() }
 func (it *entryIter) Close() error       { return it.rr.close() }
 
 func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams) (iter.SampleIterator, error) {
@@ -127,8 +138,13 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	if err != nil {
 		return nil, err
 	}
-	rr, byID, err := q.openRows(ctx, sel, p.SampleQueryRequest, logproto.FORWARD)
-	if err != nil || rr == nil {
+	base, args, byID, err := q.openRows(ctx, sel, p.SampleQueryRequest, logproto.FORWARD)
+	if err != nil || len(byID) == 0 {
+		return iter.NoopSampleIterator, err
+	}
+	// Metric queries read everything anyway: a single unchunked cursor.
+	rr, err := openCursor(ctx, q.Conn, base, args...)
+	if err != nil {
 		return iter.NoopSampleIterator, err
 	}
 	return &sampleIter{rr: rr, byID: byID, extractor: extractor, ex: map[uint64]log.StreamSampleExtractor{}}, nil
