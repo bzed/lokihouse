@@ -10,7 +10,9 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql"
+	"github.com/grafana/loki/v3/pkg/logql/syntax"
 	"github.com/grafana/loki/v3/pkg/logqlmodel"
+	"github.com/grafana/loki/v3/pkg/querier/plan"
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
@@ -104,6 +106,36 @@ func TestSelectSamples_CountOverTime(t *testing.T) {
 	// entries at t0+0s..90s; Loki windows are left-open: (t0, t0+1m] = 10s..60s, (t0+1m, t0+2m] = 70s..90s
 	require.Equal(t, 6.0, m[0].Floats[0].F)
 	require.Equal(t, 3.0, m[0].Floats[1].F)
+}
+
+func TestSelectSamples_StreamsInTimestampOrder(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	seed(t, w, "t1",
+		logproto.Stream{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "1"}, {Timestamp: t0.Add(2 * time.Second), Line: "3"}}},
+		logproto.Stream{Labels: `{app="b"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "1"}, {Timestamp: t0.Add(time.Second), Line: "2"}}},
+	)
+	q := &chstore.Querier{Conn: conn}
+	expr, err := syntax.ParseSampleExpr(`count_over_time({app=~"a|b"}[1m])`)
+	require.NoError(t, err)
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	it, err := q.SelectSamples(ctx, logql.SelectSampleParams{SampleQueryRequest: &logproto.SampleQueryRequest{
+		Start: t0.Add(-time.Minute), End: t0.Add(time.Minute), Plan: &plan.QueryPlan{AST: expr},
+	}})
+	require.NoError(t, err)
+	defer it.Close()
+	var got []string
+	var last int64
+	for it.Next() {
+		s := it.At()
+		require.GreaterOrEqual(t, s.Timestamp, last, "timestamps never go backwards")
+		last = s.Timestamp
+		got = append(got, it.Labels())
+	}
+	require.NoError(t, it.Err())
+	// Equal timestamps order by stream_id (cityHash64 of the label set);
+	// at t0 the b stream comes first, then at t0+1s b, at t0+2s a.
+	require.Equal(t, []string{`{app="b"}`, `{app="a"}`, `{app="b"}`, `{app="a"}`}, got)
 }
 
 func lines(s logproto.Stream) []string {

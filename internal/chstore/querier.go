@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/cespare/xxhash/v2"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/loki/v3/pkg/iter"
 	"github.com/grafana/loki/v3/pkg/logproto"
@@ -132,36 +131,5 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	if err != nil || rr == nil {
 		return iter.NoopSampleIterator, err
 	}
-	defer rr.close()
-	series := map[string]*logproto.Series{}
-	ex := map[uint64]log.StreamSampleExtractor{}
-	for rr.next() {
-		r := rr.cur
-		se, ok := ex[r.streamID]
-		if !ok {
-			se = extractor.ForStream(byID[r.streamID].Labels)
-			ex[r.streamID] = se
-		}
-		s, ok := se.ProcessString(r.ts.UnixNano(), r.line, r.md)
-		if !ok {
-			continue
-		}
-		key := s.Labels.String()
-		ser, found := series[key]
-		if !found {
-			ser = &logproto.Series{Labels: key, StreamHash: r.streamID}
-			series[key] = ser
-		}
-		ser.Samples = append(ser.Samples, logproto.Sample{
-			Timestamp: r.ts.UnixNano(), Value: s.Value, Hash: xxhash.Sum64String(key + r.line),
-		})
-	}
-	if rr.err != nil {
-		return nil, rr.err
-	}
-	out := make([]logproto.Series, 0, len(series))
-	for _, s := range series {
-		out = append(out, *s)
-	}
-	return iter.NewTimestampFirstMultiSeriesIterator(out), nil
+	return &sampleIter{rr: rr, byID: byID, extractor: extractor, ex: map[uint64]log.StreamSampleExtractor{}}, nil
 }
