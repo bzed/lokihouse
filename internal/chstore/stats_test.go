@@ -3,6 +3,8 @@ package chstore
 import (
 	"testing"
 
+	"github.com/grafana/loki/v3/pkg/logproto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,4 +25,28 @@ func TestStatsFromHours(t *testing.T) {
 
 	empty := statsFromHours(nil, 0, s)
 	require.Zero(t, empty.Streams+empty.Chunks+empty.Entries+empty.Bytes)
+}
+
+func TestVolumeFromHours(t *testing.T) {
+	const s = int64(1e9)
+	a := Stream{ID: 1, Labels: labels.FromStrings("app", "a", "env", "dev")}
+	b := Stream{ID: 2, Labels: labels.FromStrings("app", "b", "env", "dev")}
+	rows := []HourStat{
+		{StreamID: 1, Bytes: 100, MinTS: 0, MaxTS: 10 * s},
+		{StreamID: 2, Bytes: 40, MinTS: 0, MaxTS: 10 * s},
+	}
+	// aggregate by series, all labels
+	got := volumeFromHours([]Stream{a, b}, rows, 0, 20*s, &logproto.VolumeRequest{Limit: 10, AggregateBy: "series"}, nil, true)
+	require.Equal(t, []logproto.Volume{
+		{Name: `{app="a", env="dev"}`, Volume: 100},
+		{Name: `{app="b", env="dev"}`, Volume: 40},
+	}, got.Volumes)
+	// aggregate by labels with a target label: per label name
+	got = volumeFromHours([]Stream{a, b}, rows, 0, 20*s,
+		&logproto.VolumeRequest{Limit: 10, AggregateBy: "labels", TargetLabels: []string{"env"}},
+		map[string]struct{}{"env": {}}, false)
+	require.Equal(t, []logproto.Volume{{Name: "env", Volume: 140}}, got.Volumes)
+	// limit
+	got = volumeFromHours([]Stream{a, b}, rows, 0, 20*s, &logproto.VolumeRequest{Limit: 1, AggregateBy: "series"}, nil, true)
+	require.Len(t, got.Volumes, 1)
 }

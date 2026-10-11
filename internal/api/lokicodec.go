@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/querier/queryrange"
 	"github.com/grafana/loki/v3/pkg/querier/queryrange/queryrangebase"
@@ -23,6 +24,19 @@ func (h lokiHandler) Do(ctx context.Context, req queryrangebase.Request) (queryr
 			return nil, err
 		}
 		return &queryrange.IndexStatsResponse{Response: res}, nil
+	case *logproto.VolumeRequest:
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !h.a.Limits.VolumeEnabled(tenantID) {
+			return nil, httpgrpc.Errorf(http.StatusNotFound, "not found")
+		}
+		res, err := h.a.Q.Volume(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		return &queryrange.VolumeResponse{Response: res}, nil
 	default:
 		return nil, httpgrpc.Errorf(http.StatusBadRequest, "unsupported request type %T", req)
 	}
@@ -31,8 +45,11 @@ func (h lokiHandler) Do(ctx context.Context, req queryrangebase.Request) (queryr
 // lokiRoutes registers the endpoints served through Loki's codec.
 func (a *API) lokiRoutes(mux *http.ServeMux) {
 	var h queryrangebase.Handler = lokiHandler{a: a}
+	h = queryrange.NewVolumeMiddleware().Wrap(h)
 	codec := a.tenant(queryrange.NewSerializeHTTPHandler(h, queryrange.DefaultCodec))
 	for _, m := range []string{"GET", "POST"} {
 		mux.Handle(m+" /loki/api/v1/index/stats", codec)
+		mux.Handle(m+" /loki/api/v1/index/volume", codec)
+		mux.Handle(m+" /loki/api/v1/index/volume_range", codec)
 	}
 }

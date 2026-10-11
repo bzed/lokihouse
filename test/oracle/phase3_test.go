@@ -4,10 +4,12 @@ package oracle
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -29,6 +31,9 @@ var phase3Cases = []endpointCase{
 	{name: "index_stats_api", path: "/loki/api/v1/index/stats", params: url.Values{"query": {`{app="api"}`}}, check: checkStats},
 	{name: "index_stats_api_legacy", path: "/loki/api/v1/index/stats", params: url.Values{"query": {`{app=~"api|legacy"}`}}, check: checkStats},
 	{name: "index_stats_prod", path: "/loki/api/v1/index/stats", params: url.Values{"query": {`{app=~"api|legacy", env="prod"}`}}, check: checkStats},
+	{name: "volume_series", path: "/loki/api/v1/index/volume", params: url.Values{"query": {`{app=~"api|legacy"}`}}, check: checkVolume},
+	{name: "volume_labels_env", path: "/loki/api/v1/index/volume", params: url.Values{"query": {`{app=~"api|legacy"}`}, "targetLabels": {"env"}, "aggregateBy": {"labels"}}, check: checkVolume},
+	{name: "volume_range_10m", path: "/loki/api/v1/index/volume_range", params: url.Values{"query": {`{app="api"}`}, "step": {"600"}}, check: checkVolume},
 }
 
 // phase3Endpoints runs every case for both tenants over [start, end].
@@ -76,6 +81,87 @@ func within(a, b, rel float64) bool {
 		return true
 	}
 	return math.Abs(a-b) <= rel*math.Max(math.Abs(a), math.Abs(b))
+}
+
+// checkVolume compares index/volume(_range). The volume *value* is a documented
+// divergence (docs/divergences.md): a live query goes through Loki's querier,
+// which sums KB<<10 per flushed 10m chunk, while lokihouse uses raw head-block
+// bytes per hourly bucket — so per-point values differ by ~15-30% structurally.
+// We therefore check the response *shape* exactly (result type, metric set,
+// timestamps, point count) and the per-metric volume *total* within 30%.
+func checkVolume(t *testing.T, loki, house []byte) {
+	t.Helper()
+	type res struct {
+		Data struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []any             `json:"value"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	var a, b res
+	if json.Unmarshal(loki, &a) != nil || json.Unmarshal(house, &b) != nil {
+		t.Fatalf("decode:\nloki=%s\nhouse=%s", loki, house)
+	}
+	if a.Data.ResultType != b.Data.ResultType {
+		t.Fatalf("resultType differs: loki=%q house=%q", a.Data.ResultType, b.Data.ResultType)
+	}
+	// Per metric: timestamps exactly, total volume within the documented tolerance.
+	type perMetric struct {
+		timestamps []float64
+		total      float64
+	}
+	collect := func(r res) map[string]perMetric {
+		out := map[string]perMetric{}
+		for _, s := range r.Data.Result {
+			key, _ := json.Marshal(s.Metric)
+			vs := s.Values
+			if s.Value != nil {
+				vs = [][]any{s.Value}
+			}
+			pm := out[string(key)]
+			for _, p := range vs {
+				ts, _ := strconv.ParseFloat(fmt.Sprint(p[0]), 64)
+				v, _ := strconv.ParseFloat(fmt.Sprint(p[1]), 64)
+				pm.timestamps = append(pm.timestamps, ts)
+				pm.total += v
+			}
+			sort.Float64s(pm.timestamps)
+			out[string(key)] = pm
+		}
+		return out
+	}
+	pa, pb := collect(a), collect(b)
+	if len(pa) != len(pb) {
+		t.Fatalf("metric count differs: loki=%d house=%d", len(pa), len(pb))
+	}
+	for k, am := range pa {
+		bm, found := pb[k]
+		if !found {
+			t.Errorf("metric %s: present in loki, absent in house", k)
+			continue
+		}
+		if !sameFloats(am.timestamps, bm.timestamps) {
+			t.Errorf("metric %s: timestamps differ\nloki=%v\nhouse=%v", k, am.timestamps, bm.timestamps)
+		}
+		if !within(am.total, bm.total, 0.30) {
+			t.Errorf("metric %s: total volume differs beyond 30%%\nloki=%s\nhouse=%s", k, loki, house)
+		}
+	}
+}
+
+func sameFloats(a, b []float64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // waitStatsReady forces a flush of Loki's ingester chunks and then polls

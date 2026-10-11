@@ -31,9 +31,16 @@ func newServer(t *testing.T, auth bool) *httptest.Server {
 }
 
 func newServerConn(t *testing.T, auth bool) (*httptest.Server, driver.Conn) {
+	return newServerConnWithLimits(t, auth, nil)
+}
+
+func newServerConnWithLimits(t *testing.T, auth bool, mutate func(*validation.Limits)) (*httptest.Server, driver.Conn) {
 	conn, _ := chtest.New(t)
 	var l validation.Limits
 	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	if mutate != nil {
+		mutate(&l)
+	}
 	o, err := validation.NewOverrides(l, nil)
 	require.NoError(t, err)
 	q := &chstore.Querier{Conn: conn}

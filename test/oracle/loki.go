@@ -181,6 +181,7 @@ limits_config:
   # Loki's JoinSampleVector treats 0 as a hard zero cap, not "unlimited" (a
   # Loki quirk), so a large value is used instead of 0.
   max_query_series: 100000
+  volume_enabled: true
 analytics:
   reporting_enabled: false
 `
