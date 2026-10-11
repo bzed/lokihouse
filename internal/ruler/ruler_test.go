@@ -306,3 +306,22 @@ func TestRules_SurviveRestart(t *testing.T) {
 	require.Equal(t, http.StatusOK, code, body)
 	require.Eventually(t, func() bool { return len(h2.alerts(t, "t1").Data.Alerts) == 1 }, 30*time.Second, 100*time.Millisecond)
 }
+
+// TestRules_MissingStorageDir: as Loki's initRulerStorage does, the rule
+// storage directory is created when it does not exist yet, for both local
+// backends (Loki's local client cannot list rules from a missing directory).
+func TestRules_MissingStorageDir(t *testing.T) {
+	conn, _ := chtest.New(t)
+	for _, backend := range []string{"filesystem", "local"} {
+		t.Run(backend, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "missing", "rules")
+			rc, sc := ruler.Defaults()
+			sc.Backend = backend
+			sc.Filesystem.Directory = dir
+			sc.Local.Directory = dir
+			_, _, err := ruler.New(context.Background(), rc, sc, engine(t, conn), overrides(t), log.NewNopLogger(), prometheus.NewRegistry())
+			require.NoError(t, err)
+			require.DirExists(t, dir)
+		})
+	}
+}

@@ -122,9 +122,9 @@ func TestRemoteWrite_RetriesAfterReceiverError(t *testing.T) {
 }
 
 type amAlert struct {
-	Labels      map[string]string `json:"labels"`
-	Annotations map[string]string `json:"annotations"`
-	GeneratorURL string           `json:"generatorURL"`
+	Labels       map[string]string `json:"labels"`
+	Annotations  map[string]string `json:"annotations"`
+	GeneratorURL string            `json:"generatorURL"`
 }
 
 func TestAlertmanager_ReceivesFiringAlert(t *testing.T) {
@@ -144,7 +144,13 @@ func TestAlertmanager_ReceivesFiringAlert(t *testing.T) {
 	}))
 	t.Cleanup(am.Close)
 
-	h := startRuler(t, t.TempDir(), engine(t, conn), func(rc *lokiruler.Config) { rc.AlertmanagerURL = am.URL })
+	// The notifier drops alerts sent before it has discovered the Alertmanager
+	// and resends them only after resend_delay (Loki default 1m), so a short
+	// delay keeps a first firing that races discovery from failing the test.
+	h := startRuler(t, t.TempDir(), engine(t, conn), func(rc *lokiruler.Config) {
+		rc.AlertmanagerURL = am.URL
+		rc.ResendDelay = 100 * time.Millisecond
+	})
 	code, _ := h.do(t, http.MethodPost, "/loki/api/v1/rules/ns", "t1", amGroup)
 	require.Equal(t, http.StatusAccepted, code)
 

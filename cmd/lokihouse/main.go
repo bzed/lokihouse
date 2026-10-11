@@ -24,8 +24,8 @@ import (
 	"github.com/bzed/lokihouse/internal/ingest"
 	"github.com/bzed/lokihouse/internal/patterns"
 	"github.com/bzed/lokihouse/internal/pushdown"
-	lhtail "github.com/bzed/lokihouse/internal/tail"
 	lhruler "github.com/bzed/lokihouse/internal/ruler"
+	lhtail "github.com/bzed/lokihouse/internal/tail"
 )
 
 func main() {
@@ -109,7 +109,10 @@ func run(path string, logger log.Logger) error {
 		if err := services.StartAndAwaitRunning(ctx, r); err != nil {
 			return fmt.Errorf("ruler: %w", err)
 		}
-		a.Rules = rapi
+		// Loki serves the rules API only with ruler.enable_api (default true).
+		if cfg.Ruler.EnableAPI {
+			a.Rules = rapi
+		}
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Server.HTTPListenAddress, cfg.Server.HTTPListenPort)
 	level.Info(logger).Log("msg", "lokihouse listening", "addr", addr)

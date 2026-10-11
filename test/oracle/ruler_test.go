@@ -28,9 +28,9 @@ type rulerSinks struct {
 }
 
 type amAlert struct {
-	Labels      map[string]string `json:"labels"`
-	Annotations map[string]string `json:"annotations"`
-	GeneratorURL string           `json:"generatorURL"`
+	Labels       map[string]string `json:"labels"`
+	Annotations  map[string]string `json:"annotations"`
+	GeneratorURL string            `json:"generatorURL"`
 }
 
 func newRulerSinks(t *testing.T) *rulerSinks {

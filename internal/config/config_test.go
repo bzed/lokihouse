@@ -90,9 +90,9 @@ func TestLoad_RulerDisabledByDefault(t *testing.T) {
 	c, err := Load(p)
 	require.NoError(t, err)
 	require.False(t, c.RulerEnabled())
-	require.Equal(t, "rules-temp", c.Ruler.RulePath)       // lokihouse default (Loki: /rules)
-	require.Equal(t, time.Minute, c.Ruler.PollInterval)    // Loki default kept
-	require.Equal(t, "local", c.Ruler.Evaluation.Mode)     // Loki default kept
+	require.Equal(t, "rules-temp", c.Ruler.RulePath)    // lokihouse default (Loki: /rules)
+	require.Equal(t, time.Minute, c.Ruler.PollInterval) // Loki default kept
+	require.Equal(t, "local", c.Ruler.Evaluation.Mode)  // Loki default kept
 }
 
 func TestLoad_Ruler(t *testing.T) {
@@ -124,8 +124,8 @@ ruler_storage:
 
 func TestLoad_RulerRejectsUnsupportedModes(t *testing.T) {
 	for name, tc := range map[string]struct{ ruler, want string }{
-		"sharding":           {"enable_sharding: true", "enable_sharding"},
-		"remote evaluation":  {"evaluation: {mode: remote}", "evaluation.mode"},
+		"sharding":          {"enable_sharding: true", "enable_sharding"},
+		"remote evaluation": {"evaluation: {mode: remote}", "evaluation.mode"},
 		"remote write without clients": {
 			"remote_write: {enabled: true}", "no clients",
 		},

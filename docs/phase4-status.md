@@ -20,7 +20,8 @@ Run on 2026-10-11, on `phase4-ruler` after task 4.
 ## Endpoints
 
 All served by Loki's handlers (`pkg/ruler/base` `API`), registered as Loki's
-`initRuler` does, when `ruler_storage` is configured.
+`initRuler` does, when `ruler_storage` is configured and `ruler.enable_api`
+is true (the default).
 
 | Endpoint | Oracle coverage |
 | --- | --- |

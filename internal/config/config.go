@@ -43,8 +43,8 @@ type Config struct {
 		DeleteRequestCancelPeriod time.Duration `yaml:"delete_request_cancel_period"` // deletes run after this
 		DeleteMaxInterval         time.Duration `yaml:"delete_max_interval"`
 	} `yaml:"compactor"`
-	Ruler        lokiruler.Config `yaml:"ruler"`         // Loki's ruler block, Loki's keys and defaults
-	RulerStorage rulestore.Config `yaml:"ruler_storage"` // the ruler runs only when this is set
+	Ruler        lokiruler.Config  `yaml:"ruler"`         // Loki's ruler block, Loki's keys and defaults
+	RulerStorage rulestore.Config  `yaml:"ruler_storage"` // the ruler runs only when this is set
 	LimitsConfig validation.Limits `yaml:"limits_config"`
 }
 
