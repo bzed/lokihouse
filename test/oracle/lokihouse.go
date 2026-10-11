@@ -59,6 +59,11 @@ func StartLokihouse(t *testing.T) string {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "lokihouse.yaml")
 	port := freePort(t)
+	// Push-down mode for the oracle run; default "on" (Tier A where eligible).
+	pushdown := os.Getenv("LOKIHOUSE_ORACLE_PUSHDOWN")
+	if pushdown == "" {
+		pushdown = "on"
+	}
 	cfg := fmt.Sprintf(`auth_enabled: true
 server: {http_listen_port: %d}
 clickhouse:
@@ -67,9 +72,11 @@ clickhouse:
   username: default
   cluster: %q
   replicated: %t
+query:
+  pushdown: %q
 limits_config:
   max_query_series: 100000
-`, port, chAddr(), db, topo.Cluster, topo.Replicated)
+`, port, chAddr(), db, topo.Cluster, topo.Replicated, pushdown)
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

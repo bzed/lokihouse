@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/grafana/dskit/user"
@@ -11,11 +12,29 @@ import (
 )
 
 type API struct {
-	Engine      *logql.QueryEngine
-	Q           *chstore.Querier
-	Push        http.Handler
+	// Queries executes LogQL queries, choosing between the plain engine and
+	// the push-down engine.
+	Queries Querier
+	Q       *chstore.Querier
+	Push    http.Handler
 	AuthEnabled bool
 }
+
+// Querier executes a LogQL query. Both the plain *logql.QueryEngine and the
+// *pushdown.Engine satisfy it via the adapters below.
+type Querier interface {
+	Query(ctx context.Context, p logql.Params) logql.Query
+}
+
+// plainQuerier adapts *logql.QueryEngine (Query(params)) to Querier (Query(ctx, params)).
+type plainQuerier struct{ e *logql.QueryEngine }
+
+func (p plainQuerier) Query(_ context.Context, params logql.Params) logql.Query {
+	return p.e.Query(params)
+}
+
+// NewPlainQuerier adapts a *logql.QueryEngine to the api.Querier interface.
+func NewPlainQuerier(e *logql.QueryEngine) Querier { return plainQuerier{e: e} }
 
 func (a *API) Router() http.Handler {
 	mux := http.NewServeMux()

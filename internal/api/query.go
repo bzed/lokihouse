@@ -51,7 +51,7 @@ func (a *API) instantQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) exec(w http.ResponseWriter, r *http.Request, p logql.Params) {
-	res, err := a.Engine.Query(p).Exec(r.Context())
+	res, err := a.Queries.Query(r.Context(), p).Exec(r.Context())
 	if err != nil {
 		serverutil.WriteError(err, w)
 		return

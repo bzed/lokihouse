@@ -17,6 +17,7 @@ import (
 	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/config"
 	"github.com/bzed/lokihouse/internal/ingest"
+	"github.com/bzed/lokihouse/internal/pushdown"
 )
 
 func main() {
@@ -60,7 +61,12 @@ func run(path string, logger log.Logger) error {
 	}
 	q := &chstore.Querier{Conn: conn}
 	a := &api.API{
-		Engine:      logql.NewEngine(logql.EngineOpts{}, q, limits, logger),
+		Queries: &pushdown.Engine{
+			Mode:   pushdown.Mode(cfg.Query.Pushdown),
+			TierB:  logql.NewEngine(logql.EngineOpts{}, q, limits, logger),
+			Limits: limits,
+			Logger: logger,
+		},
 		Q:           q,
 		Push:        &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: limits, Logger: logger},
 		AuthEnabled: cfg.AuthEnabled,

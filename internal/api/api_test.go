@@ -31,7 +31,7 @@ func newServer(t *testing.T, auth bool) *httptest.Server {
 	require.NoError(t, err)
 	q := &chstore.Querier{Conn: conn}
 	a := &api.API{
-		Engine:      logql.NewEngine(logql.EngineOpts{}, q, o, log.NewNopLogger()),
+		Queries:     api.NewPlainQuerier(logql.NewEngine(logql.EngineOpts{}, q, o, log.NewNopLogger())),
 		Q:           q,
 		Push:        &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: o, Logger: log.NewNopLogger()},
 		AuthEnabled: auth,

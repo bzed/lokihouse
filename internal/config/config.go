@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 
@@ -30,8 +31,14 @@ type Config struct {
 		ReplicaName string         `yaml:"replica_name"` // optional; default: server's default_replica_name
 		Settings    map[string]any `yaml:"settings"`     // extra ClickHouse session settings, override topology defaults
 	} `yaml:"clickhouse"`
+	Query struct {
+		Pushdown string `yaml:"pushdown"` // on | off | downstream; default on
+	} `yaml:"query"`
 	LimitsConfig validation.Limits `yaml:"limits_config"`
 }
+
+// PushdownModes are the valid values for query.pushdown.
+var PushdownModes = map[string]bool{"on": true, "off": true, "downstream": true}
 
 func Load(path string) (*Config, error) {
 	var defaults validation.Limits
@@ -44,6 +51,7 @@ func Load(path string) (*Config, error) {
 	c.ClickHouse.Database = "lokihouse"
 	c.ClickHouse.Username = "default"
 	c.ClickHouse.Replicated = true
+	c.Query.Pushdown = "on"
 	c.LimitsConfig = defaults
 
 	b, err := os.ReadFile(path)
@@ -53,6 +61,9 @@ func Load(path string) (*Config, error) {
 	dec := yaml.NewDecoder(io.NopCloser(bytes.NewReader(b)))
 	if err := dec.Decode(c); err != nil {
 		return nil, err
+	}
+	if !PushdownModes[c.Query.Pushdown] {
+		return nil, fmt.Errorf("query.pushdown: invalid value %q (want on, off or downstream)", c.Query.Pushdown)
 	}
 	return c, nil
 }

@@ -13,7 +13,7 @@ on 19001-19004 (keeper + ch1-ch4).
 - [x] Task 3: Necessary pre-filters from regex/pattern filters — commit
   - Note: property test inlines the line as a SQL literal (clickhouse-go mis-binds a
     leading ?-as-alias subquery arg).
-- [ ] Task 4: Regex parity gate (regexgate.go) — commit
+- [x] Task 4: Regex parity gate (regexgate.go) — commit
 - [ ] Task 5: Leaf mapper + Downstreamer, pushdown mode — commit
 - [ ] Task 6: Tier A leaf (buckets.go, tiera.go) — commit
 - [ ] Task 7: Property tests Tier A == Tier B — commit

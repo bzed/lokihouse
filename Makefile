@@ -1,11 +1,13 @@
 LOKI_COMMIT := fbc3f0770b8c56ebec56fbd0fb16dc3b606822d1
-.PHONY: build test oracle
+.PHONY: build test oracle oracle-downstream
 build:
 	go build -o bin/lokihouse ./cmd/lokihouse
 test:
 	go test ./...
 oracle:
 	go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
+oracle-downstream:
+	LOKIHOUSE_ORACLE_PUSHDOWN=downstream go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
 
 CLUSTER_ENV := LOKIHOUSE_TEST_CH_ADDR=localhost:19001 LOKIHOUSE_TEST_CH_CLUSTER=lokihouse
 .PHONY: cluster-up cluster-down test-cluster oracle-cluster
