@@ -252,3 +252,85 @@ func unwrap(n *regexpSyntax.Regexp) *regexpSyntax.Regexp {
 	}
 	return n
 }
+
+// ExactLineFilterSQL returns SQL accepting exactly the lines the pipeline's
+// filters accept, or ok=false if the pipeline has any stage other than line
+// filters that are literal (|=, !=, with or-chains) or regex passing RegexExact
+// (|~, !~).
+func ExactLineFilterSQL(expr syntax.LogSelectorExpr) (Fragment, bool) {
+	p, ok := expr.(*syntax.PipelineExpr)
+	if !ok {
+		return Fragment{}, true // no pipeline: no line filter
+	}
+	var parts []Fragment
+	for _, st := range p.MultiStages {
+		lf, ok := st.(*syntax.LineFilterExpr)
+		if !ok {
+			return Fragment{}, false // non-line-filter stage
+		}
+		// Walk Left to the root so parts end up in source order.
+		var chain []*syntax.LineFilterExpr
+		for cur := lf; cur != nil; cur = cur.Left {
+			chain = append(chain, cur)
+		}
+		for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+			chain[i], chain[j] = chain[j], chain[i]
+		}
+		for _, cur := range chain {
+			f, ok := exactLineFilterSQL(cur)
+			if !ok {
+				return Fragment{}, false
+			}
+			parts = append(parts, f)
+		}
+	}
+	return and(parts), true
+}
+
+// exactLineFilterSQL handles one LineFilterExpr node including its Or chain.
+func exactLineFilterSQL(f *syntax.LineFilterExpr) (Fragment, bool) {
+	if f.Op != "" { // ip() and other functions: not exact
+		return Fragment{}, false
+	}
+	var alts []*syntax.LineFilterExpr
+	for o := f; o != nil; o = o.Or {
+		if o.Op != "" {
+			return Fragment{}, false
+		}
+		alts = append(alts, o)
+	}
+	switch f.Ty {
+	case log.LineMatchEqual:
+		var sqls []string
+		var args []any
+		for _, a := range alts {
+			sqls = append(sqls, "position(line, ?) > 0")
+			args = append(args, a.Match)
+		}
+		return Fragment{"(" + strings.Join(sqls, " OR ") + ")", args}, true
+	case log.LineMatchNotEqual:
+		var parts []Fragment
+		for _, a := range alts {
+			parts = append(parts, Fragment{"position(line, ?) = 0", []any{a.Match}})
+		}
+		return and(parts), true
+	case log.LineMatchRegexp:
+		if len(alts) > 1 {
+			return Fragment{}, false
+		}
+		if !RegexExact(f.Match) {
+			return Fragment{}, false
+		}
+		return Fragment{"match(line, ?)", []any{f.Match}}, true
+	case log.LineMatchNotRegexp:
+		if len(alts) > 1 {
+			return Fragment{}, false
+		}
+		if !RegexExact(f.Match) {
+			return Fragment{}, false
+		}
+		return Fragment{"NOT match(line, ?)", []any{f.Match}}, true
+	default:
+		return Fragment{}, false
+	}
+}

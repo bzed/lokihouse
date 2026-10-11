@@ -64,6 +64,7 @@ func run(path string, logger log.Logger) error {
 		Queries: &pushdown.Engine{
 			Mode:   pushdown.Mode(cfg.Query.Pushdown),
 			TierB:  logql.NewEngine(logql.EngineOpts{}, q, limits, logger),
+			TierA:  &pushdown.TierA{Conn: conn, Limits: limits},
 			Limits: limits,
 			Logger: logger,
 		},

@@ -30,6 +30,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.49.0
 	github.com/buger/jsonparser v1.6.1
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/go-kit/log v0.2.1
 	github.com/grafana/dskit v0.0.0-20260928073014-b6a53f6bee29
 	github.com/grafana/loki/v3 v3.0.0-20261010092436-fbc3f0770b8c
