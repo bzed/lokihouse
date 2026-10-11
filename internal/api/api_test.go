@@ -3,6 +3,7 @@ package api_test
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -75,6 +76,13 @@ func do(t *testing.T, method, u, tenant, body string) (int, string) {
 	b := new(strings.Builder)
 	_, _ = io.Copy(b, resp.Body)
 	return resp.StatusCode, b.String()
+}
+
+func pushOne(t *testing.T, base, tenant string, ts time.Time) {
+	t.Helper()
+	body := fmt.Sprintf(`{"streams":[{"stream":{"app":"a","env":"dev"},"values":[[%q,"hello"]]}]}`, strconv.FormatInt(ts.UnixNano(), 10))
+	code, out := do(t, http.MethodPost, base+"/loki/api/v1/push", tenant, body)
+	require.Equal(t, http.StatusNoContent, code, out)
 }
 
 func TestAPI_TenantIsolation(t *testing.T) {
