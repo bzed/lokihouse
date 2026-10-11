@@ -30,7 +30,10 @@ on 19001-19004 (keeper + ch1-ch4).
   - Note: added pushdown.logql corpus (40+ queries), debug endpoint for
     TierALeaves, coverage assertion, and oracle-all Makefile target. All
     modes (off, downstream, on) pass on single node and cluster.
-- [ ] Task 9: Benchmark + docs/phase2-status.md — commit
+- [x] Task 9: Benchmark + docs/phase2-status.md — commit
+  - Note: added benchmarks showing Tier A is 14-47% faster and uses 96-99%
+    less memory than Tier B. Created phase2-status.md with exit criteria,
+    benchmark results, decision record, and known issues.
 
 Verification per task: `go test -count=1 ./internal/...` (single node),
 `make test-cluster` (Tasks 5-8 per plan), `make oracle` / `make oracle-downstream`
