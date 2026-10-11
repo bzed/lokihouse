@@ -83,3 +83,58 @@ func TestLoad_InvalidRetentionStreamRejected(t *testing.T) {
 	_, err := Load(p)
 	require.ErrorContains(t, err, "retention period must be >= 24h")
 }
+
+func TestLoad_RulerDisabledByDefault(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("auth_enabled: false\n"), 0o600))
+	c, err := Load(p)
+	require.NoError(t, err)
+	require.False(t, c.RulerEnabled())
+	require.Equal(t, "rules-temp", c.Ruler.RulePath)       // lokihouse default (Loki: /rules)
+	require.Equal(t, time.Minute, c.Ruler.PollInterval)    // Loki default kept
+	require.Equal(t, "local", c.Ruler.Evaluation.Mode)     // Loki default kept
+}
+
+func TestLoad_Ruler(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(`
+ruler:
+  external_url: http://grafana.example
+  alertmanager_url: http://am:9093
+  poll_interval: 5s
+  remote_write:
+    enabled: true
+    clients:
+      prom: {url: "http://prom:9090/api/v1/write"}
+ruler_storage:
+  backend: filesystem
+  filesystem: {dir: /var/lib/lokihouse/rules}
+`), 0o600))
+	c, err := Load(p)
+	require.NoError(t, err)
+	require.True(t, c.RulerEnabled())
+	require.Equal(t, "http://grafana.example", c.Ruler.ExternalURL.String())
+	require.Equal(t, "http://am:9093", c.Ruler.AlertmanagerURL)
+	require.Equal(t, 5*time.Second, c.Ruler.PollInterval)
+	require.Equal(t, time.Minute, c.Ruler.EvaluationInterval) // Loki default kept
+	require.Equal(t, "http://prom:9090/api/v1/write", c.Ruler.RemoteWrite.Clients["prom"].URL.String())
+	require.Equal(t, "filesystem", c.RulerStorage.Backend)
+	require.Equal(t, "/var/lib/lokihouse/rules", c.RulerStorage.Filesystem.Directory)
+}
+
+func TestLoad_RulerRejectsUnsupportedModes(t *testing.T) {
+	for name, tc := range map[string]struct{ ruler, want string }{
+		"sharding":           {"enable_sharding: true", "enable_sharding"},
+		"remote evaluation":  {"evaluation: {mode: remote}", "evaluation.mode"},
+		"remote write without clients": {
+			"remote_write: {enabled: true}", "no clients",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "c.yaml")
+			require.NoError(t, os.WriteFile(p, []byte("ruler: {"+tc.ruler+"}\nruler_storage: {backend: filesystem, filesystem: {dir: /tmp/r}}\n"), 0o600))
+			_, err := Load(p)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}

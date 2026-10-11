@@ -9,10 +9,13 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	lokiruler "github.com/grafana/loki/v3/pkg/ruler"
+	"github.com/grafana/loki/v3/pkg/ruler/rulestore"
 	"github.com/grafana/loki/v3/pkg/validation"
 	yaml "go.yaml.in/yaml/v4"
 
 	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/ruler"
 )
 
 type Config struct {
@@ -40,6 +43,8 @@ type Config struct {
 		DeleteRequestCancelPeriod time.Duration `yaml:"delete_request_cancel_period"` // deletes run after this
 		DeleteMaxInterval         time.Duration `yaml:"delete_max_interval"`
 	} `yaml:"compactor"`
+	Ruler        lokiruler.Config `yaml:"ruler"`         // Loki's ruler block, Loki's keys and defaults
+	RulerStorage rulestore.Config `yaml:"ruler_storage"` // the ruler runs only when this is set
 	LimitsConfig validation.Limits `yaml:"limits_config"`
 }
 
@@ -61,6 +66,7 @@ func Load(path string) (*Config, error) {
 	c.Compactor.CompactionInterval = 10 * time.Minute
 	c.Compactor.DeleteRequestCancelPeriod = 24 * time.Hour
 	c.Compactor.DeleteMaxInterval = 24 * time.Hour
+	c.Ruler, c.RulerStorage = ruler.Defaults()
 	c.LimitsConfig = defaults
 
 	b, err := os.ReadFile(path)
@@ -77,8 +83,17 @@ func Load(path string) (*Config, error) {
 	if !PushdownModes[c.Query.Pushdown] {
 		return nil, fmt.Errorf("query.pushdown: invalid value %q (want on, off or downstream)", c.Query.Pushdown)
 	}
+	if c.RulerEnabled() {
+		if err := ruler.Validate(c.Ruler, c.RulerStorage); err != nil {
+			return nil, fmt.Errorf("ruler: %w", err)
+		}
+	}
 	return c, nil
 }
+
+// RulerEnabled reports whether ruler_storage is configured (Loki's rule for
+// starting the ruler in the single binary).
+func (c *Config) RulerEnabled() bool { return ruler.Enabled(c.RulerStorage) }
 
 // Topology returns the ClickHouse table layout selected by the config.
 func (c *Config) Topology() chstore.Topology {
