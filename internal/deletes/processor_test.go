@@ -1,6 +1,7 @@
 package deletes_test
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"sort"
@@ -246,6 +247,16 @@ func TestProcessor_FaultIsolation(t *testing.T) {
 	reqs, err = store.Unprocessed(context.Background())
 	require.NoError(t, err)
 	require.Empty(t, reqs, "the failed request was retried and marked processed")
+}
+
+func TestProcessor_RunQuietOnShutdown(t *testing.T) {
+	p, _, _, _ := newProcessor(t, time.Hour, time.Hour, time.Now(), time.Now())
+	var buf bytes.Buffer
+	p.Logger = log.NewLogfmtLogger(&buf)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // shutdown already requested: ProcessDue fails with context.Canceled
+	p.Run(ctx)
+	require.Empty(t, buf.String())
 }
 
 func TestProcessor_ParserStageScans(t *testing.T) {

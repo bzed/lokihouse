@@ -140,7 +140,7 @@ func (p *Processor) Run(ctx context.Context) {
 	t := time.NewTicker(p.Interval)
 	defer t.Stop()
 	for {
-		if err := p.ProcessDue(ctx, now()); err != nil {
+		if err := p.ProcessDue(ctx, now()); err != nil && ctx.Err() == nil {
 			if p.Logger != nil {
 				level.Error(p.Logger).Log("msg", "processing delete requests", "err", err)
 			}

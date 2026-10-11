@@ -20,8 +20,13 @@ import (
 
 type Config struct {
 	Server struct {
-		HTTPListenAddress string `yaml:"http_listen_address"`
-		HTTPListenPort    int    `yaml:"http_listen_port"`
+		HTTPListenAddress           string        `yaml:"http_listen_address"`
+		HTTPListenPort              int           `yaml:"http_listen_port"`
+		HTTPServerReadTimeout       time.Duration `yaml:"http_server_read_timeout"`        // Loki/dskit default 30s
+		HTTPServerReadHeaderTimeout time.Duration `yaml:"http_server_read_header_timeout"` // 0 = use the read timeout
+		HTTPServerWriteTimeout      time.Duration `yaml:"http_server_write_timeout"`       // Loki/dskit default 30s
+		HTTPServerIdleTimeout       time.Duration `yaml:"http_server_idle_timeout"`        // Loki/dskit default 120s
+		GracefulShutdownTimeout     time.Duration `yaml:"graceful_shutdown_timeout"`       // Loki/dskit default 30s
 	} `yaml:"server"`
 	AuthEnabled bool `yaml:"auth_enabled"`
 	ClickHouse  struct {
@@ -58,6 +63,10 @@ func Load(path string) (*Config, error) {
 
 	c := &Config{AuthEnabled: true}
 	c.Server.HTTPListenPort = 3100
+	c.Server.HTTPServerReadTimeout = 30 * time.Second
+	c.Server.HTTPServerWriteTimeout = 30 * time.Second
+	c.Server.HTTPServerIdleTimeout = 120 * time.Second
+	c.Server.GracefulShutdownTimeout = 30 * time.Second
 	c.ClickHouse.Addr = []string{"localhost:9000"}
 	c.ClickHouse.Database = "lokihouse"
 	c.ClickHouse.Username = "default"

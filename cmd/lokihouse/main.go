@@ -1,120 +1,48 @@
+// Command lokihouse serves Loki's HTTP API on top of ClickHouse.
 package main
 
 import (
 	"context"
 	"flag"
 	"fmt"
-	"net/http"
+	"io"
 	"os"
-	"time"
+	"os/signal"
+	"syscall"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/services"
-	"github.com/grafana/loki/v3/pkg/logql"
-	"github.com/grafana/loki/v3/pkg/querier/tail"
-	"github.com/grafana/loki/v3/pkg/validation"
-	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/bzed/lokihouse/internal/api"
-	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/config"
-	"github.com/bzed/lokihouse/internal/deletes"
-	"github.com/bzed/lokihouse/internal/ingest"
-	"github.com/bzed/lokihouse/internal/patterns"
-	"github.com/bzed/lokihouse/internal/pushdown"
-	lhruler "github.com/bzed/lokihouse/internal/ruler"
-	lhtail "github.com/bzed/lokihouse/internal/tail"
+	"github.com/bzed/lokihouse/internal/server"
 )
 
-func main() {
-	path := flag.String("config.file", "lokihouse.yaml", "configuration file")
-	flag.Parse()
-	logger := log.NewLogfmtLogger(os.Stderr)
-	if err := run(*path, logger); err != nil {
-		level.Error(logger).Log("err", err)
-		os.Exit(1)
-	}
-}
+func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
-func run(path string, logger log.Logger) error {
-	cfg, err := config.Load(path)
+// run is main without os.Exit, for tests. Exit codes: 0 ok, 1 runtime or
+// config error, 2 usage error.
+func run(args []string, _ io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("lokihouse", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	path := fs.String("config.file", "lokihouse.yaml", "configuration file")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(stderr))
+	cfg, err := config.Load(*path)
 	if err != nil {
-		return err
+		fmt.Fprintf(stderr, "lokihouse: %v\n", err)
+		return 1
 	}
-	ctx := context.Background()
-	opts := func(db string) *clickhouse.Options {
-		return &clickhouse.Options{
-			Addr:     cfg.ClickHouse.Addr,
-			Auth:     clickhouse.Auth{Database: db, Username: cfg.ClickHouse.Username, Password: cfg.ClickHouse.Password},
-			Settings: cfg.CHSettings(),
-		}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		stop() // restore default handling: a second signal kills the process
+	}()
+	if err := server.Run(ctx, cfg, server.Options{Logger: logger}); err != nil {
+		level.Error(logger).Log("err", err) //nolint:gosec // G104: logger Log error is not actionable (as in Loki)
+		return 1
 	}
-	admin, err := clickhouse.Open(opts("default"))
-	if err != nil {
-		return err
-	}
-	if err := chstore.Migrate(ctx, admin, cfg.ClickHouse.Database, cfg.Topology()); err != nil {
-		return err
-	}
-	_ = admin.Close()
-	conn, err := clickhouse.Open(opts(cfg.ClickHouse.Database))
-	if err != nil {
-		return err
-	}
-	limits, err := validation.NewOverrides(cfg.LimitsConfig, nil)
-	if err != nil {
-		return err
-	}
-	store := &deletes.Store{Conn: conn}
-	q := &chstore.Querier{Conn: conn, Deletes: store}
-	a := &api.API{
-		Queries: &pushdown.Engine{
-			Mode:   pushdown.Mode(cfg.Query.Pushdown),
-			TierB:  logql.NewEngine(logql.EngineOpts{}, q, limits, logger),
-			TierA:  &pushdown.TierA{Conn: conn, Limits: limits, Deletes: store},
-			Limits: limits,
-			Logger: logger,
-		},
-		Q:           q,
-		Push:        &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: limits, Logger: logger},
-		Limits:      limits,
-		Patterns:    &patterns.Querier{Q: q, Limits: limits, Logger: logger},
-		Deletes:     &deletes.Handler{Store: store, Limits: limits, MaxInterval: cfg.Compactor.DeleteMaxInterval, CancelPeriod: cfg.Compactor.DeleteRequestCancelPeriod},
-		AuthEnabled: cfg.AuthEnabled,
-	}
-	// tail.MaxDuration is Loki's -querier.tail-max-duration default (1h).
-	tq := tail.NewQuerier(&lhtail.Ingester{Q: q}, q, store, limits, time.Hour, tail.NewMetrics(nil), logger)
-	// loghttp.ParseTailQuery reads the query via r.Form, which the net/http
-	// server does not populate automatically; parse it first so the selector is
-	// visible (r.URL.Query alone would leave r.Form empty).
-	a.Tail = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = r.ParseForm()
-		tq.TailHandler(w, r)
-	})
-	// Physical deletion loop: after the cancel period, rewrite the deleted rows.
-	go (&deletes.Processor{
-		Store: store, Conn: conn, DB: cfg.ClickHouse.Database, Topo: cfg.Topology(),
-		CancelPeriod: cfg.Compactor.DeleteRequestCancelPeriod,
-		Interval:     cfg.Compactor.CompactionInterval,
-		Logger:       logger,
-	}).Run(ctx)
-	// Loki's ruler, when ruler_storage is configured (Loki's single-binary rule).
-	if cfg.RulerEnabled() {
-		r, rapi, err := lhruler.New(ctx, cfg.Ruler, cfg.RulerStorage, a.Queries, limits, log.With(logger, "component", "ruler"), prometheus.NewRegistry())
-		if err != nil {
-			return fmt.Errorf("ruler: %w", err)
-		}
-		if err := services.StartAndAwaitRunning(ctx, r); err != nil {
-			return fmt.Errorf("ruler: %w", err)
-		}
-		// Loki serves the rules API only with ruler.enable_api (default true).
-		if cfg.Ruler.EnableAPI {
-			a.Rules = rapi
-		}
-	}
-	addr := fmt.Sprintf("%s:%d", cfg.Server.HTTPListenAddress, cfg.Server.HTTPListenPort)
-	level.Info(logger).Log("msg", "lokihouse listening", "addr", addr)
-	return http.ListenAndServe(addr, a.Router())
+	return 0
 }

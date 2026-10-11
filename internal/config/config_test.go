@@ -138,3 +138,31 @@ func TestLoad_RulerRejectsUnsupportedModes(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_ServerTimeoutDefaults(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("auth_enabled: false\n"), 0o600))
+	c, err := Load(p)
+	require.NoError(t, err)
+	// dskit server defaults, as in Loki.
+	require.Equal(t, 30*time.Second, c.Server.HTTPServerReadTimeout)
+	require.Equal(t, time.Duration(0), c.Server.HTTPServerReadHeaderTimeout)
+	require.Equal(t, 30*time.Second, c.Server.HTTPServerWriteTimeout)
+	require.Equal(t, 120*time.Second, c.Server.HTTPServerIdleTimeout)
+	require.Equal(t, 30*time.Second, c.Server.GracefulShutdownTimeout)
+}
+
+func TestLoad_ServerTimeouts(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(`server:
+  http_server_read_timeout: 1s
+  http_server_read_header_timeout: 2s
+  http_server_write_timeout: 3s
+  http_server_idle_timeout: 4s
+  graceful_shutdown_timeout: 5s
+`), 0o600))
+	c, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, []time.Duration{1 * time.Second, 2 * time.Second, 3 * time.Second, 4 * time.Second, 5 * time.Second},
+		[]time.Duration{c.Server.HTTPServerReadTimeout, c.Server.HTTPServerReadHeaderTimeout, c.Server.HTTPServerWriteTimeout, c.Server.HTTPServerIdleTimeout, c.Server.GracefulShutdownTimeout})
+}
