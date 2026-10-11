@@ -11,9 +11,11 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/querier/tail"
 	"github.com/grafana/loki/v3/pkg/validation"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/bzed/lokihouse/internal/api"
 	"github.com/bzed/lokihouse/internal/chstore"
@@ -23,6 +25,7 @@ import (
 	"github.com/bzed/lokihouse/internal/patterns"
 	"github.com/bzed/lokihouse/internal/pushdown"
 	lhtail "github.com/bzed/lokihouse/internal/tail"
+	lhruler "github.com/bzed/lokihouse/internal/ruler"
 )
 
 func main() {
@@ -97,6 +100,17 @@ func run(path string, logger log.Logger) error {
 		Interval:     cfg.Compactor.CompactionInterval,
 		Logger:       logger,
 	}).Run(ctx)
+	// Loki's ruler, when ruler_storage is configured (Loki's single-binary rule).
+	if cfg.RulerEnabled() {
+		r, rapi, err := lhruler.New(ctx, cfg.Ruler, cfg.RulerStorage, a.Queries, limits, log.With(logger, "component", "ruler"), prometheus.NewRegistry())
+		if err != nil {
+			return fmt.Errorf("ruler: %w", err)
+		}
+		if err := services.StartAndAwaitRunning(ctx, r); err != nil {
+			return fmt.Errorf("ruler: %w", err)
+		}
+		a.Rules = rapi
+	}
 	addr := fmt.Sprintf("%s:%d", cfg.Server.HTTPListenAddress, cfg.Server.HTTPListenPort)
 	level.Info(logger).Log("msg", "lokihouse listening", "addr", addr)
 	return http.ListenAndServe(addr, a.Router())

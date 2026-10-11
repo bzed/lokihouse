@@ -21,8 +21,9 @@ import (
 )
 
 func TestOracle(t *testing.T) {
-	loki := StartLoki(t)
-	house := StartLokihouse(t)
+	lokiSinks, houseSinks := newRulerSinks(t), newRulerSinks(t)
+	loki := StartLoki(t, rulerYAML(t.TempDir(), lokiSinks))
+	house := StartLokihouse(t, rulerYAML(t.TempDir(), houseSinks))
 
 	// Get initial Tier A leaf count (if debug endpoint is available)
 	initialTierALeaves, hasDebug := getTierALeaves(t, house)
@@ -97,6 +98,10 @@ func TestOracle(t *testing.T) {
 	waitPatternsReady(t, loki, "tenant-a", `{app="web"}`, start, end, 60*time.Second)
 
 	phase3Endpoints(t, loki, house, start.Add(-time.Minute), end)
+
+	// The ruler: rule CRUD, evaluation state, remote write and notifications
+	// over tenant-a's fixture.
+	rulerOracle(t, loki, house, lokiSinks, houseSinks)
 
 	// The delete API, on a fresh tenant (Loki caches a tenant's delete list for
 	// 5 minutes from its first lookup, so tenant-del must not be queried above).

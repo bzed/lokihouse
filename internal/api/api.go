@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/logql"
+	rulerbase "github.com/grafana/loki/v3/pkg/ruler/base"
 	serverutil "github.com/grafana/loki/v3/pkg/util/server"
 	"github.com/grafana/loki/v3/pkg/validation"
 
@@ -28,6 +29,7 @@ type API struct {
 	Patterns    *patterns.Querier
 	Deletes     *deletes.Handler
 	Tail        http.Handler
+	Rules       *rulerbase.API // Loki's ruler API; nil = ruler disabled
 }
 
 // Querier executes a LogQL query. Both the plain *logql.QueryEngine and the
@@ -71,6 +73,9 @@ func (a *API) Router() http.Handler {
 			mux.Handle(m+" /loki/api/v1/tail", t(a.Tail))
 			mux.Handle(m+" /api/prom/tail", t(a.Tail))
 		}
+	}
+	if a.Rules != nil {
+		a.ruleRoutes(mux)
 	}
 	a.lokiRoutes(mux)
 	// format_query is not tenant-wrapped: Loki registers it without auth.
