@@ -22,7 +22,6 @@ import (
 type parsedFields struct {
 	sketch    *hyperloglog.Sketch
 	fieldType logproto.DetectedFieldType
-	parsers   []string
 }
 
 func newParsedLabels() *parsedFields {

@@ -1,3 +1,5 @@
+// extract-corpus extracts LogQL queries from Loki's test files and documentation
+// for use as a test corpus.
 package main
 
 import (
@@ -93,7 +95,7 @@ func goStrings(path string) []string {
 var fence = regexp.MustCompile("(?s)```logql\\n(.*?)```")
 
 func mdLogQL(path string) []string {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // G304: path from operator's -loki flag
 	if err != nil {
 		return nil
 	}

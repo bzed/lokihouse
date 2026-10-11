@@ -1,3 +1,6 @@
+// Package pushdown provides the query push-down engine that translates LogQL
+// queries to ClickHouse SQL when possible, falling back to Loki's in-process
+// engine otherwise.
 package pushdown
 
 import (

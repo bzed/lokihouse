@@ -15,9 +15,12 @@ import (
 type Mode string
 
 const (
-	ModeOn         Mode = "on"         // Tier A for eligible leaves, Tier B otherwise
-	ModeOff        Mode = "off"        // everything on the Phase 1 engine
-	ModeDownstream Mode = "downstream" // map every query but run all leaves on Tier B
+	// ModeOn enables Tier A push-down for eligible leaves, falling back to Tier B.
+	ModeOn Mode = "on"
+	// ModeOff disables push-down; everything runs on the Phase 1 engine.
+	ModeOff Mode = "off"
+	// ModeDownstream maps every query but runs all leaves on Tier B.
+	ModeDownstream Mode = "downstream"
 )
 
 // TierALeaves counts Tier A leaf executions (for coverage assertions).

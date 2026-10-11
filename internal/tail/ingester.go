@@ -4,6 +4,7 @@ package tail
 
 import (
 	"context"
+	"math"
 	"slices"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ type Ingester struct {
 	active int
 }
 
+// Tail starts a tail query and returns a map of address to tail client.
 func (i *Ingester) Tail(ctx context.Context, req *logproto.TailRequest) (map[string]logproto.Querier_TailClient, error) {
 	poll, look := i.Poll, i.Lookback
 	if poll == 0 {
@@ -70,6 +72,7 @@ func (i *Ingester) addActive(n int) {
 	i.active += n
 }
 
+// TailDisconnectedIngesters handles tail requests for disconnected ingesters.
 func (i *Ingester) TailDisconnectedIngesters(ctx context.Context, req *logproto.TailRequest, connected []string) (map[string]logproto.Querier_TailClient, error) {
 	if slices.Contains(connected, addr) {
 		return map[string]logproto.Querier_TailClient{}, nil
@@ -77,10 +80,19 @@ func (i *Ingester) TailDisconnectedIngesters(ctx context.Context, req *logproto.
 	return i.Tail(ctx, req)
 }
 
+// TailersCount returns the number of active tailers.
 func (i *Ingester) TailersCount(context.Context) ([]uint32, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	return []uint32{uint32(i.active)}, nil
+	// active is always >= 0 (incremented/decremented by 1 from 0) and within uint32 range
+	active := i.active
+	if active < 0 {
+		active = 0
+	}
+	if active > math.MaxUint32 {
+		active = math.MaxUint32
+	}
+	return []uint32{uint32(active)}, nil
 }
 
 type seenKey struct {

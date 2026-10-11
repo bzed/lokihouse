@@ -51,26 +51,24 @@ func (p *Processor) ProcessDue(ctx context.Context, now time.Time) error {
 			continue
 		}
 		if err := p.process(ctx, r); err != nil {
-			p.logRequestErr(r.RequestID, "process", err)
+			if p.Logger != nil {
+				level.Error(p.Logger).Log("msg", "delete request failed; will retry", "request", r.RequestID, "step", "process", "err", err) //nolint:gosec // G104: go-kit logger errors are not actionable
+			}
 			if first == nil {
 				first = fmt.Errorf("delete request %s: %w", r.RequestID, err)
 			}
 			continue
 		}
 		if err := p.Store.MarkProcessed(ctx, r); err != nil {
-			p.logRequestErr(r.RequestID, "mark processed", err)
+			if p.Logger != nil {
+				level.Error(p.Logger).Log("msg", "delete request failed; will retry", "request", r.RequestID, "step", "mark processed", "err", err) //nolint:gosec // G104: go-kit logger errors are not actionable
+			}
 			if first == nil {
 				first = fmt.Errorf("delete request %s: %w", r.RequestID, err)
 			}
 		}
 	}
 	return first
-}
-
-func (p *Processor) logRequestErr(id, what string, err error) {
-	if p.Logger != nil {
-		level.Error(p.Logger).Log("msg", "delete request failed; will retry", "request", id, "step", what, "err", err)
-	}
 }
 
 // process physically removes the rows a single delete request hides. A bare
@@ -142,7 +140,7 @@ func (p *Processor) Run(ctx context.Context) {
 	for {
 		if err := p.ProcessDue(ctx, now()); err != nil && ctx.Err() == nil {
 			if p.Logger != nil {
-				level.Error(p.Logger).Log("msg", "processing delete requests", "err", err)
+				level.Error(p.Logger).Log("msg", "processing delete requests", "err", err) //nolint:gosec // G104: go-kit logger errors are not actionable
 			}
 		}
 		select {

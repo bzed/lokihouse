@@ -1,3 +1,5 @@
+// Package api provides the HTTP API handlers for lokihouse, serving Loki's
+// endpoints (push, query, series, labels, tail, deletes, rules) over ClickHouse.
 package api
 
 import (
@@ -9,7 +11,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/logql"
 	rulerbase "github.com/grafana/loki/v3/pkg/ruler/base"
-	serverutil "github.com/grafana/loki/v3/pkg/util/server"
 	"github.com/grafana/loki/v3/pkg/validation"
 
 	"github.com/bzed/lokihouse/internal/chstore"
@@ -18,6 +19,8 @@ import (
 	"github.com/bzed/lokihouse/internal/pushdown"
 )
 
+// API is the lokihouse HTTP API server. It wires together the query, push,
+// delete, tail and ruler handlers into a single http.Handler.
 type API struct {
 	// Queries executes LogQL queries, choosing between the plain engine and
 	// the push-down engine.
@@ -48,6 +51,7 @@ func (p plainQuerier) Query(_ context.Context, params logql.Params) logql.Query 
 // NewPlainQuerier adapts a *logql.QueryEngine to the api.Querier interface.
 func NewPlainQuerier(e *logql.QueryEngine) Querier { return plainQuerier{e: e} }
 
+// Router returns the http.Handler that serves all lokihouse API endpoints.
 func (a *API) Router() http.Handler {
 	mux := http.NewServeMux()
 	t := a.tenant
@@ -114,10 +118,4 @@ func (a *API) tenant(next http.Handler) http.Handler {
 
 func writeError(w http.ResponseWriter, err error, code int) {
 	http.Error(w, err.Error(), code)
-}
-
-// statusFor reuses Loki's exact error -> status mapping.
-func statusFor(err error) int {
-	code, _ := serverutil.ClientHTTPStatusAndError(err)
-	return code
 }

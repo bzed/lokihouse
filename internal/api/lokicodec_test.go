@@ -30,7 +30,7 @@ func TestAPI_Volume(t *testing.T) {
 	srvOff, _ := newServerConnWithLimits(t, false, func(l *validation.Limits) { l.VolumeEnabled = false })
 	code, body := do(t, "POST", srvOff.URL+"/loki/api/v1/push", "", `{"streams":[{"stream":{"app":"x"},"values":[`+strings.Join(vals, ",")+`]}]}`)
 	require.Equal(t, http.StatusNoContent, code, body)
-	code, body = do(t, "GET", srvOff.URL+"/loki/api/v1/index/volume?"+qs.Encode(), "", "")
+	code, _ = do(t, "GET", srvOff.URL+"/loki/api/v1/index/volume?"+qs.Encode(), "", "")
 	require.Equal(t, http.StatusNotFound, code, "volume disabled → 404")
 
 	// With volume_enabled = true (the default) the endpoint returns the volume.

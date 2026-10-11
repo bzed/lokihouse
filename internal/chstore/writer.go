@@ -43,7 +43,7 @@ func (w *Writer) Write(ctx context.Context, tenant string, streams []logproto.St
 	if err != nil {
 		return fmt.Errorf("prepare logs batch: %w", err)
 	}
-	defer logs.Abort()
+	defer logs.Abort() //nolint:errcheck // G104: ClickHouse batch Abort errors are not actionable
 
 	type newStream struct {
 		key  streamKey
@@ -96,7 +96,7 @@ func (w *Writer) Write(ctx context.Context, tenant string, streams []logproto.St
 		if err != nil {
 			return fmt.Errorf("prepare streams batch: %w", err)
 		}
-		defer strs.Abort()
+		defer strs.Abort() //nolint:errcheck // G104: ClickHouse batch Abort errors are not actionable
 		for _, n := range fresh {
 			if err := strs.Append(tenant, n.key.day, n.key.id, n.lmap, n.lstr, n.ret); err != nil {
 				return err

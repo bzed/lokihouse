@@ -69,6 +69,7 @@ type streamDrains struct {
 	byLvl  map[string]*drain.Drain
 }
 
+// Query runs the pattern query and returns the matched patterns.
 func (p *Querier) Query(ctx context.Context, req *logproto.QueryPatternsRequest) (*logproto.QueryPatternsResponse, error) {
 	if _, err := syntax.ParseMatchers(req.Query, true); err != nil {
 		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err.Error())
@@ -123,7 +124,7 @@ func (p *Querier) Query(ctx context.Context, req *logproto.QueryPatternsRequest)
 		d.Train(e.Line, e.Timestamp.UnixNano())
 	}
 	if n == maxLines && it.Next() {
-		level.Warn(p.logger()).Log("msg", "pattern query truncated at MaxLines; patterns may be incomplete", "max_lines", maxLines)
+		level.Warn(p.logger()).Log("msg", "pattern query truncated at MaxLines; patterns may be incomplete", "max_lines", maxLines) //nolint:gosec // G104: go-kit logger errors are not actionable
 	}
 	if err := it.Err(); err != nil {
 		return nil, err

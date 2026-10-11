@@ -26,6 +26,8 @@ type Evaluator struct {
 // Copied from grafana/loki@fbc3f077 pkg/ruler/evaluator_local.go (LocalEvaluator.Eval);
 // modifications: runs Engine instead of *logql.QueryEngine; the per-evaluation
 // info log line is dropped.
+
+// Eval evaluates a LogQL query string at the given time.
 func (e *Evaluator) Eval(ctx context.Context, qs string, now time.Time) (*logqlmodel.Result, error) {
 	params, err := logql.NewLiteralParams(
 		qs,

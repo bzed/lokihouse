@@ -27,6 +27,7 @@ func (q *Querier) streamsFor(ctx context.Context, selector string, from, through
 	return ResolveStreams(ctx, q.Conn, tenantID, ms, from, through)
 }
 
+// Label returns the label names or values matching the request.
 func (q *Querier) Label(ctx context.Context, req *logproto.LabelRequest) (*logproto.LabelResponse, error) {
 	streams, err := q.streamsFor(ctx, req.Query, *req.Start, *req.End)
 	if err != nil {
@@ -50,6 +51,7 @@ func (q *Querier) Label(ctx context.Context, req *logproto.LabelRequest) (*logpr
 	return &logproto.LabelResponse{Values: out}, nil
 }
 
+// Series returns the time series matching the request.
 func (q *Querier) Series(ctx context.Context, req *logproto.SeriesRequest) (*logproto.SeriesResponse, error) {
 	groups := req.Groups
 	if len(groups) == 0 {

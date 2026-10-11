@@ -68,7 +68,7 @@ func TestProperty_TierAEqualsTierB(t *testing.T) {
 			if st == 0 {
 				e = s // instant: start == end
 			} else {
-				spanNS := int64(rng.Int63n(int64(90*time.Minute) + 1))
+				spanNS := rng.Int63n(int64(90*time.Minute) + 1)
 				e = s.Add(time.Duration(spanNS))
 			}
 
@@ -104,7 +104,7 @@ func TestProperty_TierAEqualsTierB(t *testing.T) {
 			case 3:
 				inner = inner + " / on() group_left sum(" + inner + ")"
 			case 4:
-				inner = inner + " > 1"
+				inner += " > 1"
 			case 5:
 				inner = `label_replace(` + inner + `, "dst", "$1", "app", "(.*)")`
 			}

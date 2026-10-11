@@ -10,11 +10,13 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+// Fragment is a SQL query fragment with its arguments.
 type Fragment struct {
 	SQL  string
 	Args []any
 }
 
+// Empty reports whether the fragment has no SQL.
 func (f Fragment) Empty() bool { return f.SQL == "" }
 
 func and(parts []Fragment) Fragment {

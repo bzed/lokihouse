@@ -315,14 +315,14 @@ func timeFromInt(in string) (int64, error) {
 func parseDeletionQuery(query string) (syntax.LogSelectorExpr, error) {
 	logSelectorExpr, err := syntax.ParseLogSelector(query, true)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", errInvalidQuery, err)
+		return nil, fmt.Errorf("%w: %w", errInvalidQuery, err)
 	}
 
 	// Some stages are only checked when the pipeline gets built, for instance line
 	// filter regexes and ip() patterns. Build it here and throw it away so we reject
 	// the request now, instead of failing every time we try to process it later.
 	if _, err := logSelectorExpr.Pipeline(); err != nil {
-		return nil, fmt.Errorf("%w: %s", errInvalidQuery, err)
+		return nil, fmt.Errorf("%w: %w", errInvalidQuery, err)
 	}
 
 	return logSelectorExpr, nil

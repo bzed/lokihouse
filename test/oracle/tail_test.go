@@ -70,6 +70,7 @@ func tailOracle(t *testing.T, loki, house string) {
 			if resp != nil {
 				b, _ := io.ReadAll(resp.Body)
 				bres = strings.TrimSpace(string(b))
+				_ = resp.Body.Close()
 			}
 			t.Fatalf("%s tail dial: %v (status %d) body=%q", u, err, resp.StatusCode, bres)
 		}

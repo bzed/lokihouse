@@ -16,8 +16,6 @@ import (
 	lt "github.com/bzed/lokihouse/internal/tail"
 )
 
-var t0 = time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
-
 // countingConn wraps a driver.Conn and counts SELECT queries issued through it.
 type countingConn struct {
 	driver.Conn
@@ -125,7 +123,7 @@ func collect(t *testing.T, c logproto.Querier_TailClient, want int, timeout time
 	var out []tailEntry
 	deadline := time.Now().Add(timeout)
 	for len(out) < want && time.Now().Before(deadline) {
-		resp, err := recvResp(c, deadline.Sub(time.Now()))
+		resp, err := recvResp(c, time.Until(deadline))
 		if err != nil {
 			if len(out) == 0 {
 				t.Fatalf("Recv: %v", err)
@@ -209,7 +207,8 @@ func TestTail_CloseStopsPolling(t *testing.T) {
 		{Timestamp: start.Add(20 * time.Millisecond), Line: "p1"},
 		{Timestamp: start.Add(40 * time.Millisecond), Line: "p2"},
 	})
-	recvResp(c, 5*time.Second) // consumes at least one poll's output
+	_, err = recvResp(c, 5*time.Second) // consumes at least one poll's output
+	require.NoError(t, err)
 	got := cc.queries()
 	require.Greater(t, got, 0)
 

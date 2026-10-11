@@ -1,3 +1,6 @@
+// Package chstore implements ClickHouse-backed storage for Loki's log data.
+// It provides the Querier for log and sample queries, the Writer for ingest,
+// and the schema migration and bucketing utilities.
 package chstore
 
 import (
@@ -7,6 +10,8 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
+// BucketRow holds the deduplicated row count and byte size for one stream in one
+// bucket (time slice).
 type BucketRow struct {
 	StreamID uint64
 	MD       map[string]string

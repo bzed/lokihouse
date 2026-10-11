@@ -1,3 +1,5 @@
+// Package ingest handles Loki push requests, validating and writing them to
+// ClickHouse via the chstore.Writer.
 package ingest
 
 import (
@@ -23,6 +25,7 @@ const (
 	maxDecompressedSize = 5000 << 20
 )
 
+// Handler handles Loki push requests and writes them to ClickHouse.
 type Handler struct {
 	Writer *chstore.Writer
 	Limits *validation.Overrides
@@ -48,7 +51,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	streams, verr := distcopy.Prepare(r.Context(), h.Limits, tenantID, req, time.Now())
 	if len(streams) > 0 {
 		if err := h.Writer.Write(r.Context(), tenantID, streams, h.retentionDays(tenantID)); err != nil {
-			level.Error(h.Logger).Log("msg", "write failed", "err", err)
+			level.Error(h.Logger).Log("msg", "write failed", "err", err) //nolint:gosec // G104: go-kit logger errors are not actionable
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -66,7 +69,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) retentionDays(tenantID string) func(labels.Labels) uint16 {
 	snap := retention.NewTenantRetentionSnapshot(h.Limits, tenantID)
 	return func(ls labels.Labels) uint16 {
-		d := min((snap.RetentionPeriodFor(ls)+24*time.Hour-1)/(24*time.Hour), math.MaxUint16)
+		d := (snap.RetentionPeriodFor(ls) + 24*time.Hour - 1) / (24 * time.Hour)
+		if d < 0 {
+			d = 0
+		}
+		if d > math.MaxUint16 {
+			d = math.MaxUint16
+		}
 		return uint16(d)
 	}
 }

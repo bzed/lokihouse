@@ -1,3 +1,6 @@
+// Package config loads and validates the lokihouse YAML configuration file.
+// It supports strict YAML parsing (unknown keys are an error), environment variable
+// expansion, and password_file for ClickHouse credentials.
 package config
 
 import (
@@ -22,6 +25,7 @@ import (
 	"github.com/bzed/lokihouse/internal/ruler"
 )
 
+// Config is the top-level lokihouse configuration.
 type Config struct {
 	Server struct {
 		HTTPListenAddress           string         `yaml:"http_listen_address"`

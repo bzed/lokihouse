@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+// Stream is a log stream with its labels.
 type Stream struct {
 	ID     uint64
 	Labels labels.Labels

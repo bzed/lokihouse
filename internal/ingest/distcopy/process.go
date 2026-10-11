@@ -4,7 +4,7 @@
 // newMetadataGroup, duplicateTimestampTracker and the push request loop);
 // modifications: methods turned into functions on a small preparer; rate
 // limiting, writeFailuresManager, metrics, usage tracker, ingester/ring and
-// Kafka paths removed; labelCache inlined.
+// Kafka paths removed; labelCache inlined; processStreamEntries takes a context.
 package distcopy
 
 import (
@@ -156,7 +156,7 @@ func Prepare(ctx context.Context, limits *validation.Overrides, tenantID string,
 			return nil, err
 		}
 
-		if _, err := p.processStreamEntries(vctx, stream, lbs, fieldDetector, &validationErrors); err != nil {
+		if _, err := p.processStreamEntries(ctx, vctx, stream, lbs, fieldDetector, &validationErrors); err != nil {
 			return nil, err
 		}
 		if stream.EntryCount() == 0 {
@@ -179,11 +179,6 @@ func Prepare(ctx context.Context, limits *validation.Overrides, tenantID string,
 		validationErr = fmt.Errorf("%s", validationErrors.Error())
 	}
 	return out, validationErr
-}
-
-func parseLabelsErr(key string) error {
-	_, err := syntax.ParseLabels(key)
-	return err
 }
 
 // parseStreamLabels parses and validates the stream label string, as the Loki distributor does.
@@ -230,6 +225,7 @@ func missingEnforcedLabels(lbs labels.Labels, tenantEnforcedLabels []string) (bo
 }
 
 func (p *preparer) processStreamEntries(
+	ctx context.Context,
 	vContext validationContext,
 	stream *logproto.InternalStreamAdapter,
 	lbs labels.Labels,
@@ -257,7 +253,7 @@ func (p *preparer) processStreamEntries(
 			var scopeDiscardReason string
 			for _, entry := range scope.Entries {
 				if reason, err := p.validator.ValidateEntry(vContext, lbs, entry, sharedMetadataSize, sharedMetadataCount); err != nil {
-					p.validator.reportDiscardedDataWithTracker(context.Background(), reason, vContext, lbs, "", "", util.EntryTotalSize(&entry), 1, "")
+					p.validator.reportDiscardedDataWithTracker(ctx, reason, vContext, lbs, "", "", util.EntryTotalSize(&entry), 1, "")
 					scopeDiscardReason = reason
 					resourceDiscardReason = reason
 					validationErrors.Add(err)
@@ -288,7 +284,7 @@ func (p *preparer) processStreamEntries(
 				}
 				entry.StructuredMetadata = logproto.CopyToLabelAdapters(entry.StructuredMetadata, structuredMetadata)
 
-				fieldDetector.discoverFields(context.Background(), lbs, &entry, structuredMetadata, sharedMetadata...)
+				fieldDetector.discoverFields(ctx, lbs, &entry, structuredMetadata, sharedMetadata...)
 				if vContext.incrementDuplicateTimestamps {
 					duplicateTimestamps.increment(&entry)
 				}
@@ -302,7 +298,7 @@ func (p *preparer) processStreamEntries(
 			if scopeEntriesKept == 0 {
 				// Charge shared bytes only when the group is emptied, using its last rejection reason.
 				if scopeDiscardReason != "" && scopeMetadata.originalSize > 0 {
-					p.validator.reportDiscardedDataWithTracker(context.Background(), scopeDiscardReason, vContext, lbs, "", "", scopeMetadata.originalSize, 0, "")
+					p.validator.reportDiscardedDataWithTracker(ctx, scopeDiscardReason, vContext, lbs, "", "", scopeMetadata.originalSize, 0, "")
 				}
 				continue
 			}
@@ -315,7 +311,7 @@ func (p *preparer) processStreamEntries(
 		resource.ScopeLogs = resource.ScopeLogs[:scopesKept]
 		if scopesKept == 0 {
 			if resourceDiscardReason != "" && resourceMetadata.originalSize > 0 {
-				p.validator.reportDiscardedDataWithTracker(context.Background(), resourceDiscardReason, vContext, lbs, "", "", resourceMetadata.originalSize, 0, "")
+				p.validator.reportDiscardedDataWithTracker(ctx, resourceDiscardReason, vContext, lbs, "", "", resourceMetadata.originalSize, 0, "")
 			}
 			continue
 		}

@@ -35,13 +35,6 @@ type keysetReader struct {
 	hasRow bool       // a row has been yielded, so the next chunk needs a keyset predicate
 }
 
-func (k *keysetReader) order() string {
-	if k.dir == logproto.BACKWARD {
-		return "ts DESC"
-	}
-	return "ts ASC"
-}
-
 // continuation returns the keyset predicate for the next chunk, or ("", nil)
 // for the first chunk.
 func (k *keysetReader) continuation() (string, []any) {

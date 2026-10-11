@@ -280,9 +280,9 @@ func rulerOracle(t *testing.T, loki, house string, ls, hs *rulerSinks) {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	lsamp, lten, lal := ls.snapshot()
-	hsamp, hten, hal := hs.snapshot()
+	lsamp, ltenants, lalerts := ls.snapshot()
+	hsamp, htenants, halerts := hs.snapshot()
 	Compare(t, "remote_write_samples", lsamp, hsamp)
-	Compare(t, "remote_write_tenants", lten, hten)
-	Compare(t, "alertmanager_alerts", lal, hal)
+	Compare(t, "remote_write_tenants", ltenants, htenants)
+	Compare(t, "alertmanager_alerts", lalerts, halerts)
 }

@@ -13,7 +13,10 @@ import (
 )
 
 func (a *API) rangeQuery(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
 	rq, err := loghttp.ParseRangeQuery(r)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
@@ -28,7 +31,10 @@ func (a *API) rangeQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) instantQuery(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
 	iq, err := loghttp.ParseInstantQuery(r)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)

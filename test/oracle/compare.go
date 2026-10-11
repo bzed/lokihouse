@@ -1,5 +1,6 @@
 //go:build oracle
 
+// Package oracle compares lokihouse and Loki responses for the same requests.
 package oracle
 
 import (
@@ -142,7 +143,14 @@ func parseFloatLenient(s string) (float64, error) {
 // so identical errors compare equal.
 func normalise(raw []byte) ([]byte, error) {
 	var root map[string]any
-	if err := json.Unmarshal(raw, &root); err != nil {
+	if !json.Valid(raw) {
+		// Not JSON (e.g. a plain-text error); return the trimmed raw bytes without error
+		return []byte(strings.TrimSpace(string(raw))), nil
+	}
+	// json.Valid passed, so Unmarshal should not fail
+	_ = json.Unmarshal(raw, &root)
+	if root == nil {
+		// Unmarshal returned nil root (should not happen after Valid), return raw
 		return []byte(strings.TrimSpace(string(raw))), nil
 	}
 	data, _ := root["data"].(map[string]any)
@@ -237,17 +245,6 @@ func mutate(raw []byte, mut func(any)) []byte {
 	return out
 }
 
-// dropKeys deletes keys from the top-level object (and from its "data" object).
-func dropKeys(keys ...string) func(any) {
-	return func(v any) {
-		for _, m := range objects(v) {
-			for _, k := range keys {
-				delete(m, k)
-			}
-		}
-	}
-}
-
 // dropArrayKeys deletes keys from every object of a JSON array. The array is
 // either the top-level value (a bare JSON array, e.g. the delete list) or the
 // "data" field of an object (e.g. query results).
@@ -287,14 +284,6 @@ func sortArrayBy(field, key string) func(any) {
 	}
 }
 
-func chain(fs ...func(any)) func(any) {
-	return func(v any) {
-		for _, f := range fs {
-			f(v)
-		}
-	}
-}
-
 func objects(v any) []map[string]any {
 	m, ok := v.(map[string]any)
 	if !ok {
@@ -321,7 +310,7 @@ func seriesKey(s any) string {
 	for _, k := range keys {
 		b.WriteString(k)
 		b.WriteByte('=')
-		b.WriteString(fmt.Sprintf("%v", m[k]))
+		_, _ = fmt.Fprintf(&b, "%v", m[k])
 		b.WriteByte(';')
 	}
 	return b.String()

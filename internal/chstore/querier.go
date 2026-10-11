@@ -15,6 +15,8 @@ import (
 	utildeletion "github.com/grafana/loki/v3/pkg/util/deletion"
 )
 
+// Querier executes LogQL queries against ClickHouse. It implements logql.Querier
+// for both log and sample queries.
 type Querier struct {
 	Conn driver.Conn
 	// Deletes, when set, is queried for pending delete requests and the
@@ -68,6 +70,7 @@ func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req 
 	return base + " ORDER BY " + order + ", stream_id ASC, entry_hash", args, byID, nil
 }
 
+// SelectLogs executes a log query and returns an iterator over the matching entries.
 func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter.EntryIterator, error) {
 	sel, err := p.LogSelector()
 	if err != nil {
@@ -94,7 +97,7 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	}
 	k := &keysetReader{
 		ctx: ctx, conn: q.Conn, base: base, args: args,
-		dir: p.Direction, chunk: chunkSize(p.QueryRequest.Limit),
+		dir: p.Direction, chunk: chunkSize(p.Limit),
 	}
 	// cancel the keyset reader with the request context so a cancelled query stops the read
 	k.ctx, k.cancel = context.WithCancel(ctx)
@@ -141,6 +144,8 @@ func (it *entryIter) StreamHash() uint64 { return it.hash }
 func (it *entryIter) Err() error         { return it.rr.errOf() }
 func (it *entryIter) Close() error       { return it.rr.close() }
 
+// SelectSamples executes a sample (metrics) query and returns an iterator over the
+// matching samples.
 func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams) (iter.SampleIterator, error) {
 	expr, err := p.Expr()
 	if err != nil {
@@ -156,8 +161,8 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	// Fetch the user's pending deletes (Loki's tail querier already puts them
 	// on the request, so only fetch when the field is empty) and filter samples
 	// matching them out, exactly as Loki's querier does.
-	if q.Deletes != nil && len(p.SampleQueryRequest.Deletes) == 0 {
-		if p.SampleQueryRequest.Deletes, err = querierdeletion.DeletesForUserQuery(ctx, p.SampleQueryRequest.Start, p.SampleQueryRequest.End, q.Deletes); err != nil {
+	if q.Deletes != nil && len(p.Deletes) == 0 {
+		if p.Deletes, err = querierdeletion.DeletesForUserQuery(ctx, p.Start, p.End, q.Deletes); err != nil {
 			return nil, err
 		}
 	}
