@@ -184,3 +184,23 @@ func mustRangeAgg(t *testing.T, q string) *syntax.RangeAggregationExpr {
 	require.True(t, ok, q)
 	return ra
 }
+
+// An instant query has step 0: Tier A must evaluate exactly once at start
+// (it used to loop forever, since t never advanced past end).
+func TestTierA_InstantQuery(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	base := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "x"}, {Timestamp: base.Add(-30 * time.Second), Line: "yy"}}},
+	}, nil))
+	at := base.Add(250 * time.Millisecond)
+	for _, q := range []string{
+		`count_over_time({app="a"}[1m])`,
+		`bytes_rate({app="a"}[1m] offset 10s)`,
+		`sum by (app) (count_over_time({app="a"}[1m]))`,
+	} {
+		want, got := runTierA(t, conn, q, at, at, 0)
+		require.Equal(t, want, got, q)
+	}
+}

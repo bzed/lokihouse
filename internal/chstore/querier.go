@@ -45,8 +45,10 @@ func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req 
 	for _, s := range streams {
 		byID[s.ID] = s
 	}
-	base = "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM logs WHERE tenant = ? AND stream_id IN ? AND ts >= ? AND ts < ?"
-	args = []any{tenantID, sortedIDs(streams), req.GetStart().UTC(), req.GetEnd().UTC()}
+	base = "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM logs WHERE tenant = ? AND stream_id IN ? AND ts >= fromUnixTimestamp64Nano(?, 'UTC') AND ts < fromUnixTimestamp64Nano(?, 'UTC')"
+	// Bounds are bound as Unix nanoseconds: clickhouse-go formats a time.Time
+	// parameter at second precision.
+	args = []any{tenantID, sortedIDs(streams), req.GetStart().UnixNano(), req.GetEnd().UnixNano()}
 	if lf := LeadingLineFilterSQL(sel); !lf.Empty() {
 		base += " AND " + lf.SQL
 		args = append(args, lf.Args...)

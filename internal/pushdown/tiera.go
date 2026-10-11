@@ -152,7 +152,8 @@ func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logq
 			}
 			// t_shifted = t - offset = S + k*st
 			tShifted := t - o
-			if tShifted > E {
+			if tShifted > E || (st == 0 && k > 0) {
+				// st == 0 is an instant query: exactly one evaluation at start.
 				break
 			}
 			// Window: (t - r - o, t - o] = (tShifted - r, tShifted]

@@ -73,6 +73,31 @@ func TestSelectLogs_TimeBoundaries(t *testing.T) {
 	require.Equal(t, []string{"start", "last"}, lines(res.Data.(logqlmodel.Streams)[0]))
 }
 
+// clickhouse-go binds a time.Time parameter at second precision, so query
+// bounds must not be bound as time.Time: a sub-second start or end would admit
+// or drop the rows in the rest of that second.
+func TestSelectLogs_SubSecondTimeBoundaries(t *testing.T) {
+	conn, _ := chtest.New(t)
+	ms := time.Millisecond
+	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: []logproto.Entry{
+		{Timestamp: t0.Add(400 * ms), Line: "before"}, {Timestamp: t0.Add(500 * ms), Line: "start"},
+		{Timestamp: t0.Add(time.Minute + 400*ms), Line: "last"}, {Timestamp: t0.Add(time.Minute + 500*ms), Line: "end"}},
+	})
+	res := run(t, engine(t, &chstore.Querier{Conn: conn}), `{app="a"}`, t0.Add(500*ms), t0.Add(time.Minute+500*ms), 0, logproto.FORWARD, 100)
+	require.Equal(t, []string{"start", "last"}, lines(res.Data.(logqlmodel.Streams)[0]))
+}
+
+func TestSelectSamples_SubSecondEnd(t *testing.T) {
+	conn, _ := chtest.New(t)
+	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: []logproto.Entry{
+		{Timestamp: t0.Add(36 * time.Millisecond), Line: "x"}}})
+	end := t0.Add(456 * time.Millisecond)
+	res := run(t, engine(t, &chstore.Querier{Conn: conn}), `count_over_time({app="a"}[10s])`, end, end, 0, logproto.FORWARD, 0)
+	v := res.Data.(promql.Vector)
+	require.Len(t, v, 1)
+	require.Equal(t, 1.0, v[0].F)
+}
+
 func TestSelectLogs_DedupesIdenticalEntries(t *testing.T) {
 	conn, _ := chtest.New(t)
 	w := &chstore.Writer{Conn: conn}
@@ -137,6 +162,35 @@ func TestKeyset_SameResultForAnyChunkSize(t *testing.T) {
 				require.Equal(t, 70, total, "duplicate counted once")
 			}
 		}
+	}
+}
+
+// Keyset continuation keys carry nanosecond timestamps: rows within one
+// second must neither be re-read nor skipped at a chunk boundary.
+func TestKeyset_SubSecondTimestamps(t *testing.T) {
+	conn, _ := chtest.New(t)
+	var es []logproto.Entry
+	for i := range 40 { // 4 seconds × 10 distinct sub-second timestamps
+		es = append(es, logproto.Entry{Timestamp: t0.Add(time.Duration(i/10)*time.Second + time.Duration(i%10)*time.Millisecond), Line: fmt.Sprint("l", i)})
+	}
+	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: es})
+	q := &chstore.Querier{Conn: conn}
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	t.Cleanup(func() { chstore.SetLogChunkSize(1000) })
+	chstore.SetLogChunkSize(3)
+	for _, dir := range []logproto.Direction{logproto.FORWARD, logproto.BACKWARD} {
+		it, err := q.SelectLogs(ctx, logql.SelectLogParams{QueryRequest: &logproto.QueryRequest{
+			Selector: `{app="a"}`, Start: t0.Add(-time.Minute), End: t0.Add(time.Minute), Direction: dir,
+			Plan: &plan.QueryPlan{AST: syntax.MustParseExpr(`{app="a"}`)},
+		}})
+		require.NoError(t, err)
+		var got []string
+		for it.Next() && len(got) < 100 {
+			got = append(got, it.At().Line)
+		}
+		require.NoError(t, it.Err())
+		require.NoError(t, it.Close())
+		require.Len(t, got, 40, "dir=%v got=%v", dir, got)
 	}
 }
 

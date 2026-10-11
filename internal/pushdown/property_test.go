@@ -31,11 +31,6 @@ const (
 // It also asserts that Tier A actually ran for at least 80% of the eligible
 // leaves, so the test cannot pass vacuously.
 func TestProperty_TierAEqualsTierB(t *testing.T) {
-	// KNOWN ISSUE: Tier A has a 1-count difference at boundary points compared
-	// to Tier B. This is a systematic issue that needs further investigation.
-	// The test is skipped for now and will be re-enabled once the boundary
-	// condition is fixed.
-	t.Skip("skipped: known 1-count difference at boundary points (see comment)")
 	conn, _ := chtest.New(t)
 	w := &chstore.Writer{Conn: conn}
 

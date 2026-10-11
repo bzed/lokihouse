@@ -50,10 +50,10 @@ func (k *keysetReader) continuation() (string, []any) {
 	}
 	last := k.continuationKey()
 	if k.dir == logproto.BACKWARD {
-		return " AND (ts < ? OR (ts = ? AND (stream_id, entry_hash) > (?, ?)))",
+		return " AND (ts < fromUnixTimestamp64Nano(?, 'UTC') OR (ts = fromUnixTimestamp64Nano(?, 'UTC') AND (stream_id, entry_hash) > (?, ?)))",
 			[]any{last[0], last[0], last[1], last[2]}
 	}
-	return " AND (ts, stream_id, entry_hash) > (?, ?, ?)", last
+	return " AND (ts, stream_id, entry_hash) > (fromUnixTimestamp64Nano(?, 'UTC'), ?, ?)", last
 }
 
 func (k *keysetReader) openChunk() bool {
@@ -101,9 +101,11 @@ func (k *keysetReader) next() bool {
 	}
 }
 
-// continuationKey returns the key of the last row read from ClickHouse.
+// continuationKey returns the key of the last row read from ClickHouse. The
+// timestamp is Unix nanoseconds: clickhouse-go formats a time.Time parameter at
+// second precision, which would re-read (or skip) the rest of that second.
 func (k *keysetReader) continuationKey() []any {
-	return []any{k.last.ts, k.last.streamID, k.last.entryHash}
+	return []any{k.last.ts.UnixNano(), k.last.streamID, k.last.entryHash}
 }
 
 func (k *keysetReader) close() error {
