@@ -1,0 +1,195 @@
+package deletes_test
+
+import (
+	"context"
+	"flag"
+	"sort"
+	"testing"
+	"time"
+
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/user"
+	"github.com/grafana/loki/v3/pkg/logproto"
+	"github.com/grafana/loki/v3/pkg/logql"
+	"github.com/grafana/loki/v3/pkg/logqlmodel"
+	"github.com/grafana/loki/v3/pkg/validation"
+	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+
+	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/lokihouse/internal/deletes"
+)
+
+// newProcessor builds a Processor over a fresh database with a fixed clock.
+// now controls the "current time" for the cancel-period check; created is the
+// time requests are created at (so ProcessDue only acts on requests old enough).
+func newProcessor(t *testing.T, cancelPeriod, interval time.Duration, now, created time.Time) (*deletes.Processor, *deletes.Store, driver.Conn, string) {
+	conn, db := chtest.New(t)
+	store := &deletes.Store{Conn: conn, Now: func() time.Time { return created }}
+	p := &deletes.Processor{
+		Store: store, Conn: conn, DB: db, Topo: chtest.Topology(),
+		CancelPeriod: cancelPeriod, Interval: interval, Logger: log.NewNopLogger(),
+		Now: func() time.Time { return now },
+	}
+	return p, store, conn, db
+}
+
+// lines returns the sorted distinct lines of a tenant's logs table.
+func lines(t *testing.T, conn driver.Conn, tenant string) []string {
+	t.Helper()
+	rows, err := conn.Query(context.Background(), "SELECT DISTINCT line FROM logs WHERE tenant = ? ORDER BY line", tenant)
+	require.NoError(t, err)
+	var out []string
+	for rows.Next() {
+		var l string
+		_ = rows.Scan(&l)
+		out = append(out, l)
+	}
+	require.NoError(t, rows.Err())
+	return out
+}
+
+// queryTimeLines is what a querier with Deletes: store sees (the authoritative
+// "surviving" set that physical deletion must match).
+func queryTimeLines(t *testing.T, conn driver.Conn, store *deletes.Store, q string, start, end time.Time) []string {
+	t.Helper()
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	o, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+	ng := logql.NewEngine(logql.EngineOpts{}, &chstore.Querier{Conn: conn, Deletes: store}, o, log.NewNopLogger())
+	p, err := logql.NewLiteralParams(q, start, end, 0, 0, logproto.FORWARD, 1000, nil, nil)
+	require.NoError(t, err)
+	res, err := ng.Query(p).Exec(user.InjectOrgID(context.Background(), "t1"))
+	require.NoError(t, err)
+	streams := res.Data.(logqlmodel.Streams)
+	var out []string
+	for _, s := range streams {
+		for _, e := range s.Entries {
+			out = append(out, e.Line)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestProcessor_MatchesQueryTimeFilter(t *testing.T) {
+	p, store, conn, _ := newProcessor(t, 0, time.Hour, t0, t0)
+
+	w := &chstore.Writer{Conn: conn}
+	base := t0
+	// {app="a"}: keep, secret a, secret b, secret c(at end), secret d(just past end)
+	aEntries := []logproto.Entry{
+		{Timestamp: base, Line: "keep"},
+		{Timestamp: base.Add(time.Millisecond), Line: "secret a"},
+		{Timestamp: base.Add(2 * time.Millisecond), Line: "secret b"},
+		{Timestamp: base.Add(3 * time.Millisecond), Line: "secret c"},
+		{Timestamp: base.Add(3*time.Millisecond + time.Millisecond/2), Line: "secret d"},
+	}
+	// {app="b"}: other stream, must survive
+	bEntries := []logproto.Entry{{Timestamp: base.Add(2 * time.Millisecond), Line: "secret x"}}
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: aEntries},
+		{Labels: `{app="b"}`, Entries: bEntries},
+	}, nil))
+
+	// Delete request {app="a"} |~ "secret [a-c]" over [base, base+3ms].
+	end := base.Add(3 * time.Millisecond)
+	_, err := store.Add(context.Background(), "t1", `{app="a"} |~ "secret [a-c]"`,
+		model.TimeFromUnixNano(base.UnixNano()), model.TimeFromUnixNano(end.UnixNano()))
+	require.NoError(t, err)
+
+	// The query-time view (what the API already hides) plus the untouched {app="b"} row.
+	want := queryTimeLines(t, conn, store, `{app="a"}`, base, base.Add(time.Minute))
+	want = append(want, "secret x")
+	sort.Strings(want)
+
+	require.NoError(t, p.ProcessDue(context.Background(), t0))
+
+	// The surviving physical rows must equal the query-time view + secret x.
+	got := lines(t, conn, "t1")
+	sort.Strings(got)
+	require.Equal(t, want, got, "physical deletion must match the query-time filter")
+
+	// The request is now processed.
+	reqs, err := store.Unprocessed(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, reqs, "request should be marked processed")
+
+	// A second ProcessDue is a no-op (rows unchanged).
+	require.NoError(t, p.ProcessDue(context.Background(), t0))
+	require.Equal(t, got, lines(t, conn, "t1"))
+}
+
+func TestProcessor_SelectorOnly(t *testing.T) {
+	p, store, conn, _ := newProcessor(t, 0, time.Hour, t0, t0)
+
+	w := &chstore.Writer{Conn: conn}
+	base := t0
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "keep"}}},
+		{Labels: `{app="b"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "secret x"}, {Timestamp: base.Add(time.Second), Line: "secret y"}}},
+	}, nil))
+
+	end := base.Add(time.Hour)
+	_, err := store.Add(context.Background(), "t1", `{app="b"}`,
+		model.TimeFromUnixNano(base.UnixNano()), model.TimeFromUnixNano(end.UnixNano()))
+	require.NoError(t, err)
+
+	require.NoError(t, p.ProcessDue(context.Background(), t0))
+
+	got := lines(t, conn, "t1")
+	sort.Strings(got)
+	// The bare selector {app="b"} deletes all its rows; only {app="a"}/keep remains.
+	require.Equal(t, []string{"keep"}, got)
+}
+
+func TestProcessor_RespectsCancelPeriod(t *testing.T) {
+	// CancelPeriod 1h; now = created + 59m -> nothing is due.
+	p, store, conn, _ := newProcessor(t, time.Hour, time.Hour, t0.Add(59*time.Minute), t0)
+
+	w := &chstore.Writer{Conn: conn}
+	base := t0
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "secret x"}}},
+	}, nil))
+	end := base.Add(time.Hour)
+	_, err := store.Add(context.Background(), "t1", `{app="a"}`,
+		model.TimeFromUnixNano(base.UnixNano()), model.TimeFromUnixNano(end.UnixNano()))
+	require.NoError(t, err)
+
+	require.NoError(t, p.ProcessDue(context.Background(), t0.Add(59*time.Minute)))
+
+	// The row is still there and the request is still unprocessed.
+	got := lines(t, conn, "t1")
+	require.Equal(t, []string{"secret x"}, got, "nothing deleted before the cancel period")
+	reqs, err := store.Unprocessed(context.Background())
+	require.NoError(t, err)
+	require.Len(t, reqs, 1, "request still pending")
+}
+
+func TestProcessor_ParserStageScans(t *testing.T) {
+	// {app="a"} | logfmt | level="debug" must take the scan path (not DeleteRange).
+	p, store, conn, _ := newProcessor(t, 0, time.Hour, t0, t0)
+
+	w := &chstore.Writer{Conn: conn}
+	base := t0
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: []logproto.Entry{
+			{Timestamp: base, Line: `level=debug msg="go away"`},
+			{Timestamp: base.Add(time.Millisecond), Line: `level=info msg="keep me"`},
+		}},
+	}, nil))
+	end := base.Add(time.Hour)
+	_, err := store.Add(context.Background(), "t1", `{app="a"} | logfmt | level="debug"`,
+		model.TimeFromUnixNano(base.UnixNano()), model.TimeFromUnixNano(end.UnixNano()))
+	require.NoError(t, err)
+
+	require.NoError(t, p.ProcessDue(context.Background(), t0))
+
+	got := lines(t, conn, "t1")
+	sort.Strings(got)
+	require.Equal(t, []string{`level=info msg="keep me"`}, got, "only the debug line deleted")
+}

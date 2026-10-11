@@ -78,6 +78,13 @@ func run(path string, logger log.Logger) error {
 		Deletes:     &deletes.Handler{Store: store, Limits: limits, MaxInterval: cfg.Compactor.DeleteMaxInterval, CancelPeriod: cfg.Compactor.DeleteRequestCancelPeriod},
 		AuthEnabled: cfg.AuthEnabled,
 	}
+	// Physical deletion loop: after the cancel period, rewrite the deleted rows.
+	go (&deletes.Processor{
+		Store: store, Conn: conn, DB: cfg.ClickHouse.Database, Topo: cfg.Topology(),
+		CancelPeriod: cfg.Compactor.DeleteRequestCancelPeriod,
+		Interval:     cfg.Compactor.CompactionInterval,
+		Logger:       logger,
+	}).Run(ctx)
 	addr := fmt.Sprintf("%s:%d", cfg.Server.HTTPListenAddress, cfg.Server.HTTPListenPort)
 	level.Info(logger).Log("msg", "lokihouse listening", "addr", addr)
 	return http.ListenAndServe(addr, a.Router())
