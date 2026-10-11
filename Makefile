@@ -1,7 +1,13 @@
 LOKI_COMMIT := fbc3f0770b8c56ebec56fbd0fb16dc3b606822d1
+VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
+REVISION   ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null)
+BRANCH     ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+BUILD_DATE ?= $(shell date -u -d "@$${SOURCE_DATE_EPOCH:-$$(date +%s)}" +%Y-%m-%dT%H:%M:%SZ)
+PV := github.com/bzed/lokihouse/internal/build
+LDFLAGS := -X $(PV).Version=$(VERSION) -X $(PV).Revision=$(REVISION) -X $(PV).Branch=$(BRANCH) -X $(PV).BuildDate=$(BUILD_DATE) -X $(PV).BuildUser=lokihouse
 .PHONY: build test oracle oracle-downstream oracle-all
 build:
-	go build -o bin/lokihouse ./cmd/lokihouse
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/lokihouse ./cmd/lokihouse
 test:
 	go test ./...
 oracle:

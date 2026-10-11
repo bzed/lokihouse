@@ -1,10 +1,18 @@
 auth_enabled: false
 server:
   http_listen_port: 3100
+  # http_listen_address: 0.0.0.0
+  # log_level: info                # debug | info | warn | error
+  # log_format: logfmt             # logfmt | json
+  # http_server_read_timeout: 30s
+  # http_server_write_timeout: 30s # long queries need more (query_timeout is 1m)
+  # http_server_idle_timeout: 120s
+  # graceful_shutdown_timeout: 30s
 clickhouse:
   addr: ["localhost:9000"]
   database: lokihouse
   username: default
+  # password_file: /run/credentials/lokihouse.service/lokihouse.clickhouse-password
   # ClickHouse cluster (remote_servers name). Tables become Replicated*MergeTree
   # <table>_local created ON CLUSTER, plus Distributed tables; list several nodes in addr.
   # cluster: lokihouse

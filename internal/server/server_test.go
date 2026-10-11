@@ -49,7 +49,7 @@ func testConfig(t *testing.T, serverYAML, extra string) *config.Config {
 `, o.Addr[0], db, o.Auth.Username, o.Auth.Password, topo.Cluster, topo.Replicated) + extra
 	p := filepath.Join(t.TempDir(), "lokihouse.yaml")
 	require.NoError(t, os.WriteFile(p, []byte(y), 0o600))
-	cfg, err := config.Load(p)
+	cfg, err := config.Load(p, false)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		admin, err := clickhouse.Open(chtest.Options("default"))

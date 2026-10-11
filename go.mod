@@ -34,6 +34,7 @@ require (
 	github.com/buger/jsonparser v1.6.1
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/coreos/go-systemd/v22 v22.7.0
+	github.com/drone/envsubst v1.0.3
 	github.com/dustin/go-humanize v1.1.0
 	github.com/go-kit/log v0.2.1
 	github.com/google/uuid v1.6.0
