@@ -105,6 +105,9 @@ func TestOracle(t *testing.T) {
 	// Tail over WebSocket, last because it pushes new data after the fixture.
 	tailOracle(t, loki, house)
 
+	// format_query over the whole corpus (no tenant auth needed).
+	formatQueryOracle(t, loki, house)
+
 	// Assert Tier A coverage: the counter must have grown by at least the number
 	// of eligible leaves in pushdown.logql × 2 tenants. Only check when push-down
 	// is enabled (mode "on").

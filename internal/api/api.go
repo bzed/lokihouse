@@ -73,6 +73,10 @@ func (a *API) Router() http.Handler {
 		}
 	}
 	a.lokiRoutes(mux)
+	// format_query is not tenant-wrapped: Loki registers it without auth.
+	for _, m := range []string{"GET", "POST"} {
+		mux.Handle(m+" /loki/api/v1/format_query", FormatQueryHandler())
+	}
 	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ready\n")) })
 	mux.HandleFunc("GET /loki/api/v1/status/buildinfo", buildInfo)
 

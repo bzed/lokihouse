@@ -3,12 +3,15 @@
 package oracle
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +27,43 @@ type endpointCase struct {
 	params url.Values
 	mut    func(any)
 	check  func(t *testing.T, loki, house []byte)
+}
+
+// formatQueryOracle runs /loki/api/v1/format_query over every corpus query on
+// both stores and compares the responses. The route needs no tenant auth; Get
+// sends the header anyway, which is harmless.
+func formatQueryOracle(t *testing.T, loki, house string) {
+	t.Helper()
+	files, _ := filepath.Glob("corpus/*.logql")
+	if len(files) == 0 {
+		t.Fatal("no corpus files found")
+	}
+	for _, f := range files {
+		fh, err := os.Open(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sc := bufio.NewScanner(fh)
+		i := 0
+		for sc.Scan() {
+			line := strings.TrimSpace(sc.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			// Strip the "range:"/"instant:" prefix if present.
+			q := line
+			if k, rest, ok := strings.Cut(line, ":"); ok && (k == "range" || k == "instant") {
+				q = rest
+			}
+			i++
+			name := fmt.Sprintf("format_query %s#%d", filepath.Base(f), i)
+			v := url.Values{"query": {q}}
+			lb := Get(t, loki+"/loki/api/v1/format_query?"+v.Encode(), "tenant-a")
+			hb := Get(t, house+"/loki/api/v1/format_query?"+v.Encode(), "tenant-a")
+			Compare(t, name, lb, hb)
+		}
+		fh.Close()
+	}
 }
 
 // Stats and volume run on selectors without web/dev/p1, which carries the
