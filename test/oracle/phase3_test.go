@@ -34,6 +34,11 @@ var phase3Cases = []endpointCase{
 	{name: "volume_series", path: "/loki/api/v1/index/volume", params: url.Values{"query": {`{app=~"api|legacy"}`}}, check: checkVolume},
 	{name: "volume_labels_env", path: "/loki/api/v1/index/volume", params: url.Values{"query": {`{app=~"api|legacy"}`}, "targetLabels": {"env"}, "aggregateBy": {"labels"}}, check: checkVolume},
 	{name: "volume_range_10m", path: "/loki/api/v1/index/volume_range", params: url.Values{"query": {`{app="api"}`}, "step": {"600"}}, check: checkVolume},
+	{name: "detected_labels_all", path: "/loki/api/v1/detected_labels", params: url.Values{"query": {`{app=~".+"}`}}, mut: sortArrayBy("detectedLabels", "label")},
+	{name: "detected_labels_api", path: "/loki/api/v1/detected_labels", params: url.Values{"query": {`{app="api"}`}}, mut: sortArrayBy("detectedLabels", "label")},
+	{name: "detected_fields_api_json", path: "/loki/api/v1/detected_fields", params: url.Values{"query": {`{app="api"}`}, "line_limit": {"1000"}}, mut: sortArrayBy("fields", "label")},
+	{name: "detected_fields_web_logfmt", path: "/loki/api/v1/detected_fields", params: url.Values{"query": {`{app="web"}`}, "line_limit": {"1000"}}, mut: sortArrayBy("fields", "label")},
+	{name: "detected_field_values_level", path: "/loki/api/v1/detected_field/level/values", params: url.Values{"query": {`{app="web"}`}, "line_limit": {"1000"}}, mut: sortStrings("values")},
 }
 
 // phase3Endpoints runs every case for both tenants over [start, end].
@@ -162,6 +167,16 @@ func sameFloats(a, b []float64) bool {
 		}
 	}
 	return true
+}
+
+// sortStrings sorts a top-level array of strings.
+func sortStrings(field string) func(any) {
+	return func(v any) {
+		for _, m := range objects(v) {
+			arr, _ := m[field].([]any)
+			sort.Slice(arr, func(i, j int) bool { return fmt.Sprint(arr[i]) < fmt.Sprint(arr[j]) })
+		}
+	}
 }
 
 // waitStatsReady forces a flush of Loki's ingester chunks and then polls

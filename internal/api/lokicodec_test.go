@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -75,4 +76,59 @@ func TestAPI_IndexStats(t *testing.T) {
 	code, body = do(t, "GET", srv.URL+"/loki/api/v1/index/stats?"+qs.Encode(), "", "")
 	require.Equal(t, http.StatusOK, code, body)
 	require.JSONEq(t, fmt.Sprintf(`{"streams":1,"chunks":1,"bytes":%d,"entries":3}`, wantBytes), body)
+}
+
+func TestAPI_Detected(t *testing.T) {
+	srv, _ := newServerConn(t, false)
+	now := time.Now().Truncate(time.Hour).Add(30 * time.Minute)
+	vals := []string{
+		`["` + strconv.FormatInt(now.Add(-2*time.Second).UnixNano(), 10) + `","level=info msg=a status=200"]`,
+		`["` + strconv.FormatInt(now.Add(2*time.Second).UnixNano(), 10) + `","level=error msg=b status=500"]`,
+	}
+	code, body := do(t, "POST", srv.URL+"/loki/api/v1/push", "", `{"streams":[{"stream":{"app":"x"},"values":[`+strings.Join(vals, ",")+`]}]}`)
+	require.Equal(t, http.StatusNoContent, code, body)
+
+	qs := url.Values{"query": {`{app="x"}`},
+		"start":      {strconv.FormatInt(now.Add(-time.Minute).UnixNano(), 10)},
+		"end":        {strconv.FormatInt(now.Add(time.Minute).UnixNano(), 10)},
+		"line_limit": {"100"}}
+
+	// detected_fields: level, msg, status, each parsed by logfmt; status is an int.
+	code, body = do(t, "GET", srv.URL+"/loki/api/v1/detected_fields?"+qs.Encode(), "", "")
+	require.Equal(t, http.StatusOK, code, body)
+	var fields struct {
+		Fields []struct {
+			Label   string   `json:"label"`
+			Type    string   `json:"type"`
+			Parsers []string `json:"parsers"`
+		} `json:"fields"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &fields))
+	got := map[string]string{}
+	for _, f := range fields.Fields {
+		got[f.Label] = f.Type
+	}
+	require.Contains(t, got, "level")
+	require.Contains(t, got, "msg")
+	require.Equal(t, "int", got["status"], "status field must be typed int: %s", body)
+
+	// detected_field/{name}/values: the values of level.
+	code, body = do(t, "GET", srv.URL+"/loki/api/v1/detected_field/level/values?"+qs.Encode(), "", "")
+	require.Equal(t, http.StatusOK, code, body)
+	var valsResp struct {
+		Values []string `json:"values"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &valsResp))
+	require.Equal(t, []string{"error", "info"}, sortedStrings(valsResp.Values), body)
+
+	// detected_labels: 200, and no sketch keys leak into the response.
+	code, body = do(t, "GET", srv.URL+"/loki/api/v1/detected_labels?"+qs.Encode(), "", "")
+	require.Equal(t, http.StatusOK, code, body)
+	require.NotContains(t, body, "sketch", "sketch must be stripped by the cardinality filter")
+}
+
+func sortedStrings(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
 }
