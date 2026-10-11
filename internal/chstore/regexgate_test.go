@@ -9,8 +9,8 @@ import (
 func TestRegexExact_Table(t *testing.T) {
 	for re, want := range map[string]bool{
 		"error":            true,
-		"err(or)?|warn":     true,
-		"^GET /api/[a-z]+":  true,
+		"err(or)?|warn":    true,
+		"^GET /api/[a-z]+": true,
 		`\d{3} ms$`:        true,
 		"(?i)error":        false, // Go folds k→K (Kelvin), s→ſ
 		"e.r":              false,

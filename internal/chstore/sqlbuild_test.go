@@ -10,14 +10,14 @@ import (
 func TestLeadingLineFilterSQL_RegexAndPattern(t *testing.T) {
 	for q, want := range map[string]string{
 		`{a="b"} |~ "error"`:              "position(line, ?) > 0",
-		`{a="b"} |~ "err(or)?: timeout"`: "position(line, ?) > 0 AND position(line, ?) > 0",
-		`{a="b"} |~ "error|warn"`:        "(position(line, ?) > 0 OR position(line, ?) > 0)",
-		`{a="b"} |~ "(?i)error"`:         "",
-		`{a="b"} |~ "e.r"`:               "",
-		`{a="b"} !~ "error"`:             "",
+		`{a="b"} |~ "err(or)?: timeout"`:  "position(line, ?) > 0 AND position(line, ?) > 0",
+		`{a="b"} |~ "error|warn"`:         "(position(line, ?) > 0 OR position(line, ?) > 0)",
+		`{a="b"} |~ "(?i)error"`:          "",
+		`{a="b"} |~ "e.r"`:                "",
+		`{a="b"} !~ "error"`:              "",
 		`{a="b"} |> "<_> GET <path> 200"`: "line LIKE ?",
-		`{a="b"} |> "<_>"`:               "",
-		`{a="b"} |= "x" or "y" |~ "z.*"`: "(position(line, ?) > 0 OR position(line, ?) > 0)",
+		`{a="b"} |> "<_>"`:                "",
+		`{a="b"} |= "x" or "y" |~ "z.*"`:  "(position(line, ?) > 0 OR position(line, ?) > 0)",
 	} {
 		sel, err := syntax.ParseLogSelector(q, true)
 		require.NoError(t, err)

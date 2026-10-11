@@ -42,7 +42,7 @@ func Options(db string) *clickhouse.Options {
 }
 
 // New creates and migrates a fresh database, dropped (on every node) when the test ends.
-func New(t *testing.T) (driver.Conn, string) {
+func New(t testing.TB) (driver.Conn, string) {
 	t.Helper()
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)

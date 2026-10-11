@@ -17,9 +17,9 @@ import (
 type API struct {
 	// Queries executes LogQL queries, choosing between the plain engine and
 	// the push-down engine.
-	Queries Querier
-	Q       *chstore.Querier
-	Push    http.Handler
+	Queries     Querier
+	Q           *chstore.Querier
+	Push        http.Handler
 	AuthEnabled bool
 }
 

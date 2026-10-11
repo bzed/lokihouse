@@ -99,4 +99,3 @@ func TestPrefilter_Necessary(t *testing.T) {
 func lineFilterSQLFor(match string, ty log.LineMatchType) Fragment {
 	return lineFilterSQL(&syntax.LineFilterExpr{Ty: ty, Match: match})
 }
-

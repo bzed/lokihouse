@@ -74,7 +74,7 @@ func (r *rowReader) close() error {
 	return nil
 }
 
-func (r *rowReader) cur() row   { return r.curRow }
+func (r *rowReader) cur() row     { return r.curRow }
 func (r *rowReader) errOf() error { return r.err }
 
 func mdAdapters(ls labels.Labels) []logproto.LabelAdapter {

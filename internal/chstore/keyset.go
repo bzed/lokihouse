@@ -118,5 +118,5 @@ func (k *keysetReader) close() error {
 	return nil
 }
 
-func (k *keysetReader) cur() row   { return k.curRow }
+func (k *keysetReader) cur() row     { return k.curRow }
 func (k *keysetReader) errOf() error { return k.err }

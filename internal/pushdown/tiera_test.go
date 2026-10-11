@@ -204,3 +204,44 @@ func TestTierA_InstantQuery(t *testing.T) {
 		require.Equal(t, want, got, q)
 	}
 }
+
+// Loki keys range-vector series by the final label set, so a stream label and
+// an equal structured-metadata label from another stream land in one series.
+func TestTierA_MergesSeriesWithEqualLabels(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	base := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a", level="x"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "one"}}},
+		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base.Add(time.Second), Line: "two",
+			StructuredMetadata: []logproto.LabelAdapter{{Name: "level", Value: "x"}}}}},
+	}, nil))
+	want, got := runTierA(t, conn, `count_over_time({app="a"}[1m])`, base, base.Add(time.Minute), 15*time.Second)
+	require.Equal(t, want, got)
+}
+
+// Above MaxBuckets the leaf runs on Tier B instead of failing the query.
+func TestTierA_TooManyBucketsFallsBackToTierB(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	base := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "x"}}},
+	}, nil))
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	overrides, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+	b := logql.NewEngine(logql.EngineOpts{}, &chstore.Querier{Conn: conn}, overrides, nopLogger{})
+	e := &Engine{Mode: ModeOn, TierB: b, TierA: &TierA{Conn: conn, Limits: overrides, MaxBuckets: 2}, Limits: overrides, Logger: nopLogger{}}
+	p, err := logql.NewLiteralParams(`count_over_time({app="a"}[1m])`, base, base.Add(time.Minute), 15*time.Second, 0, logproto.FORWARD, 0, nil, nil)
+	require.NoError(t, err)
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	want, err := b.Query(p).Exec(ctx)
+	require.NoError(t, err)
+	before := TierALeaves.Load()
+	got, err := e.Query(ctx, p).Exec(ctx)
+	require.NoError(t, err)
+	require.Equal(t, want.Data, got.Data)
+	require.Equal(t, before, TierALeaves.Load(), "fallback is not a Tier A execution")
+}

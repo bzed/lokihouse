@@ -2,6 +2,7 @@ package pushdown
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 
 	"github.com/go-kit/log"
@@ -21,6 +22,11 @@ const (
 
 // TierALeaves counts Tier A leaf executions (for coverage assertions).
 var TierALeaves atomic.Int64
+
+// ErrFallback is returned by Leaf.Exec when a leaf that is statically eligible
+// cannot run in SQL for these parameters (e.g. too many buckets); the leaf then
+// runs on Tier B.
+var ErrFallback = errors.New("pushdown: leaf falls back to Tier B")
 
 // Leaf executes one range-aggregation leaf in SQL.
 type Leaf interface {
@@ -103,8 +109,11 @@ func (d *downstreamer) execOne(ctx context.Context, q logql.DownstreamQuery) (lo
 	if d.e.Mode == ModeOn && d.e.TierA != nil {
 		if leaf, ok := q.Params.GetExpression().(*syntax.RangeAggregationExpr); ok {
 			if d.e.TierA.Eligible(leaf) {
-				TierALeaves.Add(1)
-				return d.e.TierA.Exec(ctx, leaf, q.Params)
+				res, err := d.e.TierA.Exec(ctx, leaf, q.Params)
+				if !errors.Is(err, ErrFallback) {
+					TierALeaves.Add(1)
+					return res, err
+				}
 			}
 		}
 	}

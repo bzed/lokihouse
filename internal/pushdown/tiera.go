@@ -2,7 +2,7 @@ package pushdown
 
 import (
 	"context"
-	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -21,7 +21,7 @@ import (
 // TierA executes range-aggregation leaves in ClickHouse.
 type TierA struct {
 	Conn       driver.Conn
-	MaxBuckets int64 // default 100_000; above it the leaf is not eligible
+	MaxBuckets int64 // default 100_000; above it Exec returns ErrFallback
 	Limits     logql.Limits
 }
 
@@ -46,8 +46,9 @@ func (a *TierA) Eligible(e *syntax.RangeAggregationExpr) bool {
 
 // Exec executes the range-aggregation leaf in Tier A.
 func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logql.Params) (logqlmodel.Result, error) {
-	if a.MaxBuckets == 0 {
-		a.MaxBuckets = 100_000
+	maxBuckets := a.MaxBuckets
+	if maxBuckets == 0 {
+		maxBuckets = 100_000
 	}
 	filter, _ := chstore.ExactLineFilterSQL(e.Left.Left)
 
@@ -69,9 +70,9 @@ func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logq
 	}
 
 	origin := S - r
-	numBuckets := (E - origin)/g + 1
-	if numBuckets > a.MaxBuckets {
-		return logqlmodel.Result{}, fmt.Errorf("bucket count %d exceeds max %d", numBuckets, a.MaxBuckets)
+	numBuckets := (E-origin)/g + 1
+	if numBuckets > maxBuckets {
+		return logqlmodel.Result{}, ErrFallback
 	}
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -105,24 +106,40 @@ func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logq
 	}
 	streamEx := make(map[uint64]log.StreamSampleExtractor)
 
-	// Group rows by series key (StreamID, sorted MD string)
-	type seriesKey struct {
+	// Group rows by series label set. Series labels = the stream's real labels
+	// (BaseLabels, which does not run the line-filter pipeline) merged with the
+	// entry's structured metadata. Metadata wins over a same-named stream label;
+	// a clash spills to a _extracted copy, matching Loki's count_over_time
+	// semantics. Like Loki's range vector, different (stream, metadata) pairs
+	// with an equal label set are one series.
+	type rowKey struct {
 		StreamID uint64
 		MD       string
 	}
 	type seriesData struct {
+		lbls    labels.Labels
 		buckets map[int64]bucketCount
-		mdMap   map[string]string
 	}
-	seriesMap := make(map[seriesKey]*seriesData)
+	labelsOf := make(map[rowKey]string)
+	seriesMap := make(map[string]*seriesData)
 	for _, row := range rows {
-		key := seriesKey{row.StreamID, mapToString(row.MD)}
-		sd, ok := seriesMap[key]
+		rk := rowKey{row.StreamID, mapToString(row.MD)}
+		key, ok := labelsOf[rk]
 		if !ok {
-			sd = &seriesData{buckets: make(map[int64]bucketCount), mdMap: row.MD}
-			seriesMap[key] = sd
+			se := streamEx[row.StreamID]
+			if se == nil {
+				se = extractor.ForStream(byID[row.StreamID].Labels)
+				streamEx[row.StreamID] = se
+			}
+			ls := seriesLabels(se, labels.FromMap(row.MD))
+			key = ls.String()
+			labelsOf[rk] = key
+			if seriesMap[key] == nil {
+				seriesMap[key] = &seriesData{lbls: ls, buckets: make(map[int64]bucketCount)}
+			}
 		}
-		sd.buckets[row.Bucket] = bucketCount{row.Count, row.Bytes}
+		bc := seriesMap[key].buckets[row.Bucket]
+		seriesMap[key].buckets[row.Bucket] = bucketCount{bc.count + row.Count, bc.bytes + row.Bytes}
 	}
 
 	maxSeries := a.Limits.MaxQuerySeries(tenantID)
@@ -132,50 +149,36 @@ func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logq
 
 	// Build the result
 	var matrix promql.Matrix
-	for key, sd := range seriesMap {
-		strm := byID[key.StreamID]
-		se := streamEx[key.StreamID]
-		if se == nil {
-			se = extractor.ForStream(strm.Labels)
-			streamEx[key.StreamID] = se
+	rangeSec := time.Duration(r).Seconds() // Loki divides by selRange.Seconds()
+	for _, sd := range seriesMap {
+		// Slide over the sorted non-empty buckets with two pointers. The window
+		// (tShifted - r, tShifted] is exactly the buckets j in (lo, hi] with
+		// lo = (tShifted-r-origin)/g and hi = (tShifted-origin)/g: both divisions
+		// are exact since g divides st, r and tShifted-origin, and both bounds
+		// only grow with k.
+		js := make([]int64, 0, len(sd.buckets))
+		for j := range sd.buckets {
+			js = append(js, j)
 		}
-		// Series label set = the stream's real labels (BaseLabels, which does not
-		// run the line-filter pipeline) merged with the entry's structured
-		// metadata. Metadata wins over a same-named stream label; a clash spills
-		// to a _extracted copy, matching Loki's count_over_time semantics.
-		series := promql.Series{Metric: seriesLabels(se, labels.FromMap(sd.mdMap))}
+		slices.Sort(js)
+		var n, b uint64
+		in, out := 0, 0 // js[out:in] are the buckets inside the window
+		series := promql.Series{Metric: sd.lbls}
 		for k := int64(0); ; k++ {
-			// t = start + k*step (the evaluation time)
-			t := startNS + k*st
-			if t > endNS {
-				break
-			}
-			// t_shifted = t - offset = S + k*st
-			tShifted := t - o
+			// t = start + k*step; t_shifted = t - offset = S + k*step
+			tShifted := S + k*st
 			if tShifted > E || (st == 0 && k > 0) {
 				// st == 0 is an instant query: exactly one evaluation at start.
 				break
 			}
-			// Window: (t - r - o, t - o] = (tShifted - r, tShifted]
-			// Buckets: bucket j holds (origin + (j-1)*g, origin + j*g]
-			// A bucket j is included if it overlaps the window:
-			//   origin + (j-1)*g < tShifted  AND  origin + j*g > tShifted - r
-			//   j <= (tShifted - origin)/g   AND   j >= (tShifted - r - origin)/g + 1
-			jStart := (tShifted - r - origin) / g
-			jEnd := (tShifted - origin) / g
-			// The left bound is exclusive: if tShifted - r is exactly at a bucket
-			// boundary, we exclude that bucket.
-			if (tShifted - r - origin) % g == 0 {
-				jStart++
+			lo, hi := (tShifted-r-origin)/g, (tShifted-origin)/g
+			for ; in < len(js) && js[in] <= hi; in++ {
+				n += sd.buckets[js[in]].count
+				b += sd.buckets[js[in]].bytes
 			}
-			var n, b uint64
-			for j := jStart; j <= jEnd; j++ {
-				bc, ok := sd.buckets[j]
-				if !ok {
-					continue
-				}
-				n += bc.count
-				b += bc.bytes
+			for ; out < in && js[out] <= lo; out++ {
+				n -= sd.buckets[js[out]].count
+				b -= sd.buckets[js[out]].bytes
 			}
 			if n == 0 {
 				continue
@@ -185,17 +188,19 @@ func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logq
 			case syntax.OpRangeTypeCount:
 				val = float64(n)
 			case syntax.OpRangeTypeRate:
-				val = float64(n) / (float64(r) / 1e9)
+				val = float64(n) / rangeSec
 			case syntax.OpRangeTypeBytes:
 				val = float64(b)
 			case syntax.OpRangeTypeBytesRate:
-				val = float64(b) / (float64(r) / 1e9)
+				val = float64(b) / rangeSec
 			}
 			// Output timestamp in ms: t_shifted/1e6 + offset/1e6
 			ts := tShifted/1e6 + o/1e6
 			series.Floats = append(series.Floats, promql.FPoint{T: ts, F: val})
 		}
-		matrix = append(matrix, series)
+		if len(series.Floats) > 0 { // rows only between windows (step > range) emit no series
+			matrix = append(matrix, series)
+		}
 	}
 	sort.Slice(matrix, func(i, j int) bool {
 		return labels.Compare(matrix[i].Metric, matrix[j].Metric) < 0

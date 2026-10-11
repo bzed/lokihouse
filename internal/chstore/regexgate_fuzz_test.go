@@ -44,11 +44,11 @@ func TestRegexGate_FuzzAgainstClickHouse(t *testing.T) {
 		"warn timeout",
 		"",
 		"plain ascii only",
-		"äöü multibyte utf8",       // valid multibyte
-		"café",                       // valid multibyte
+		"äöü multibyte utf8",                  // valid multibyte
+		"café",                                // valid multibyte
 		string([]byte{0xff, 0xfe, 0xfd, 'x'}), // invalid utf-8
-		string([]byte{'a', 0xc3, 'b'}),         // lone 0xc3 (invalid)
-		string([]byte{0x01, 0x02, 'a', 0xff}),  // control + invalid
+		string([]byte{'a', 0xc3, 'b'}),        // lone 0xc3 (invalid)
+		string([]byte{0x01, 0x02, 'a', 0xff}), // control + invalid
 	}
 
 	// 3+4. For every (regex, line) pair, compare Go vs ClickHouse match().
@@ -141,4 +141,3 @@ func randomLiteral(rng *rand.Rand, n int) string {
 	}
 	return string(r)
 }
-

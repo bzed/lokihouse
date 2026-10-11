@@ -68,7 +68,7 @@ func TestProperty_TierAEqualsTierB(t *testing.T) {
 			if st == 0 {
 				e = s // instant: start == end
 			} else {
-				spanNS := int64(rng.Int63n(int64(90*time.Minute)+1))
+				spanNS := int64(rng.Int63n(int64(90*time.Minute) + 1))
 				e = s.Add(time.Duration(spanNS))
 			}
 
@@ -94,13 +94,19 @@ func TestProperty_TierAEqualsTierB(t *testing.T) {
 			// Wrappers. topk is omitted: its tie-break among equal values is
 			// undefined (Phase 1 caveat), so it needs its own dedicated case rather
 			// than this strict-equality property test.
-			switch rng.Intn(4) {
+			// Root vector aggs and root arithmetic run on Tier B (see Map); the
+			// comparison and label_replace wrappers push their leaf down.
+			switch rng.Intn(6) {
 			case 1:
 				inner = "sum by (app) (" + inner + ")"
 			case 2:
 				inner = "count(" + inner + ")"
 			case 3:
 				inner = inner + " / on() group_left sum(" + inner + ")"
+			case 4:
+				inner = inner + " > 1"
+			case 5:
+				inner = `label_replace(` + inner + `, "dst", "$1", "app", "(.*)")`
 			}
 
 			p, err := logql.NewLiteralParams(inner, s, e, st, 0, logproto.FORWARD, 0, nil, nil)

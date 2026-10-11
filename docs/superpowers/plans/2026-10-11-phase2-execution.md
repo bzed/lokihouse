@@ -23,16 +23,18 @@ on 19001-19004 (keeper + ch1-ch4).
     matchers don't drop labels. Empty windows emit no point (matches Loki).
 - [x] Task 7: Property tests Tier A == Tier B — commit
   - Note: test infrastructure added (seeded data, 3 seeds × 300 draws, coverage
-    assertion). Test skipped due to known 1-count difference at boundary points
-    between Tier A (SQL buckets) and Tier B (LogQL range vector). Needs further
-    investigation to fix the boundary condition.
+    assertion). It was skipped at first for a "1-count difference at boundary
+    points". Phase 2 review: the cause was Tier B (clickhouse-go binds time.Time
+    at second precision, truncating query bounds and keyset keys); fixed and
+    re-enabled. See docs/phase2-status.md "Fixed during the Phase 2 review".
 - [x] Task 8: Oracle coverage (pushdown corpus, modes, coverage) — commit
   - Note: added pushdown.logql corpus (40+ queries), debug endpoint for
     TierALeaves, coverage assertion, and oracle-all Makefile target. All
     modes (off, downstream, on) pass on single node and cluster.
 - [x] Task 9: Benchmark + docs/phase2-status.md — commit
-  - Note: added benchmarks showing Tier A is 14-47% faster and uses 96-99%
-    less memory than Tier B. Created phase2-status.md with exit criteria,
+  - Note: the first benchmark's seed INSERTs failed silently (empty data);
+    rewritten in the Phase 2 review. Tier A is 2.1-5.8x faster with ~97% less
+    memory. Created phase2-status.md with exit criteria,
     benchmark results, decision record, and known issues.
 
 Verification per task: `go test -count=1 ./internal/...` (single node),
