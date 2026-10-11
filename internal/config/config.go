@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/grafana/loki/v3/pkg/validation"
@@ -34,6 +35,11 @@ type Config struct {
 	Query struct {
 		Pushdown string `yaml:"pushdown"` // on | off | downstream; default on
 	} `yaml:"query"`
+	Compactor struct {
+		CompactionInterval        time.Duration `yaml:"compaction_interval"`          // delete processing loop
+		DeleteRequestCancelPeriod time.Duration `yaml:"delete_request_cancel_period"` // deletes run after this
+		DeleteMaxInterval         time.Duration `yaml:"delete_max_interval"`
+	} `yaml:"compactor"`
 	LimitsConfig validation.Limits `yaml:"limits_config"`
 }
 
@@ -52,6 +58,9 @@ func Load(path string) (*Config, error) {
 	c.ClickHouse.Username = "default"
 	c.ClickHouse.Replicated = true
 	c.Query.Pushdown = "on"
+	c.Compactor.CompactionInterval = 10 * time.Minute
+	c.Compactor.DeleteRequestCancelPeriod = 24 * time.Hour
+	c.Compactor.DeleteMaxInterval = 24 * time.Hour
 	c.LimitsConfig = defaults
 
 	b, err := os.ReadFile(path)

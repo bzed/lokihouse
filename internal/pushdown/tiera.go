@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/bzed/lokihouse/internal/chstore"
+	querierdeletion "github.com/grafana/loki/v3/pkg/querier/deletion"
 )
 
 // TierA executes range-aggregation leaves in ClickHouse.
@@ -23,6 +24,10 @@ type TierA struct {
 	Conn       driver.Conn
 	MaxBuckets int64 // default 100_000; above it Exec returns ErrFallback
 	Limits     logql.Limits
+	// Deletes, when set, is checked at the start of Exec: a pending delete
+	// overlapping the leaf's range makes the leaf fall back to Tier B, which
+	// applies Loki's delete filter.
+	Deletes querierdeletion.DeleteGetter
 }
 
 // Eligible reports whether the range-aggregation expression can be executed
@@ -73,6 +78,19 @@ func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logq
 	numBuckets := (E-origin)/g + 1
 	if numBuckets > maxBuckets {
 		return logqlmodel.Result{}, ErrFallback
+	}
+
+	// A pending delete overlapping the full read range [origin, E] cannot be
+	// evaluated in Tier A: fall back to Tier B, which filters the deleted
+	// lines out.
+	if a.Deletes != nil {
+		dels, err := querierdeletion.DeletesForUserQuery(ctx, time.Unix(0, origin), time.Unix(0, E), a.Deletes)
+		if err != nil {
+			return logqlmodel.Result{}, err
+		}
+		if len(dels) > 0 {
+			return logqlmodel.Result{}, ErrFallback // Tier B applies the delete filter
+		}
 	}
 
 	tenantID, err := tenant.TenantID(ctx)

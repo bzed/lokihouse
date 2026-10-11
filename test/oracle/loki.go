@@ -90,6 +90,7 @@ func StartLoki(t *testing.T) string {
 	dir := t.TempDir()
 	httpPort, grpcPort := freePort(t), freePort(t)
 	cfg := strings.ReplaceAll(lokiConfigTemplate, "${DIR}", dir)
+	cfg = strings.ReplaceAll(cfg, "${HTTP_PORT}", fmt.Sprintf("%d", httpPort))
 	cfgPath := filepath.Join(dir, "loki-config.yaml")
 	require := func(err error, msg string) {
 		t.Helper()
@@ -165,6 +166,7 @@ common:
     kvstore: {store: inmemory}
   storage:
     filesystem: {chunks_directory: ${DIR}/chunks, rules_directory: ${DIR}/rules}
+  compactor_address: 127.0.0.1:${HTTP_PORT}
 schema_config:
   configs:
     - from: 2020-10-24
@@ -188,6 +190,10 @@ pattern_ingester:
     ring:
       kvstore:
         store: inmemory
+compactor:
+  working_directory: ${DIR}/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
 analytics:
   reporting_enabled: false
 `

@@ -11,10 +11,16 @@ import (
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/logql/log"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
+	querierdeletion "github.com/grafana/loki/v3/pkg/querier/deletion"
+	utildeletion "github.com/grafana/loki/v3/pkg/util/deletion"
 )
 
 type Querier struct {
 	Conn driver.Conn
+	// Deletes, when set, is queried for pending delete requests and the
+	// matching lines are hidden from log and sample results, as Loki's querier
+	// does. Nil = no deletes.
+	Deletes querierdeletion.DeleteGetter
 }
 
 var _ logql.Querier = (*Querier)(nil)
@@ -69,6 +75,17 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	}
 	pipeline, err := sel.Pipeline()
 	if err != nil {
+		return nil, err
+	}
+	// Fetch the user's pending deletes (Loki's tail querier already puts them
+	// on the request, so only fetch when the field is empty) and filter lines
+	// matching them out, exactly as Loki's querier does.
+	if q.Deletes != nil && len(p.Deletes) == 0 {
+		if p.Deletes, err = querierdeletion.DeletesForUserQuery(ctx, p.Start, p.End, q.Deletes); err != nil {
+			return nil, err
+		}
+	}
+	if pipeline, err = utildeletion.SetupPipeline(p, pipeline); err != nil {
 		return nil, err
 	}
 	base, args, byID, err := q.openRows(ctx, sel, p.QueryRequest, p.Direction)
@@ -135,6 +152,17 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	}
 	if extractor == nil {
 		return iter.NoopSampleIterator, nil
+	}
+	// Fetch the user's pending deletes (Loki's tail querier already puts them
+	// on the request, so only fetch when the field is empty) and filter samples
+	// matching them out, exactly as Loki's querier does.
+	if q.Deletes != nil && len(p.SampleQueryRequest.Deletes) == 0 {
+		if p.SampleQueryRequest.Deletes, err = querierdeletion.DeletesForUserQuery(ctx, p.SampleQueryRequest.Start, p.SampleQueryRequest.End, q.Deletes); err != nil {
+			return nil, err
+		}
+	}
+	if extractor, err = utildeletion.SetupExtractor(p, extractor); err != nil {
+		return nil, err
 	}
 	sel, err := p.LogSelector()
 	if err != nil {

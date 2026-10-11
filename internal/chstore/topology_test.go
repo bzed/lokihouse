@@ -40,8 +40,8 @@ func TestTopology_ShardedWithoutReplication(t *testing.T) {
 func TestRenderSchema_SingleNode(t *testing.T) {
 	stmts, err := chstore.RenderSchema("db", chstore.Topology{})
 	require.NoError(t, err)
-	// logs, streams, stream_stats_hourly, stream_stats_hourly_mv
-	require.Len(t, stmts, 4)
+	// logs, streams, stream_stats_hourly, stream_stats_hourly_mv, delete_requests
+	require.Len(t, stmts, 5)
 	all := strings.Join(stmts, "\n")
 	require.Contains(t, all, "CREATE TABLE IF NOT EXISTS `db`.logs (")
 	require.NotContains(t, all, "ON CLUSTER")
@@ -52,12 +52,13 @@ func TestRenderSchema_SingleNode(t *testing.T) {
 func TestRenderSchema_Cluster(t *testing.T) {
 	stmts, err := chstore.RenderSchema("db", chstore.Topology{Cluster: "lokihouse", Replicated: true})
 	require.NoError(t, err)
-	// logs_local, streams_local, stream_stats_hourly_local, stream_stats_hourly_mv,
-	// Distributed stream_stats_hourly, Distributed logs, Distributed streams
-	require.Len(t, stmts, 7)
+	// logs_local, streams_local, stream_stats_hourly_local, stream_stats_hourly_mv, delete_requests_local,
+	// Distributed stream_stats_hourly, Distributed logs, Distributed streams, Distributed delete_requests
+	require.Len(t, stmts, 9)
 	require.Contains(t, stmts[0], "CREATE TABLE IF NOT EXISTS `db`.logs_local ON CLUSTER `lokihouse` (")
 	require.Contains(t, stmts[0], "ENGINE = ReplicatedReplacingMergeTree")
-	require.Contains(t, stmts[4], "ENGINE = Distributed('lokihouse', 'db', 'stream_stats_hourly_local', cityHash64(tenant, stream_id))")
-	require.Contains(t, stmts[5], "ENGINE = Distributed('lokihouse', 'db', 'logs_local', cityHash64(tenant, stream_id))")
-	require.Contains(t, stmts[6], "ENGINE = Distributed('lokihouse', 'db', 'streams_local', cityHash64(tenant, stream_id))")
+	require.Contains(t, stmts[5], "ENGINE = Distributed('lokihouse', 'db', 'stream_stats_hourly_local', cityHash64(tenant, stream_id))")
+	require.Contains(t, stmts[6], "ENGINE = Distributed('lokihouse', 'db', 'logs_local', cityHash64(tenant, stream_id))")
+	require.Contains(t, stmts[7], "ENGINE = Distributed('lokihouse', 'db', 'streams_local', cityHash64(tenant, stream_id))")
+	require.Contains(t, stmts[8], "ENGINE = Distributed('lokihouse', 'db', 'delete_requests_local', cityHash64(tenant, request_id))")
 }

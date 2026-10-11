@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -260,4 +261,78 @@ func waitStatsReady(t *testing.T, loki string, tenant string, query string, star
 		time.Sleep(5 * time.Second)
 	}
 	t.Fatalf("index/stats did not become ready within %v", timeout)
+}
+
+// deletesOracle exercises the delete API end-to-end: push a stream, delete a
+// subset of its lines, then compare the filtered query results and the delete
+// list between Loki and lokihouse. It uses a fresh tenant (tenant-del) that is
+// never queried before the delete request exists: Loki caches a tenant's delete
+// list for 5 minutes from its first lookup, so a pre-delete query would cache
+// the (empty) list and the delete would not take effect during the test.
+func deletesOracle(t *testing.T, loki, house string, base time.Time) {
+	const tenant = "tenant-del"
+
+	// 20 lines over 20 seconds, every other line contains "secret".
+	var vals []string
+	for i := 0; i < 20; i++ {
+		line := "ok"
+		if i%2 == 0 {
+			line = "secret " + strconv.Itoa(i)
+		}
+		vals = append(vals, `["`+strconv.FormatInt(base.Add(time.Duration(i)*time.Second).UnixNano(), 10)+`","`+line+`"]`)
+	}
+	body := PushBatch{Tenant: tenant, Body: []byte(`{"streams":[{"stream":{"app":"del"},"values":[` + strings.Join(vals, ",") + `]}]}`)}
+	PushBoth(t, []string{loki, house}, body)
+
+	// Send the delete request to both stores. The end must be in the past
+	// relative to the store's clock: Loki (and lokihouse, copied from Loki)
+	// reject delete requests whose end is in the future. The data spans
+	// [base, base+20s]; base-24h..base+2m covers it with margin so it is safely
+	// in the past on both stores' clocks.
+	startS, endS := strconv.FormatInt(base.Add(-24*time.Hour).Unix(), 10), strconv.FormatInt(base.Add(2*time.Minute).Unix(), 10)
+	dq := url.Values{"query": {`{app="del"} |= "secret"`}, "start": {startS}, "end": {endS}}
+	for _, u := range []string{loki, house} {
+		req, _ := http.NewRequest(http.MethodPost, u+"/loki/api/v1/delete?"+dq.Encode(), nil)
+		req.Header.Set("X-Scope-OrgID", tenant)
+		resp, err := http.DefaultClient.Do(req)
+		require := func(err error) {
+			t.Helper()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		require(err)
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("delete request to %s: status %d: %s", u, resp.StatusCode, b)
+		}
+	}
+
+	// Compare the filtered range query and an instant count.
+	rq := url.Values{"query": {`{app="del"}`}, "start": {strconv.FormatInt(base.UnixNano(), 10)}, "end": {strconv.FormatInt(base.Add(time.Minute).UnixNano(), 10)}, "step": {"60s"}, "limit": {"1000"}}
+	a, b := Get(t, loki+"/loki/api/v1/query_range?"+rq.Encode(), tenant), Get(t, house+"/loki/api/v1/query_range?"+rq.Encode(), tenant)
+	Compare(t, "del_range", a, b)
+
+	// Sanity check that Loki's own result is filtered to 10 lines.
+	var lr struct {
+		Data struct {
+			Result []struct{ Values [][]any `json:"values"` } `json:"result"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(a, &lr) == nil {
+		var n int
+		for _, s := range lr.Data.Result {
+			n += len(s.Values)
+		}
+		if n != 10 {
+			t.Fatalf("loki delete sanity check: range query returned %d lines, want 10: %s", n, a)
+		}
+	}
+
+	iv := url.Values{"query": {`count_over_time({app="del"}[1m])`}, "time": {strconv.FormatInt(base.Add(time.Minute).UnixNano(), 10)}}
+	Compare(t, "del_count", Get(t, loki+"/loki/api/v1/query?"+iv.Encode(), tenant), Get(t, house+"/loki/api/v1/query?"+iv.Encode(), tenant))
+
+	// Compare the delete list, dropping the store-specific request id and creation time.
+	CompareMut(t, "del_list", Get(t, loki+"/loki/api/v1/delete", tenant), Get(t, house+"/loki/api/v1/delete", tenant), dropArrayKeys("request_id", "created_at"))
 }

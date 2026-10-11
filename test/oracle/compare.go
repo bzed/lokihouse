@@ -248,6 +248,30 @@ func dropKeys(keys ...string) func(any) {
 	}
 }
 
+// dropArrayKeys deletes keys from every object of a JSON array. The array is
+// either the top-level value (a bare JSON array, e.g. the delete list) or the
+// "data" field of an object (e.g. query results).
+func dropArrayKeys(keys ...string) func(any) {
+	return func(v any) {
+		var arr []any
+		switch t := v.(type) {
+		case []any:
+			arr = t
+		case map[string]any:
+			if a, ok := t["data"].([]any); ok {
+				arr = a
+			}
+		}
+		for _, e := range arr {
+			if om, ok := e.(map[string]any); ok {
+				for _, k := range keys {
+					delete(om, k)
+				}
+			}
+		}
+	}
+}
+
 // sortArrayBy sorts the array field of the top-level (or "data") object by the
 // string value of key in each element.
 func sortArrayBy(field, key string) func(any) {

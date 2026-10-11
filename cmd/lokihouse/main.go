@@ -16,6 +16,7 @@ import (
 	"github.com/bzed/lokihouse/internal/api"
 	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/config"
+	"github.com/bzed/lokihouse/internal/deletes"
 	"github.com/bzed/lokihouse/internal/ingest"
 	"github.com/bzed/lokihouse/internal/patterns"
 	"github.com/bzed/lokihouse/internal/pushdown"
@@ -60,12 +61,13 @@ func run(path string, logger log.Logger) error {
 	if err != nil {
 		return err
 	}
-	q := &chstore.Querier{Conn: conn}
+	store := &deletes.Store{Conn: conn}
+	q := &chstore.Querier{Conn: conn, Deletes: store}
 	a := &api.API{
 		Queries: &pushdown.Engine{
 			Mode:   pushdown.Mode(cfg.Query.Pushdown),
 			TierB:  logql.NewEngine(logql.EngineOpts{}, q, limits, logger),
-			TierA:  &pushdown.TierA{Conn: conn, Limits: limits},
+			TierA:  &pushdown.TierA{Conn: conn, Limits: limits, Deletes: store},
 			Limits: limits,
 			Logger: logger,
 		},
@@ -73,6 +75,7 @@ func run(path string, logger log.Logger) error {
 		Push:        &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: limits, Logger: logger},
 		Limits:      limits,
 		Patterns:    &patterns.Querier{Q: q, Limits: limits},
+		Deletes:     &deletes.Handler{Store: store, Limits: limits, MaxInterval: cfg.Compactor.DeleteMaxInterval, CancelPeriod: cfg.Compactor.DeleteRequestCancelPeriod},
 		AuthEnabled: cfg.AuthEnabled,
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Server.HTTPListenAddress, cfg.Server.HTTPListenPort)

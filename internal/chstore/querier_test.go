@@ -9,12 +9,15 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/loki/v3/pkg/compactor/deletion"
+	"github.com/grafana/loki/v3/pkg/compactor/deletion/deletionproto"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
 	"github.com/grafana/loki/v3/pkg/logqlmodel"
 	"github.com/grafana/loki/v3/pkg/querier/plan"
 	"github.com/grafana/loki/v3/pkg/validation"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
@@ -222,6 +225,42 @@ func TestSelectSamples_StreamsInTimestampOrder(t *testing.T) {
 	// Equal timestamps order by stream_id (cityHash64 of the label set);
 	// at t0 the b stream comes first, then at t0+1s b, at t0+2s a.
 	require.Equal(t, []string{`{app="b"}`, `{app="a"}`, `{app="b"}`, `{app="a"}`}, got)
+}
+
+type fakeDeletes []deletionproto.DeleteRequest
+
+func (f fakeDeletes) GetAllDeleteRequestsForUser(context.Context, string, bool, *deletion.TimeRange) ([]deletionproto.DeleteRequest, error) {
+	return f, nil
+}
+
+// TestQuerier_HidesPendingDeletes verifies that SelectLogs/SelectSamples hide
+// lines matching a pending (received) delete request via Loki's filter pipeline.
+func TestQuerier_HidesPendingDeletes(t *testing.T) {
+	conn, _ := chtest.New(t)
+	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: []logproto.Entry{
+		{Timestamp: t0, Line: "keep"}, {Timestamp: t0.Add(time.Second), Line: "secret 1"},
+		{Timestamp: t0.Add(2 * time.Second), Line: "secret 2"}}})
+	del := fakeDeletes{{Query: `{app="a"} |= "secret"`, StartTime: model.TimeFromUnixNano(t0.UnixNano()),
+		EndTime: model.TimeFromUnixNano(t0.Add(time.Second).UnixNano()), Status: deletionproto.StatusReceived}}
+	ng := engine(t, &chstore.Querier{Conn: conn, Deletes: del})
+	res := run(t, ng, `{app="a"}`, t0, t0.Add(time.Minute), 0, logproto.FORWARD, 100)
+	require.Equal(t, []string{"keep", "secret 2"}, lines(res.Data.(logqlmodel.Streams)[0]), "only inside [start, end]")
+	m := run(t, ng, `count_over_time({app="a"}[1m])`, t0.Add(time.Minute), t0.Add(time.Minute), 0, logproto.FORWARD, 0)
+	require.Equal(t, 1.0, m.Data.(promql.Vector)[0].F)
+}
+
+// TestQuerier_HidesPendingDeletesAdjacent verifies the filter hides matching
+// lines even when the delete range starts exactly at the first row.
+func TestQuerier_HidesPendingDeletesAdjacent(t *testing.T) {
+	conn, _ := chtest.New(t)
+	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: []logproto.Entry{
+		{Timestamp: t0, Line: "secret 0"}, {Timestamp: t0.Add(time.Second), Line: "secret 1"},
+		{Timestamp: t0.Add(2 * time.Second), Line: "keep"}}})
+	del := fakeDeletes{{Query: `{app="a"} |= "secret"`, StartTime: model.TimeFromUnixNano(t0.UnixNano()),
+		EndTime: model.TimeFromUnixNano(t0.Add(time.Second).UnixNano()), Status: deletionproto.StatusReceived}}
+	ng := engine(t, &chstore.Querier{Conn: conn, Deletes: del})
+	res := run(t, ng, `{app="a"}`, t0, t0.Add(time.Minute), 0, logproto.FORWARD, 100)
+	require.Equal(t, []string{"keep"}, lines(res.Data.(logqlmodel.Streams)[0]))
 }
 
 func lines(s logproto.Stream) []string {

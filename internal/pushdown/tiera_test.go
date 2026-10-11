@@ -8,10 +8,14 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/loki/v3/pkg/compactor/deletion"
+	"github.com/grafana/loki/v3/pkg/compactor/deletion/deletionproto"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
 	"github.com/grafana/loki/v3/pkg/validation"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bzed/lokihouse/internal/chstore"
@@ -221,6 +225,42 @@ func TestTierA_MergesSeriesWithEqualLabels(t *testing.T) {
 }
 
 // Above MaxBuckets the leaf runs on Tier B instead of failing the query.
+// fakeDeletes returns a fixed set of delete requests.
+type fakeDeletes []deletionproto.DeleteRequest
+
+func (f fakeDeletes) GetAllDeleteRequestsForUser(context.Context, string, bool, *deletion.TimeRange) ([]deletionproto.DeleteRequest, error) {
+	return f, nil
+}
+
+func TestTierA_PendingDeleteFallsBack(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	base := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "x"}, {Timestamp: base.Add(time.Second), Line: "secret"}}},
+	}, nil))
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	overrides, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+	del := fakeDeletes{{Query: `{app="a"} |= "secret"`, StartTime: model.TimeFromUnixNano(base.UnixNano()),
+		EndTime: model.TimeFromUnixNano(base.Add(time.Minute).UnixNano()), Status: deletionproto.StatusReceived}}
+	b := logql.NewEngine(logql.EngineOpts{}, &chstore.Querier{Conn: conn, Deletes: del}, overrides, nopLogger{})
+	a := &TierA{Conn: conn, Limits: overrides, Deletes: del}
+	e := &Engine{Mode: ModeOn, TierB: b, TierA: a, Limits: overrides, Logger: nopLogger{}}
+	p, err := logql.NewLiteralParams(`count_over_time({app="a"}[1m])`, base, base.Add(time.Minute), 15*time.Second, 0, logproto.FORWARD, 0, nil, nil)
+	require.NoError(t, err)
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	want, err := b.Query(p).Exec(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1.0, want.Data.(promql.Matrix)[0].Floats[0].F, "Tier B hides the deleted line")
+	before := TierALeaves.Load()
+	got, err := e.Query(ctx, p).Exec(ctx)
+	require.NoError(t, err)
+	require.Equal(t, want.Data, got.Data)
+	require.Equal(t, before, TierALeaves.Load(), "fallback is not a Tier A execution")
+}
+
 func TestTierA_TooManyBucketsFallsBackToTierB(t *testing.T) {
 	conn, _ := chtest.New(t)
 	w := &chstore.Writer{Conn: conn}

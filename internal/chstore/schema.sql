@@ -58,6 +58,20 @@ SELECT tenant, stream_id, toStartOfHour(toDateTime(ts, 'UTC')) AS hour, retentio
        min(ts) AS min_ts, max(ts) AS max_ts
 FROM {{.DBName}}.{{.Local "logs"}}
 GROUP BY tenant, stream_id, hour, retention_days;
+
+-- delete_requests: Loki delete API requests. Rows are never updated in place: a status
+-- change inserts a newer version and readers take argMax(…, version).
+CREATE TABLE IF NOT EXISTS {{.DBName}}.{{.Local "delete_requests"}}{{with .OnCluster}} {{.}}{{end}} (
+  tenant     LowCardinality(String),
+  request_id String,
+  query      String,
+  start_ms   Int64,
+  end_ms     Int64,
+  created_ms Int64,
+  status     LowCardinality(String), -- received | processed | cancelled
+  version    UInt64
+) ENGINE = {{.Engine "ReplacingMergeTree"}}
+ORDER BY (tenant, request_id);
 {{if .Cluster}}
 CREATE TABLE IF NOT EXISTS {{.DBName}}.stream_stats_hourly{{with .OnCluster}} {{.}}{{end}} AS {{.DBName}}.stream_stats_hourly_local
 ENGINE = Distributed({{lit .Cluster}}, {{lit .DB}}, 'stream_stats_hourly_local', cityHash64(tenant, stream_id));
@@ -67,4 +81,7 @@ ENGINE = Distributed({{lit .Cluster}}, {{lit .DB}}, 'logs_local', cityHash64(ten
 
 CREATE TABLE IF NOT EXISTS {{.DBName}}.streams{{with .OnCluster}} {{.}}{{end}} AS {{.DBName}}.streams_local
 ENGINE = Distributed({{lit .Cluster}}, {{lit .DB}}, 'streams_local', cityHash64(tenant, stream_id));
+
+CREATE TABLE IF NOT EXISTS {{.DBName}}.delete_requests{{with .OnCluster}} {{.}}{{end}} AS {{.DBName}}.delete_requests_local
+ENGINE = Distributed({{lit .Cluster}}, {{lit .DB}}, 'delete_requests_local', cityHash64(tenant, request_id));
 {{end}}

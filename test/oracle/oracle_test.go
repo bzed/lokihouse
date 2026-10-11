@@ -98,6 +98,10 @@ func TestOracle(t *testing.T) {
 
 	phase3Endpoints(t, loki, house, start.Add(-time.Minute), end)
 
+	// The delete API, on a fresh tenant (Loki caches a tenant's delete list for
+	// 5 minutes from its first lookup, so tenant-del must not be queried above).
+	deletesOracle(t, loki, house, start)
+
 	// Assert Tier A coverage: the counter must have grown by at least the number
 	// of eligible leaves in pushdown.logql × 2 tenants. Only check when push-down
 	// is enabled (mode "on").

@@ -22,6 +22,7 @@ import (
 	"github.com/bzed/lokihouse/internal/api"
 	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/lokihouse/internal/deletes"
 	"github.com/bzed/lokihouse/internal/ingest"
 	"github.com/bzed/lokihouse/internal/patterns"
 )
@@ -44,13 +45,15 @@ func newServerConnWithLimits(t *testing.T, auth bool, mutate func(*validation.Li
 	}
 	o, err := validation.NewOverrides(l, nil)
 	require.NoError(t, err)
-	q := &chstore.Querier{Conn: conn}
+	store := &deletes.Store{Conn: conn}
+	q := &chstore.Querier{Conn: conn, Deletes: store}
 	a := &api.API{
 		Queries:     api.NewPlainQuerier(logql.NewEngine(logql.EngineOpts{}, q, o, log.NewNopLogger())),
 		Q:           q,
 		Push:        &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: o, Logger: log.NewNopLogger()},
 		Limits:      o,
 		Patterns:    &patterns.Querier{Q: q, Limits: o},
+		Deletes:     &deletes.Handler{Store: store, Limits: o, MaxInterval: time.Hour, CancelPeriod: time.Hour},
 		AuthEnabled: auth,
 	}
 	srv := httptest.NewServer(a.Router())

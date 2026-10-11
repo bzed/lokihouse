@@ -29,6 +29,18 @@ limits_config: {max_line_size: 1024}
 	require.Equal(t, chstore.Topology{}, c.Topology())                                     // single node by default
 }
 
+func TestLoad_Compactor(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(`
+compactor: {delete_request_cancel_period: 2h}
+`), 0o600))
+	c, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, 2*time.Hour, c.Compactor.DeleteRequestCancelPeriod)
+	require.Equal(t, 10*time.Minute, c.Compactor.CompactionInterval) // default kept
+	require.Equal(t, 24*time.Hour, c.Compactor.DeleteMaxInterval)     // default kept
+}
+
 func TestLoad_Cluster(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
 	require.NoError(t, os.WriteFile(p, []byte(`

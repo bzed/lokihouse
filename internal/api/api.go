@@ -12,6 +12,7 @@ import (
 	serverutil "github.com/grafana/loki/v3/pkg/util/server"
 
 	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/deletes"
 	"github.com/bzed/lokihouse/internal/patterns"
 	"github.com/bzed/lokihouse/internal/pushdown"
 )
@@ -25,6 +26,7 @@ type API struct {
 	Limits      *validation.Overrides
 	AuthEnabled bool
 	Patterns    *patterns.Querier
+	Deletes     *deletes.Handler
 }
 
 // Querier executes a LogQL query. Both the plain *logql.QueryEngine and the
@@ -56,6 +58,13 @@ func (a *API) Router() http.Handler {
 	}
 	mux.Handle("GET /loki/api/v1/labels", t(http.HandlerFunc(a.labels)))
 	mux.Handle("GET /loki/api/v1/label/{name}/values", t(http.HandlerFunc(a.labelValues)))
+	if a.Deletes != nil {
+		g := func(h http.HandlerFunc) http.Handler { return t(a.Deletes.Gate(h)) }
+		mux.Handle("PUT /loki/api/v1/delete", g(a.Deletes.Add))
+		mux.Handle("POST /loki/api/v1/delete", g(a.Deletes.Add))
+		mux.Handle("GET /loki/api/v1/delete", g(a.Deletes.List))
+		mux.Handle("DELETE /loki/api/v1/delete", g(a.Deletes.Cancel))
+	}
 	a.lokiRoutes(mux)
 	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ready\n")) })
 	mux.HandleFunc("GET /loki/api/v1/status/buildinfo", buildInfo)
