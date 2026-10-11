@@ -84,13 +84,15 @@ func dirExists(p string) bool {
 	return err == nil && fi.IsDir()
 }
 
-// StartLoki builds (once) and starts Loki on free ports with the oracle config.
-func StartLoki(t *testing.T) string {
+// StartLoki builds (once) and starts Loki on free ports with the oracle config
+// plus the extra YAML appended.
+func StartLoki(t *testing.T, extra string) string {
 	bin := lokiBin(t)
 	dir := t.TempDir()
 	httpPort, grpcPort := freePort(t), freePort(t)
 	cfg := strings.ReplaceAll(lokiConfigTemplate, "${DIR}", dir)
 	cfg = strings.ReplaceAll(cfg, "${HTTP_PORT}", fmt.Sprintf("%d", httpPort))
+	cfg += extra
 	cfgPath := filepath.Join(dir, "loki-config.yaml")
 	require := func(err error, msg string) {
 		t.Helper()
@@ -165,7 +167,7 @@ common:
   ring:
     kvstore: {store: inmemory}
   storage:
-    filesystem: {chunks_directory: ${DIR}/chunks, rules_directory: ${DIR}/rules}
+    filesystem: {chunks_directory: ${DIR}/chunks}
   compactor_address: 127.0.0.1:${HTTP_PORT}
 schema_config:
   configs:

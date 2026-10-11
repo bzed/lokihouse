@@ -21,8 +21,9 @@ import (
 )
 
 // StartLokihouse builds bin/lokihouse, starts it against a fresh ClickHouse
-// database and waits for /ready.
-func StartLokihouse(t *testing.T) string {
+// database with the extra YAML appended to the generated config, and waits
+// for /ready.
+func StartLokihouse(t *testing.T, extra string) string {
 	// Build the binary from the repository root (go run sets cwd to the package dir).
 	repo, err := repoRoot()
 	if err != nil {
@@ -77,7 +78,7 @@ query:
 limits_config:
   max_query_series: 100000
   volume_enabled: true
-`, port, chAddr(), db, topo.Cluster, topo.Replicated, pushdown)
+`, port, chAddr(), db, topo.Cluster, topo.Replicated, pushdown)+extra
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
