@@ -14,8 +14,13 @@ on 19001-19004 (keeper + ch1-ch4).
   - Note: property test inlines the line as a SQL literal (clickhouse-go mis-binds a
     leading ?-as-alias subquery arg).
 - [x] Task 4: Regex parity gate (regexgate.go) — commit
-- [ ] Task 5: Leaf mapper + Downstreamer, pushdown mode — commit
-- [ ] Task 6: Tier A leaf (buckets.go, tiera.go) — commit
+- [x] Task 5: Leaf mapper + Downstreamer, pushdown mode — commit
+  - Note: root vector agg / root arith binop over a range-agg leaf diverges by
+    ~1e-16 in float order; Map returns ok=false for those shapes (Tier B).
+- [x] Task 6: Tier A leaf (buckets.go, tiera.go) — commit
+  - Note: series labels come from the stream's real labels (BaseLabels) merged
+    with structured metadata, not from the selector matchers — so regex/inequality
+    matchers don't drop labels. Empty windows emit no point (matches Loki).
 - [ ] Task 7: Property tests Tier A == Tier B — commit
 - [ ] Task 8: Oracle coverage (pushdown corpus, modes, coverage) — commit
 - [ ] Task 9: Benchmark + docs/phase2-status.md — commit
