@@ -26,3 +26,23 @@ test-cluster: cluster-up
 	$(CLUSTER_ENV) go test -count=1 ./...
 oracle-cluster: cluster-up
 	$(CLUSTER_ENV) go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
+
+GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+# Raised to 85 at the end of Task 5; never lowered afterwards.
+COVERAGE_MIN ?= 70
+
+.PHONY: fmt fmt-check vet lint vuln cover check
+fmt:
+	$(GOLANGCI_LINT) fmt
+fmt-check:
+	@out=$$($(GOLANGCI_LINT) fmt --diff); if [ -n "$$out" ]; then echo "$$out"; echo "run: make fmt" >&2; exit 1; fi
+vet:
+	go vet ./...
+	go vet -tags oracle,bench ./test/...
+lint:
+	$(GOLANGCI_LINT) run ./...
+vuln:
+	sh scripts/govulncheck.sh
+cover:
+	COVERAGE_MIN=$(COVERAGE_MIN) sh scripts/coverage.sh
+check: fmt-check vet lint vuln cover

@@ -1,0 +1,66 @@
+version: "2"
+run:
+  build-tags: [oracle, bench]
+  timeout: 15m
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - nolintlint
+    - revive
+    - unconvert
+  settings:
+    errcheck:
+      exclude-functions:
+        # go-kit logger errors are not actionable (Loki ignores them as well).
+        - (github.com/go-kit/log.Logger).Log
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: var-naming
+  exclusions:
+    generated: strict
+    presets: [std-error-handling]
+    rules:
+      # Tests: math/rand for reproducible fixtures, requests without context are fine.
+      - path: _test\.go
+        linters: [gosec, noctx]
+      # The oracle harness launches Loki, writes temp files and fetches URLs it builds.
+      - path: ^test/
+        linters: [gosec, noctx]
+      # Copied verbatim from Loki's distributor; keep the diff to upstream minimal.
+      - path: ^internal/ingest/distcopy/
+        linters: [gosec, revive, gocritic]
+formatters:
+  enable: [gofmt, goimports]
+  settings:
+    goimports:
+      local-prefixes: [github.com/bzed/lokihouse]

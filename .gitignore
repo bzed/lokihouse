@@ -1,2 +1,4 @@
 bin/
 .cache/
+coverage.out
+site/

@@ -2,6 +2,8 @@ module github.com/bzed/lokihouse
 
 go 1.27.1
 
+toolchain go1.27.2
+
 replace github.com/Azure/azure-sdk-for-go => github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 
 replace github.com/Azure/azure-sdk-for-go/sdk/storage/azblob => github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.0
