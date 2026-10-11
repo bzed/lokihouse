@@ -15,8 +15,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/bzed/lokihouse/internal/chstore"
 	querierdeletion "github.com/grafana/loki/v3/pkg/querier/deletion"
+
+	"github.com/bzed/lokihouse/internal/chstore"
 )
 
 // TierA executes range-aggregation leaves in ClickHouse.
