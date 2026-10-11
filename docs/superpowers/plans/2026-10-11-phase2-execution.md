@@ -10,7 +10,9 @@ on 19001-19004 (keeper + ch1-ch4).
     by stream_id (cityHash64) as the SQL guarantees. Test fixed, semantics unchanged.
 - [x] Task 2: Keyset-chunked log reads (keyset.go) — commit
   - Found & fixed: empty base on no-streams path produced bare `LIMIT ?` SQL.
-- [ ] Task 3: Necessary pre-filters from regex/pattern filters — commit
+- [x] Task 3: Necessary pre-filters from regex/pattern filters — commit
+  - Note: property test inlines the line as a SQL literal (clickhouse-go mis-binds a
+    leading ?-as-alias subquery arg).
 - [ ] Task 4: Regex parity gate (regexgate.go) — commit
 - [ ] Task 5: Leaf mapper + Downstreamer, pushdown mode — commit
 - [ ] Task 6: Tier A leaf (buckets.go, tiera.go) — commit
