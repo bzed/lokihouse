@@ -3,12 +3,15 @@ package api
 import (
 	"context"
 	"net/http"
+	"os"
+	"strconv"
 
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/logql"
 	serverutil "github.com/grafana/loki/v3/pkg/util/server"
 
 	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/pushdown"
 )
 
 type API struct {
@@ -51,6 +54,14 @@ func (a *API) Router() http.Handler {
 	mux.Handle("GET /loki/api/v1/label/{name}/values", t(http.HandlerFunc(a.labelValues)))
 	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ready\n")) })
 	mux.HandleFunc("GET /loki/api/v1/status/buildinfo", buildInfo)
+
+	// Debug endpoint: Tier A leaf counter (only when LOKIHOUSE_DEBUG=1)
+	if os.Getenv("LOKIHOUSE_DEBUG") == "1" {
+		mux.HandleFunc("GET /debug/lokihouse/tiera_leaves", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(strconv.FormatInt(pushdown.TierALeaves.Load(), 10)))
+		})
+	}
+
 	return mux
 }
 

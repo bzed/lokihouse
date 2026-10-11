@@ -1,0 +1,91 @@
+# Push-down coverage corpus: eligible range-aggregation leaves that should
+# execute in Tier A when push-down is enabled.
+#
+# Covers:
+# - each eligible op: count_over_time, rate, bytes_over_time, bytes_rate
+# - offsets
+# - ranges that do not divide the 60s step (45s, 7m)
+# - regex filters that pass and fail the gate
+# - wrappers: sum by, / on(), topk with distinct values, label_replace
+# - leaves mixed with ineligible siblings
+
+# count_over_time
+range:count_over_time({app="web"}[5m])
+range:count_over_time({app="web"} |= "error"[5m])
+range:count_over_time({app="api"} |~ "status=(4|5)\d\d"[5m])
+range:count_over_time({app="web"} != "GET"[5m])
+
+# rate
+range:rate({app="web"}[1m])
+range:rate({app="api"} |= "error"[1m])
+range:rate({app="web"} |~ "status=(4|5)\d\d"[1m])
+
+# bytes_over_time
+range:bytes_over_time({app="web"}[10m])
+range:bytes_over_time({app="api"} |= "error"[10m])
+
+# bytes_rate
+range:bytes_rate({app="web"}[1m])
+range:bytes_rate({app="api"} |~ "status=(4|5)\d\d"[1m])
+
+# Offsets
+range:count_over_time({app="web"}[5m] offset 1h)
+range:rate({app="api"}[1m] offset 30m)
+range:bytes_over_time({app="web"}[10m] offset 2h)
+
+# Ranges that do not divide the 60s step
+range:count_over_time({app="web"}[45s])
+range:rate({app="api"}[7m])
+range:bytes_over_time({app="web"}[45s])
+range:bytes_rate({app="api"}[7m])
+
+# Regex filters that pass the gate
+range:count_over_time({app="web"} |~ "status=(4|5)\d\d"[5m])
+range:rate({app="api"} |~ "level=error"[1m])
+range:bytes_over_time({app="web"} |~ "GET|POST|DELETE"[10m])
+
+# Regex filters that fail the gate (should run in Tier B)
+range:count_over_time({app="web"} |~ ".*error.*"[5m])
+range:rate({app="api"} |~ "level=(error|warn)"[1m])
+
+# Wrappers
+range:sum by (app) (count_over_time({app=~".+"}[5m]))
+range:sum by (env) (rate({app="web"} |= "error"[1m]))
+range:count(count_over_time({app=~".+"}[5m]))
+range:count(rate({app="web"}[1m]))
+
+# Division with on()
+range:count_over_time({app="web"} |= "error"[5m]) / on() group_left sum(count_over_time({app="web"}[5m]))
+range:rate({app="api"} |= "error"[1m]) / on() group_left sum(rate({app="api"}[1m]))
+
+# topk with distinct values
+range:topk(2, sum by (pod) (count_over_time({app="web"}[5m])))
+range:topk(3, sum by (env) (rate({app="api"}[1m])))
+
+# label_replace
+range:label_replace(sum by (pod) (count_over_time({app="web"}[5m])), "p", "$1", "pod", "(.*)")
+range:label_replace(rate({app="api"}[1m]), "env", "$1", "env", "(.*)")
+
+# Mixed eligible and ineligible leaves
+range:sum by (app) (count_over_time({app="web"}[5m])) + sum by (app) (count_over_time({app="api"} | logfmt[5m]))
+range:rate({app="web"}[1m]) + rate({app="api"} | json[1m])
+range:count_over_time({app="web"}[5m]) / count_over_time({app="api"} | logfmt[5m])
+
+# Instant queries
+instant:count_over_time({app="web"}[5m])
+instant:rate({app="api"}[1m])
+instant:sum by (app) (count_over_time({app=~".+"}[5m]))
+
+# Non-eligible operations (should run in Tier B)
+range:avg_over_time({app="web"}[5m])
+range:quantile_over_time(0.95, {app="api"}[5m])
+range:max_over_time({app="web"}[5m])
+range:min_over_time({app="api"}[5m])
+
+# Unwrap (not eligible for Tier A)
+range:count_over_time({app="api"} | logfmt | unwrap bytes[5m])
+range:rate({app="web"} | json | unwrap latency_ms[1m])
+
+# Grouping by (not eligible for Tier A)
+range:count_over_time({app="web"}[5m]) by (pod)
+range:rate({app="api"}[1m]) by (env)

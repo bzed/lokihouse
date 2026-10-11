@@ -14,11 +14,19 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/grafana/loki/v3/pkg/logql/syntax"
+
+	"github.com/bzed/lokihouse/internal/pushdown"
 )
 
 func TestOracle(t *testing.T) {
 	loki := StartLoki(t)
 	house := StartLokihouse(t)
+
+	// Get initial Tier A leaf count (if debug endpoint is available)
+	initialTierALeaves, hasDebug := getTierALeaves(t, house)
+
 	// Recent enough that Loki still serves all of it from ingester memory: entries older
 	// than ~2h40m are flushed and drop out of query results (seen with the old
 	// hour-truncated base, which left the fixture up to 3h old).
@@ -74,6 +82,20 @@ func TestOracle(t *testing.T) {
 			qs := sep + "start=" + strconv.FormatInt(start.UnixNano(), 10) + "&end=" + strconv.FormatInt(end.UnixNano(), 10)
 			Compare(t, p, Get(t, loki+p+qs, "tenant-a"), Get(t, house+p+qs, "tenant-a"))
 		})
+	}
+
+	// Assert Tier A coverage: the counter must have grown by at least the number
+	// of eligible leaves in pushdown.logql × 2 tenants. Only check when push-down
+	// is enabled (mode "on").
+	if hasDebug && os.Getenv("LOKIHOUSE_ORACLE_PUSHDOWN") == "" {
+		finalTierALeaves, _ := getTierALeaves(t, house)
+		growth := finalTierALeaves - initialTierALeaves
+		expected := int64(countEligibleLeaves(t, "corpus/pushdown.logql") * 2) // 2 tenants
+		if growth < expected {
+			t.Errorf("Tier A coverage: counter grew by %d, want >= %d (eligible leaves in pushdown.logql × 2 tenants)", growth, expected)
+		} else {
+			t.Logf("Tier A coverage: counter grew by %d (expected >= %d)", growth, expected)
+		}
 	}
 }
 
@@ -152,4 +174,70 @@ func WaitQueryable(t *testing.T, loki string, base time.Time) {
 		time.Sleep(time.Second)
 	}
 	t.Fatalf("loki count is %q, want %d after 300s", last, totalEntries)
+}
+
+// getTierALeaves fetches the Tier A leaf counter from the debug endpoint.
+// Returns the count and whether the endpoint was available.
+func getTierALeaves(t *testing.T, house string) (int64, bool) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, house+"/debug/lokihouse/tiera_leaves", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, false
+	}
+	body, _ := io.ReadAll(resp.Body)
+	n, err := strconv.ParseInt(strings.TrimSpace(string(body)), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// countEligibleLeaves parses the pushdown corpus and counts the number of
+// eligible range-aggregation leaves. It uses a TierA with no connection
+// because Eligible is static.
+func countEligibleLeaves(t *testing.T, corpusFile string) int {
+	t.Helper()
+	fh, err := os.Open(corpusFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fh.Close()
+
+	var a pushdown.TierA
+	count := 0
+	sc := bufio.NewScanner(fh)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Strip the prefix
+		q := line
+		if k, rest, ok := strings.Cut(line, ":"); ok && (k == "range" || k == "instant") {
+			q = rest
+		}
+		// Parse and count eligible leaves
+		expr, err := syntax.ParseSampleExpr(q)
+		if err != nil {
+			continue // Not a valid sample expression, skip
+		}
+		_, leaves, ok := pushdown.Map(expr)
+		if !ok {
+			continue
+		}
+		for _, leaf := range leaves {
+			if a.Eligible(leaf) {
+				count++
+			}
+		}
+	}
+	return count
 }
