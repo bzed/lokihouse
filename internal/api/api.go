@@ -27,6 +27,7 @@ type API struct {
 	AuthEnabled bool
 	Patterns    *patterns.Querier
 	Deletes     *deletes.Handler
+	Tail        http.Handler
 }
 
 // Querier executes a LogQL query. Both the plain *logql.QueryEngine and the
@@ -64,6 +65,12 @@ func (a *API) Router() http.Handler {
 		mux.Handle("POST /loki/api/v1/delete", g(a.Deletes.Add))
 		mux.Handle("GET /loki/api/v1/delete", g(a.Deletes.List))
 		mux.Handle("DELETE /loki/api/v1/delete", g(a.Deletes.Cancel))
+	}
+	if a.Tail != nil {
+		for _, m := range []string{"GET", "POST"} {
+			mux.Handle(m+" /loki/api/v1/tail", t(a.Tail))
+			mux.Handle(m+" /api/prom/tail", t(a.Tail))
+		}
 	}
 	a.lokiRoutes(mux)
 	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ready\n")) })

@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/loki/v3/pkg/logql"
+	"github.com/grafana/loki/v3/pkg/querier/tail"
 	"github.com/grafana/loki/v3/pkg/validation"
 
 	"github.com/bzed/lokihouse/internal/api"
@@ -19,6 +21,7 @@ import (
 	"github.com/bzed/lokihouse/internal/deletes"
 	"github.com/bzed/lokihouse/internal/ingest"
 	"github.com/bzed/lokihouse/internal/patterns"
+	lhtail "github.com/bzed/lokihouse/internal/tail"
 	"github.com/bzed/lokihouse/internal/pushdown"
 )
 
@@ -78,6 +81,15 @@ func run(path string, logger log.Logger) error {
 		Deletes:     &deletes.Handler{Store: store, Limits: limits, MaxInterval: cfg.Compactor.DeleteMaxInterval, CancelPeriod: cfg.Compactor.DeleteRequestCancelPeriod},
 		AuthEnabled: cfg.AuthEnabled,
 	}
+	// tail.MaxDuration is Loki's -querier.tail-max-duration default (1h).
+	tq := tail.NewQuerier(&lhtail.Ingester{Q: q}, q, store, limits, time.Hour, tail.NewMetrics(nil), logger)
+	// loghttp.ParseTailQuery reads the query via r.Form, which the net/http
+	// server does not populate automatically; parse it first so the selector is
+	// visible (r.URL.Query alone would leave r.Form empty).
+	a.Tail = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		tq.TailHandler(w, r)
+	})
 	// Physical deletion loop: after the cancel period, rewrite the deleted rows.
 	go (&deletes.Processor{
 		Store: store, Conn: conn, DB: cfg.ClickHouse.Database, Topo: cfg.Topology(),
