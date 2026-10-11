@@ -58,6 +58,12 @@ func (h lokiHandler) Do(ctx context.Context, req queryrangebase.Request) (queryr
 		return queryrange.NewDetectedFieldsHandler(logs, logs, h.a.Limits).Do(ctx, r)
 	case *queryrange.LokiRequest:
 		return h.logQuery(ctx, r)
+	case *logproto.QueryPatternsRequest:
+		res, err := h.a.Patterns.Query(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		return &queryrange.QueryPatternsResponse{Response: res}, nil
 	default:
 		return nil, httpgrpc.Errorf(http.StatusBadRequest, "unsupported request type %T", req)
 	}
@@ -91,6 +97,7 @@ func (a *API) lokiRoutes(mux *http.ServeMux) {
 		mux.Handle(m+" /loki/api/v1/index/volume_range", codec)
 		mux.Handle(m+" /loki/api/v1/detected_labels", codec)
 		mux.Handle(m+" /loki/api/v1/detected_fields", codec)
+		mux.Handle(m+" /loki/api/v1/patterns", codec)
 		// loghttp reads {name} with gorilla mux.Vars.
 		mux.Handle(m+" /loki/api/v1/detected_field/{name}/values", a.tenant(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			plain.ServeHTTP(w, gmux.SetURLVars(r, map[string]string{"name": r.PathValue("name")}))

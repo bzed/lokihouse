@@ -182,6 +182,12 @@ limits_config:
   # Loki quirk), so a large value is used instead of 0.
   max_query_series: 100000
   volume_enabled: true
+pattern_ingester:
+  enabled: true
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
 analytics:
   reporting_enabled: false
 `

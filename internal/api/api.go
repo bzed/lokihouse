@@ -12,6 +12,7 @@ import (
 	serverutil "github.com/grafana/loki/v3/pkg/util/server"
 
 	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/lokihouse/internal/patterns"
 	"github.com/bzed/lokihouse/internal/pushdown"
 )
 
@@ -23,6 +24,7 @@ type API struct {
 	Push        http.Handler
 	Limits      *validation.Overrides
 	AuthEnabled bool
+	Patterns    *patterns.Querier
 }
 
 // Querier executes a LogQL query. Both the plain *logql.QueryEngine and the

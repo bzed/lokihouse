@@ -28,9 +28,13 @@ replace github.com/grafana/loki/pkg/push => github.com/grafana/loki/pkg/push v0.
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.49.0
+	github.com/axiomhq/hyperloglog v0.3.0
 	github.com/buger/jsonparser v1.6.1
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/dustin/go-humanize v1.1.0
 	github.com/go-kit/log v0.2.1
+	github.com/google/uuid v1.6.0
+	github.com/gorilla/mux v1.8.1
 	github.com/grafana/dskit v0.0.0-20260928073014-b6a53f6bee29
 	github.com/grafana/loki/v3 v3.0.0-20261010092436-fbc3f0770b8c
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
@@ -91,7 +95,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.2 // indirect
 	github.com/aws/smithy-go v1.28.4 // indirect
-	github.com/axiomhq/hyperloglog v0.3.0 // indirect
 	github.com/baidubce/bce-sdk-go v0.9.276 // indirect
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -109,7 +112,6 @@ require (
 	github.com/dgryski/go-metro v0.0.0-20250106013310-edb8663e5e33 // indirect
 	github.com/dolthub/maphash v0.1.0 // indirect
 	github.com/dolthub/swiss v0.2.1 // indirect
-	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/edsrzf/mmap-go v1.2.1-0.20241212181136-fad1cd13edbd // indirect
 	github.com/efficientgo/core v1.0.0-rc.3 // indirect
@@ -162,10 +164,8 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.11 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.23 // indirect
 	github.com/googleapis/gax-go/v2 v2.26.2 // indirect
-	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grafana/gomemcache v0.0.0-20260728143316-9448343bd654 // indirect
 	github.com/grafana/jsonparser v0.0.0-20250909130937-5f438463be34 // indirect

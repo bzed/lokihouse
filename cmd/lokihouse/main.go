@@ -17,6 +17,7 @@ import (
 	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/config"
 	"github.com/bzed/lokihouse/internal/ingest"
+	"github.com/bzed/lokihouse/internal/patterns"
 	"github.com/bzed/lokihouse/internal/pushdown"
 )
 
@@ -71,6 +72,7 @@ func run(path string, logger log.Logger) error {
 		Q:           q,
 		Push:        &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: limits, Logger: logger},
 		Limits:      limits,
+		Patterns:    &patterns.Querier{Q: q, Limits: limits},
 		AuthEnabled: cfg.AuthEnabled,
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Server.HTTPListenAddress, cfg.Server.HTTPListenPort)

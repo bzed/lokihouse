@@ -23,6 +23,7 @@ import (
 	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/chstore/chtest"
 	"github.com/bzed/lokihouse/internal/ingest"
+	"github.com/bzed/lokihouse/internal/patterns"
 )
 
 func newServer(t *testing.T, auth bool) *httptest.Server {
@@ -49,6 +50,7 @@ func newServerConnWithLimits(t *testing.T, auth bool, mutate func(*validation.Li
 		Q:           q,
 		Push:        &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: o, Logger: log.NewNopLogger()},
 		Limits:      o,
+		Patterns:    &patterns.Querier{Q: q, Limits: o},
 		AuthEnabled: auth,
 	}
 	srv := httptest.NewServer(a.Router())

@@ -89,6 +89,13 @@ func TestOracle(t *testing.T) {
 	// after the ingester flushes chunks.
 	waitStatsReady(t, loki, "tenant-a", `{app="api"}`, start, end, 5*time.Minute)
 
+	// detected_labels also reads from the store; wait until it returns at least one
+	// label so the comparison is not affected by store-readiness races.
+	waitDetectedLabelsReady(t, loki, "tenant-a", `{app=~".+"}`, start, end, 60*time.Second)
+
+	// The pattern ingester trains asynchronously; wait for it to produce data.
+	waitPatternsReady(t, loki, "tenant-a", `{app="web"}`, start, end, 60*time.Second)
+
 	phase3Endpoints(t, loki, house, start.Add(-time.Minute), end)
 
 	// Assert Tier A coverage: the counter must have grown by at least the number

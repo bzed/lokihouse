@@ -39,6 +39,8 @@ var phase3Cases = []endpointCase{
 	{name: "detected_fields_api_json", path: "/loki/api/v1/detected_fields", params: url.Values{"query": {`{app="api"}`}, "line_limit": {"1000"}}, mut: sortArrayBy("fields", "label")},
 	{name: "detected_fields_web_logfmt", path: "/loki/api/v1/detected_fields", params: url.Values{"query": {`{app="web"}`}, "line_limit": {"1000"}}, mut: sortArrayBy("fields", "label")},
 	{name: "detected_field_values_level", path: "/loki/api/v1/detected_field/level/values", params: url.Values{"query": {`{app="web"}`}, "line_limit": {"1000"}}, mut: sortStrings("values")},
+	{name: "patterns_web", path: "/loki/api/v1/patterns", params: url.Values{"query": {`{app="web"}`}, "step": {"60s"}}, mut: sortArrayBy("data", "pattern")},
+	{name: "patterns_legacy", path: "/loki/api/v1/patterns", params: url.Values{"query": {`{app="legacy"}`}, "step": {"300s"}}, mut: sortArrayBy("data", "pattern")},
 }
 
 // phase3Endpoints runs every case for both tenants over [start, end].
@@ -177,6 +179,56 @@ func sortStrings(field string) func(any) {
 			sort.Slice(arr, func(i, j int) bool { return fmt.Sprint(arr[i]) < fmt.Sprint(arr[j]) })
 		}
 	}
+}
+
+// waitDetectedLabelsReady polls Loki's detected_labels for tenant-a until it
+// returns at least one label, or until the timeout is reached.
+func waitDetectedLabelsReady(t *testing.T, loki string, tenant string, query string, start, end time.Time, timeout time.Duration) {
+	t.Helper()
+	v := url.Values{
+		"query": {query},
+		"start": {strconv.FormatInt(start.UnixNano(), 10)},
+		"end":   {strconv.FormatInt(end.UnixNano(), 10)},
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		body := Get(t, loki+"/loki/api/v1/detected_labels?"+v.Encode(), tenant)
+		var r struct {
+			DetectedLabels []any `json:"detectedLabels"`
+		}
+		if json.Unmarshal(body, &r) == nil && len(r.DetectedLabels) > 0 {
+			t.Logf("detected_labels ready after waiting")
+			return
+		}
+		time.Sleep(5 * time.Second)
+	}
+	t.Logf("detected_labels still empty after %v (Loki may genuinely have none; continuing)", timeout)
+}
+
+// waitPatternsReady polls Loki's patterns endpoint for tenant-a until data is
+// non-empty, or until the timeout is reached. The pattern ingester trains
+// asynchronously after push, so this can take a while.
+func waitPatternsReady(t *testing.T, loki string, tenant string, query string, start, end time.Time, timeout time.Duration) {
+	t.Helper()
+	v := url.Values{
+		"query": {query},
+		"step":  {"60s"},
+		"start": {strconv.FormatInt(start.UnixNano(), 10)},
+		"end":   {strconv.FormatInt(end.UnixNano(), 10)},
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		body := Get(t, loki+"/loki/api/v1/patterns?"+v.Encode(), tenant)
+		var r struct {
+			Data []any `json:"data"`
+		}
+		if json.Unmarshal(body, &r) == nil && len(r.Data) > 0 {
+			t.Logf("patterns ready after waiting")
+			return
+		}
+		time.Sleep(5 * time.Second)
+	}
+	t.Fatalf("patterns did not become ready within %v", timeout)
 }
 
 // waitStatsReady forces a flush of Loki's ingester chunks and then polls

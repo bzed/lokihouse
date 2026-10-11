@@ -80,7 +80,7 @@ func TestAPI_IndexStats(t *testing.T) {
 
 func TestAPI_Detected(t *testing.T) {
 	srv, _ := newServerConn(t, false)
-	now := time.Now().Truncate(time.Hour).Add(30 * time.Minute)
+	now := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
 	vals := []string{
 		`["` + strconv.FormatInt(now.Add(-2*time.Second).UnixNano(), 10) + `","level=info msg=a status=200"]`,
 		`["` + strconv.FormatInt(now.Add(2*time.Second).UnixNano(), 10) + `","level=error msg=b status=500"]`,
