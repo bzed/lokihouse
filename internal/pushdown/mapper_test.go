@@ -22,20 +22,17 @@ func TestMap(t *testing.T) {
 		require.Len(t, ls, leaves, q)
 		require.Equal(t, leaves, strings.Count(mapped.String(), "downstream<"), q)
 	}
-	// ok=false shapes: a root vector agg (sum, topk, ...) or a root arithmetic
-	// binop (+, -, *, /, at) whose operand subtree contains a range-agg leaf
-	// diverges from Loki's inline evaluation in float accumulation order, so
-	// Map refuses and the caller runs the original query on Tier B.
-	for _, q := range []string{
-		`sum(rate({a="b"}[5m]))`,
-		`topk(3, sum by (x) (count_over_time({a="b"} | json [1m])))`,
-		`sum(rate({a="b"}[5m])) * 2`,
-		`sum(rate({a="b"}[5m])) / sum(rate({a="c"}[5m]))`,
-		`sum by (x) (rate({a="b"}[5m])) / sum by (x) (rate({a="c"}[5m]))`,
+	// Root vector aggs and arithmetic map too; they agree with Loki's inline
+	// evaluation within float tolerance (see Map).
+	for q, leaves := range map[string]int{
+		`sum(rate({a="b"}[5m]))`: 1,
+		`topk(3, sum by (x) (count_over_time({a="b"} | json [1m])))`: 1,
+		`sum(rate({a="b"}[5m])) / sum(rate({a="c"}[5m]))`:            2,
 	} {
 		expr, err := syntax.ParseSampleExpr(q)
 		require.NoError(t, err)
-		_, _, ok := Map(expr)
-		require.False(t, ok, q)
+		_, ls, ok := Map(expr)
+		require.True(t, ok, q)
+		require.Len(t, ls, leaves, q)
 	}
 }

@@ -130,7 +130,7 @@ func TestProperty_TierAEqualsTierB(t *testing.T) {
 			if errOff != nil {
 				continue
 			}
-			require.Equal(t, resOff.Data, resOn.Data,
+			requireDataEqual(t, resOff.Data, resOn.Data,
 				"seed=%d draw=%d q=%s start=%v end=%v step=%v", seed, i, inner, s, e, st)
 		}
 	}

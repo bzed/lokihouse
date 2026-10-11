@@ -16,7 +16,9 @@ on 19001-19004 (keeper + ch1-ch4).
 - [x] Task 4: Regex parity gate (regexgate.go) — commit
 - [x] Task 5: Leaf mapper + Downstreamer, pushdown mode — commit
   - Note: root vector agg / root arith binop over a range-agg leaf diverges by
-    ~1e-16 in float order; Map returns ok=false for those shapes (Tier B).
+    ~1e-16 in float order; Map returned ok=false for those shapes (Tier B).
+    Phase 2 review: Loki's own order is random (map iteration), so Map now maps
+    them and the tests compare floats at 1e-9 relative, like the oracle.
 - [x] Task 6: Tier A leaf (buckets.go, tiera.go) — commit
   - Note: series labels come from the stream's real labels (BaseLabels) merged
     with structured metadata, not from the selector matchers — so regex/inequality

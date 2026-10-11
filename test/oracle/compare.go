@@ -177,6 +177,13 @@ func normalise(raw []byte) ([]byte, error) {
 func sortStable(vals []any) {
 	sort.Slice(vals, func(i, j int) bool {
 		ei, ej := vals[i].([]any), vals[j].([]any)
+		// Matrix points carry a numeric timestamp and are unique per series:
+		// order by time, never by value (values may differ in the last float
+		// bits, which floatTolerantEqual accepts).
+		if ni, ok := ei[0].(float64); ok {
+			nj, _ := ej[0].(float64)
+			return ni < nj
+		}
 		si, _ := ei[0].(string)
 		sj, _ := ej[0].(string)
 		if si != sj {

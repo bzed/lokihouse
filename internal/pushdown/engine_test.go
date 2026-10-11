@@ -3,6 +3,7 @@ package pushdown
 import (
 	"context"
 	"flag"
+	"math"
 	"sort"
 	"strings"
 	"testing"
@@ -76,7 +77,7 @@ func TestEngine_DownstreamEqualsTierB(t *testing.T) {
 			if strings.HasPrefix(strings.TrimSpace(q), "topk") {
 				require.Equal(t, sortedValues(want.Data), sortedValues(got.Data), q)
 			} else {
-				require.Equal(t, want.Data, got.Data, q)
+				requireDataEqual(t, want.Data, got.Data, q)
 			}
 		})
 	}
@@ -105,4 +106,53 @@ func sortedValues(d any) []float64 {
 	default:
 		return nil
 	}
+}
+
+// requireDataEqual requires equal query data, with float values compared at the
+// oracle's relative tolerance (1e-9): vector aggregations and arithmetic over
+// pushed-down leaves may sum in a different order than Loki's inline evaluation,
+// whose own order is random (it ranges over a map). Labels, timestamps and
+// shape must match exactly.
+func requireDataEqual(t testing.TB, want, got any, msgAndArgs ...any) {
+	t.Helper()
+	norm := func(d any) (any, []float64) {
+		var fs []float64
+		switch v := d.(type) {
+		case promql.Matrix:
+			cp := make(promql.Matrix, len(v))
+			for i, s := range v {
+				cp[i] = promql.Series{Metric: s.Metric, Floats: make([]promql.FPoint, len(s.Floats))}
+				for j, p := range s.Floats {
+					cp[i].Floats[j] = promql.FPoint{T: p.T}
+					fs = append(fs, p.F)
+				}
+			}
+			return cp, fs
+		case promql.Vector:
+			cp := make(promql.Vector, len(v))
+			for i, s := range v {
+				cp[i] = promql.Sample{Metric: s.Metric, T: s.T}
+				fs = append(fs, s.F)
+			}
+			return cp, fs
+		case promql.Scalar:
+			return promql.Scalar{T: v.T}, []float64{v.V}
+		}
+		return d, nil
+	}
+	ws, wf := norm(want)
+	gs, gf := norm(got)
+	require.Equal(t, ws, gs, msgAndArgs...)
+	for i := range wf {
+		if !floatClose(wf[i], gf[i]) {
+			require.Equal(t, want, got, msgAndArgs...) // full diff
+		}
+	}
+}
+
+func floatClose(a, b float64) bool {
+	if a == b || (math.IsNaN(a) && math.IsNaN(b)) {
+		return true
+	}
+	return math.Abs(a-b) <= 1e-9*math.Abs(a)
 }

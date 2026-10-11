@@ -56,6 +56,7 @@ func BenchmarkLeaf(b *testing.B) {
 		{"count_over_time", `count_over_time({app=~".+"}[5m])`},
 		{"rate_filtered", `rate({app=~".+"} |= "error"[5m])`},
 		{"bytes_rate", `bytes_rate({app=~".+"}[5m])`},
+		{"sum_by_rate", `sum by (app) (rate({app=~".+"}[5m]))`},
 	} {
 		p, err := logql.NewLiteralParams(q.q, start, end, time.Minute, 0, logproto.FORWARD, 0, nil, nil)
 		require.NoError(b, err)
@@ -64,7 +65,7 @@ func BenchmarkLeaf(b *testing.B) {
 		before := TierALeaves.Load()
 		got, err := engs["tierA"].Query(ctx, p).Exec(ctx)
 		require.NoError(b, err)
-		require.Equal(b, want.Data, got.Data, q.q)
+		requireDataEqual(b, want.Data, got.Data, q.q)
 		require.Greater(b, TierALeaves.Load(), before, "Tier A did not run for %s", q.q)
 		for _, tier := range []string{"tierA", "tierB"} {
 			b.Run(tier+"/"+q.name, func(b *testing.B) {

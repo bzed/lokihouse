@@ -25,6 +25,7 @@ same data and that Tier A actually ran.
 | `count_over_time({app=~".+"}[5m])` | 8.6 | 47.4 | 5.5× | 1.7 | 66.3 |
 | `rate({app=~".+"} \|= "error"[5m])` | 8.4 | 17.5 | 2.1× | 1.7 | 13.6 |
 | `bytes_rate({app=~".+"}[5m])` | 8.0 | 46.7 | 5.8× | 1.7 | 66.3 |
+| `sum by (app) (rate({app=~".+"}[5m]))` | 8.3 | 46.0 | 5.6× | 1.7 | 67.3 |
 
 **Key findings:**
 - Tier A's cost is roughly flat (one `GROUP BY` and a series × steps result),
@@ -32,8 +33,8 @@ same data and that Tier A actually ran.
   line filter narrows the gap because Tier B's SQL pre-filter already drops
   most rows.
 - Tier A allocates about 97% less memory for these queries.
-- Root vector aggregations (`sum by (...) (rate(...))`) are not in the table:
-  `Map` runs them on Tier B (see Known Issues).
+- Vector aggregations over pushed-down leaves (`sum by (...) (rate(...))`)
+  get the same speedup: Loki aggregates the small Tier A result.
 
 An earlier version of this table came from a benchmark whose seed INSERTs
 failed silently (it wrote the MATERIALIZED `entry_hash` column and a
@@ -66,15 +67,19 @@ These operations either cannot be expressed in SQL or would require complex quer
 
 ## Known Issues
 
-### 1. Root vector aggregations and root arithmetic run on Tier B
+None open.
 
-`Map` returns `ok=false` for a root vector aggregation (`sum`, `avg`, `topk`, ...)
-or a root arithmetic binop whose subtree contains a range aggregation: Loki's
-downstream engine accumulates floats in a different order than its inline
-evaluation (differences around 1e-16), and the oracle compares exactly. So the
-most common dashboard shape, `sum by (x) (rate(...))`, does not use Tier A yet.
-Lifting this needs either a tolerance in the oracle for these shapes or an
-evaluation path that keeps Loki's accumulation order.
+### Float summation order (resolved)
+
+Vector aggregations and arithmetic over pushed-down leaves can differ from
+Loki in the last float bits (relative ~1e-16). This is inherent, not a
+lokihouse bug: Loki's inline range-vector iterator builds each step's vector by
+ranging over a Go map, so Loki's own summation order is random and Loki can
+differ from itself between runs. There is no fixed order to reproduce.
+`Map` used to refuse root vector aggregations and root arithmetic to get
+bit-identical results; it now maps them. The oracle (relative 1e-9) and the
+pushdown tests (`requireDataEqual`, same tolerance) compare floats with a
+tolerance; labels, timestamps and shape still compare exactly.
 
 ### Fixed during the Phase 2 review
 
@@ -92,6 +97,10 @@ evaluation path that keeps Loki's accumulation order.
 - Above `MaxBuckets`, a Tier A leaf failed the query; it now falls back to
   Tier B (`ErrFallback`), as the plan specifies. `Exec` no longer writes the
   default into the shared `TierA` struct, which was a data race.
+- The oracle's `sortStable` sorted matrix points by their value string (it
+  only understood log-stream string timestamps), so last-bit float
+  differences reordered points and failed the compare. It orders numeric
+  timestamps numerically now.
 - `rate` and `bytes_rate` divide by `range.Seconds()` like Loki does, and the
   per-step window sum is a two-pointer slide instead of a rescan of every
   bucket in the window.
