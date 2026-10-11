@@ -30,7 +30,38 @@ PARTITION BY (day, retention_days)
 ORDER BY (tenant, day, stream_id)
 TTL {{ttl "toDate32(day)"}}
 SETTINGS ttl_only_drop_parts = 1;
+
+-- stream_stats_hourly: per (tenant, stream, hour) entry count, bytes and first/last entry
+-- timestamp, fed at insert time by the MV below. It serves index/stats and index/volume
+-- with Loki's chunk pro-rating rule applied per hourly bucket. Bytes follow Loki's head
+-- block accounting: len(line) + 8 per structured-metadata pair (no symbol table).
+CREATE TABLE IF NOT EXISTS {{.DBName}}.{{.Local "stream_stats_hourly"}}{{with .OnCluster}} {{.}}{{end}} (
+  tenant         LowCardinality(String),
+  stream_id      UInt64,
+  hour           DateTime('UTC'),
+  retention_days UInt16,
+  entries        SimpleAggregateFunction(sum, UInt64),
+  bytes          SimpleAggregateFunction(sum, UInt64),
+  min_ts         SimpleAggregateFunction(min, DateTime64(9, 'UTC')),
+  max_ts         SimpleAggregateFunction(max, DateTime64(9, 'UTC'))
+) ENGINE = {{.Engine "AggregatingMergeTree"}}
+PARTITION BY (toDate(hour), retention_days)
+ORDER BY (tenant, stream_id, hour)
+TTL {{ttl "toDate32(hour)"}}
+SETTINGS ttl_only_drop_parts = 1;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS {{.DBName}}.{{.Local "stream_stats_hourly"}}_mv{{with .OnCluster}} {{.}}{{end}}
+TO {{.DBName}}.{{.Local "stream_stats_hourly"}} AS
+SELECT tenant, stream_id, toStartOfHour(toDateTime(ts, 'UTC')) AS hour, retention_days,
+       toUInt64(count()) AS entries,
+       toUInt64(sum(length(line) + 8 * length(mapKeys(structured_metadata)))) AS bytes,
+       min(ts) AS min_ts, max(ts) AS max_ts
+FROM {{.DBName}}.{{.Local "logs"}}
+GROUP BY tenant, stream_id, hour, retention_days;
 {{if .Cluster}}
+CREATE TABLE IF NOT EXISTS {{.DBName}}.stream_stats_hourly{{with .OnCluster}} {{.}}{{end}} AS {{.DBName}}.stream_stats_hourly_local
+ENGINE = Distributed({{lit .Cluster}}, {{lit .DB}}, 'stream_stats_hourly_local', cityHash64(tenant, stream_id));
+
 CREATE TABLE IF NOT EXISTS {{.DBName}}.logs{{with .OnCluster}} {{.}}{{end}} AS {{.DBName}}.logs_local
 ENGINE = Distributed({{lit .Cluster}}, {{lit .DB}}, 'logs_local', cityHash64(tenant, stream_id));
 

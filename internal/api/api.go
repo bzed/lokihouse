@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/logql"
+	"github.com/grafana/loki/v3/pkg/validation"
 	serverutil "github.com/grafana/loki/v3/pkg/util/server"
 
 	"github.com/bzed/lokihouse/internal/chstore"
@@ -20,6 +21,7 @@ type API struct {
 	Queries     Querier
 	Q           *chstore.Querier
 	Push        http.Handler
+	Limits      *validation.Overrides
 	AuthEnabled bool
 }
 
@@ -52,6 +54,7 @@ func (a *API) Router() http.Handler {
 	}
 	mux.Handle("GET /loki/api/v1/labels", t(http.HandlerFunc(a.labels)))
 	mux.Handle("GET /loki/api/v1/label/{name}/values", t(http.HandlerFunc(a.labelValues)))
+	a.lokiRoutes(mux)
 	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ready\n")) })
 	mux.HandleFunc("GET /loki/api/v1/status/buildinfo", buildInfo)
 

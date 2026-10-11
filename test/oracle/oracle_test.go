@@ -84,6 +84,13 @@ func TestOracle(t *testing.T) {
 		})
 	}
 
+	// Wait for Loki's TSDB index to be ready before comparing index/stats.
+	// Loki's index/stats reads from the TSDB index, which is built asynchronously
+	// after the ingester flushes chunks.
+	waitStatsReady(t, loki, "tenant-a", `{app="api"}`, start, end, 5*time.Minute)
+
+	phase3Endpoints(t, loki, house, start.Add(-time.Minute), end)
+
 	// Assert Tier A coverage: the counter must have grown by at least the number
 	// of eligible leaves in pushdown.logql × 2 tenants. Only check when push-down
 	// is enabled (mode "on").

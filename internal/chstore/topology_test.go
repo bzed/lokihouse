@@ -40,19 +40,24 @@ func TestTopology_ShardedWithoutReplication(t *testing.T) {
 func TestRenderSchema_SingleNode(t *testing.T) {
 	stmts, err := chstore.RenderSchema("db", chstore.Topology{})
 	require.NoError(t, err)
-	require.Len(t, stmts, 2)
+	// logs, streams, stream_stats_hourly, stream_stats_hourly_mv
+	require.Len(t, stmts, 4)
 	all := strings.Join(stmts, "\n")
 	require.Contains(t, all, "CREATE TABLE IF NOT EXISTS `db`.logs (")
 	require.NotContains(t, all, "ON CLUSTER")
 	require.NotContains(t, all, "Distributed")
+	require.Contains(t, all, "CREATE MATERIALIZED VIEW IF NOT EXISTS `db`.stream_stats_hourly_mv")
 }
 
 func TestRenderSchema_Cluster(t *testing.T) {
 	stmts, err := chstore.RenderSchema("db", chstore.Topology{Cluster: "lokihouse", Replicated: true})
 	require.NoError(t, err)
-	require.Len(t, stmts, 4)
+	// logs_local, streams_local, stream_stats_hourly_local, stream_stats_hourly_mv,
+	// Distributed stream_stats_hourly, Distributed logs, Distributed streams
+	require.Len(t, stmts, 7)
 	require.Contains(t, stmts[0], "CREATE TABLE IF NOT EXISTS `db`.logs_local ON CLUSTER `lokihouse` (")
 	require.Contains(t, stmts[0], "ENGINE = ReplicatedReplacingMergeTree")
-	require.Contains(t, stmts[2], "ENGINE = Distributed('lokihouse', 'db', 'logs_local', cityHash64(tenant, stream_id))")
-	require.Contains(t, stmts[3], "ENGINE = Distributed('lokihouse', 'db', 'streams_local', cityHash64(tenant, stream_id))")
+	require.Contains(t, stmts[4], "ENGINE = Distributed('lokihouse', 'db', 'stream_stats_hourly_local', cityHash64(tenant, stream_id))")
+	require.Contains(t, stmts[5], "ENGINE = Distributed('lokihouse', 'db', 'logs_local', cityHash64(tenant, stream_id))")
+	require.Contains(t, stmts[6], "ENGINE = Distributed('lokihouse', 'db', 'streams_local', cityHash64(tenant, stream_id))")
 }

@@ -70,6 +70,7 @@ func run(path string, logger log.Logger) error {
 		},
 		Q:           q,
 		Push:        &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: limits, Logger: logger},
+		Limits:      limits,
 		AuthEnabled: cfg.AuthEnabled,
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Server.HTTPListenAddress, cfg.Server.HTTPListenPort)

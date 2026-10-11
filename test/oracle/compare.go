@@ -217,6 +217,72 @@ func sortSeries(ser []any) {
 	})
 }
 
+// CompareMut applies mut to both decoded bodies before Compare. Use it for fields
+// that legitimately differ (storage-specific counters, map-iteration order).
+func CompareMut(t *testing.T, name string, a, b []byte, mut func(any)) {
+	t.Helper()
+	if mut != nil {
+		a, b = mutate(a, mut), mutate(b, mut)
+	}
+	Compare(t, name, a, b)
+}
+
+func mutate(raw []byte, mut func(any)) []byte {
+	var v any
+	if json.Unmarshal(raw, &v) != nil {
+		return raw
+	}
+	mut(v)
+	out, _ := json.Marshal(v)
+	return out
+}
+
+// dropKeys deletes keys from the top-level object (and from its "data" object).
+func dropKeys(keys ...string) func(any) {
+	return func(v any) {
+		for _, m := range objects(v) {
+			for _, k := range keys {
+				delete(m, k)
+			}
+		}
+	}
+}
+
+// sortArrayBy sorts the array field of the top-level (or "data") object by the
+// string value of key in each element.
+func sortArrayBy(field, key string) func(any) {
+	return func(v any) {
+		for _, m := range objects(v) {
+			arr, _ := m[field].([]any)
+			sort.SliceStable(arr, func(i, j int) bool {
+				a, _ := arr[i].(map[string]any)
+				b, _ := arr[j].(map[string]any)
+				return fmt.Sprint(a[key]) < fmt.Sprint(b[key])
+			})
+		}
+	}
+}
+
+func chain(fs ...func(any)) func(any) {
+	return func(v any) {
+		for _, f := range fs {
+			f(v)
+		}
+	}
+}
+
+func objects(v any) []map[string]any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	out := []map[string]any{m}
+	if d, ok := m["data"].(map[string]any); ok {
+		out = append(out, d)
+	}
+	return out
+}
+
 func seriesKey(s any) string {
 	m, ok := s.(map[string]any)
 	if !ok {

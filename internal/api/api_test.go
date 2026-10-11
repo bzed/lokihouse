@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+
 	"github.com/go-kit/log"
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/validation"
@@ -24,6 +26,11 @@ import (
 )
 
 func newServer(t *testing.T, auth bool) *httptest.Server {
+	srv, _ := newServerConn(t, auth)
+	return srv
+}
+
+func newServerConn(t *testing.T, auth bool) (*httptest.Server, driver.Conn) {
 	conn, _ := chtest.New(t)
 	var l validation.Limits
 	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
@@ -34,11 +41,12 @@ func newServer(t *testing.T, auth bool) *httptest.Server {
 		Queries:     api.NewPlainQuerier(logql.NewEngine(logql.EngineOpts{}, q, o, log.NewNopLogger())),
 		Q:           q,
 		Push:        &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: o, Logger: log.NewNopLogger()},
+		Limits:      o,
 		AuthEnabled: auth,
 	}
 	srv := httptest.NewServer(a.Router())
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, conn
 }
 
 func do(t *testing.T, method, u, tenant, body string) (int, string) {
