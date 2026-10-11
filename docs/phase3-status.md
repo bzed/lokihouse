@@ -53,11 +53,11 @@ processor rewrites the physical rows after `delete_request_cancel_period`
   `lightweight_deletes_sync=2`; `ON CLUSTER` on a cluster). Requests are
   marked `processed` afterwards.
 - **Tail** — the in-process ingester's tail client polls ClickHouse every
-  1 s (`Ingester.Poll`, default) for rows with `ts` newer than the previous
-  poll minus a 10 s lookback (`Ingester.Lookback`, default) for late
-  arrivals, deduplicated by a seen-set. Each poll re-scans the lookback
-  window (bounded by the highest ts already sent), so a busy stream pays a
-  10 s re-read per second per tail; the seen-set makes this idempotent.
+  1 s (`Ingester.Poll`, default) for rows with `ts` newer than now minus a
+  10 s lookback (`Ingester.Lookback`, default) for late arrivals,
+  deduplicated by a seen-set. Each poll re-scans the lookback window (plus
+  any entries stamped in the future), so a busy stream pays a 10 s re-read
+  per second per tail; the seen-set makes this idempotent.
   Entries older than the window, or before the tail start, are not sent
   live (range queries reach them).
 - **Patterns** — `patterns.Querier.MaxLines` caps the rows read per pattern

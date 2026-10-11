@@ -90,22 +90,21 @@ type seenKey struct {
 }
 
 // client is a logproto.Querier_TailClient. Each poll reads rows with
-// ts > max(start, lastSeen-lookback), skips those already sent (seen-set),
+// ts > max(start, now-lookback), skips those already sent (seen-set),
 // and forgets sent rows once they are older than the window. It is
 // single-consumer: Loki's Tailer drives each client from exactly one
 // readTailClient goroutine, and all state is guarded by mu so a second
 // consumer could never corrupt it.
 type client struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	i       *Ingester
-	req     *logproto.TailRequest
-	poll    time.Duration
-	look    time.Duration
-	start   time.Time
-	sel     syntax.LogSelectorExpr
-	plan    *plan.QueryPlan
-	lastMax int64 // highest entry ts sent so far (0 until the first entry)
+	ctx    context.Context
+	cancel context.CancelFunc
+	i      *Ingester
+	req    *logproto.TailRequest
+	poll   time.Duration
+	look   time.Duration
+	start  time.Time
+	sel    syntax.LogSelectorExpr
+	plan   *plan.QueryPlan
 
 	mu      sync.Mutex
 	seen    map[seenKey]int64
@@ -141,16 +140,12 @@ func (c *client) Recv() (*logproto.TailResponse, error) {
 	}
 }
 
-// pollOnce reads the window [lower, now+24h) and enqueues every row not yet
-// seen. lower is max(start, lastMax-lookback): already-sent rows fall below it
-// and are not re-read, while the lookback keeps catching late arrivals.
+// pollOnce reads the window (lower, now+24h] and enqueues every row not yet
+// seen. lower is max(start, now-lookback): the lookback catches late arrivals.
+// It follows the wall clock, not the newest entry sent, so an entry stamped in
+// the future cannot hide current ones.
 func (c *client) pollOnce(now time.Time) error {
 	lower := now.Add(-c.look)
-	if c.lastMax != 0 {
-		if lm := time.Unix(0, c.lastMax).Add(-c.look); lm.After(lower) {
-			lower = lm
-		}
-	}
 	if lower.Before(c.start) {
 		lower = c.start
 	}
@@ -173,9 +168,6 @@ func (c *client) pollOnce(now time.Time) error {
 			continue
 		}
 		c.seen[k] = k.ts
-		if k.ts > c.lastMax {
-			c.lastMax = k.ts
-		}
 		s, ok := byLabels[k.labels]
 		if !ok {
 			s = &logproto.Stream{Labels: k.labels}

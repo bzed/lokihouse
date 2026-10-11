@@ -73,8 +73,6 @@ func (p *Processor) logRequestErr(id, what string, err error) {
 	}
 }
 
-const deleteBatch = 10_000
-
 // process physically removes the rows a single delete request hides. A bare
 // selector (no pipeline stage of any kind) deletes the whole range in SQL;
 // anything with a stage scans the rows and deletes exactly the ones the
@@ -122,7 +120,7 @@ func (p *Processor) process(ctx context.Context, r deletionproto.DeleteRequest) 
 			return nil
 		}
 		keys = append(keys, row.RowKey)
-		if len(keys) == deleteBatch {
+		if len(keys) == chstore.DeleteBatch {
 			return flush()
 		}
 		return nil

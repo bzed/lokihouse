@@ -57,7 +57,7 @@ func TestHandler_AddListCancel(t *testing.T) {
 	w = doTenant(t, h.Gate(http.HandlerFunc(h.List)), "GET", "/loki/api/v1/delete", "t1")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	var reqs []struct {
-		RequestID string `json:"request_id"`
+		RequestID string     `json:"request_id"`
 		StartTime model.Time `json:"start_time"`
 		EndTime   model.Time `json:"end_time"`
 		Query     string     `json:"query"`

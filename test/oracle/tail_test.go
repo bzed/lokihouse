@@ -56,7 +56,7 @@ func tailOracle(t *testing.T, loki, house string) {
 	// 2. Open both WebSocket tails. start is well before the entries so the
 	// history select [start, dial-time] covers all of them (the entries sit at
 	// now..now+19ms and the dial happens after the count wait).
-	startS := strconv.FormatInt(now.Add(-30 * time.Second).UnixNano(), 10)
+	startS := strconv.FormatInt(now.Add(-30*time.Second).UnixNano(), 10)
 	clients := map[string]*websocket.Conn{}
 	for name, u := range map[string]string{"loki": loki, "lokihouse": house} {
 		base := strings.TrimSuffix(u, "/")

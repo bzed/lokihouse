@@ -4,13 +4,13 @@ import (
 	"context"
 	"net/http"
 
+	gmux "github.com/gorilla/mux"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
-	gmux "github.com/gorilla/mux"
 	"github.com/grafana/loki/v3/pkg/logproto"
+	querier_limits "github.com/grafana/loki/v3/pkg/querier/limits"
 	"github.com/grafana/loki/v3/pkg/querier/queryrange"
 	"github.com/grafana/loki/v3/pkg/querier/queryrange/queryrangebase"
-	querier_limits "github.com/grafana/loki/v3/pkg/querier/limits"
 )
 
 // lokiHandler answers the requests Loki's query-frontend codec decodes for the

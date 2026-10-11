@@ -23,15 +23,15 @@ import (
 // tenant_request_handler.go (handler methods, interval, query, startTime, endTime,
 // parseTime, timeFromInt, TenantMiddleware, validDeletionLimit, deleteModeFromLimits)
 // and util.go (parseDeletionQuery); modifications:
-// - the store calls go to *Store (Add/Get/Cancel instead of AddDeleteRequest/
-//   GetDeleteRequest/RemoveDeleteRequest);
-// - max_interval is validated exactly as Loki does, but requests are stored
-//   unsharded: the shards only drive Loki's compactor, which the listing merges
-//   back, and lokihouse has no compactor to feed;
-// - the metrics are dropped;
-// - the gate is a Gate method wrapping the next handler, since lokihouse's
-//   tenant wrapper is applied by the API router;
-// - the gate reads Limits.DeletionMode(tenant).
+//   - the store calls go to *Store (Add/Get/Cancel instead of AddDeleteRequest/
+//     GetDeleteRequest/RemoveDeleteRequest);
+//   - max_interval is validated exactly as Loki does, but requests are stored
+//     unsharded: the shards only drive Loki's compactor, which the listing merges
+//     back, and lokihouse has no compactor to feed;
+//   - the metrics are dropped;
+//   - the gate is a Gate method wrapping the next handler, since lokihouse's
+//     tenant wrapper is applied by the API router;
+//   - the gate reads Limits.DeletionMode(tenant).
 const (
 	deletionNotAvailableMsg         = "deletion is not available for this tenant"
 	forQuerytimeFilteringQueryParam = "for_querytime_filtering"

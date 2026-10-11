@@ -22,10 +22,10 @@ import (
 	"github.com/grafana/loki/v3/pkg/pattern/drain"
 	"github.com/grafana/loki/v3/pkg/pattern/iter"
 	querierpattern "github.com/grafana/loki/v3/pkg/querier/pattern"
-	"github.com/grafana/loki/v3/pkg/util/constants"
-	"github.com/grafana/loki/v3/pkg/util"
-	"github.com/prometheus/common/model"
 	"github.com/grafana/loki/v3/pkg/querier/plan"
+	"github.com/grafana/loki/v3/pkg/util"
+	"github.com/grafana/loki/v3/pkg/util/constants"
+	"github.com/prometheus/common/model"
 
 	"github.com/bzed/lokihouse/internal/chstore"
 )
@@ -96,10 +96,8 @@ func (p *Querier) Query(ctx context.Context, req *logproto.QueryPatternsRequest)
 	}
 	streams := map[string]*streamDrains{}
 	var order []string
-	for n := 0; n < maxLines && it.Next(); n++ {
-		if n == maxLines-1 {
-			level.Warn(p.logger()).Log("msg", "pattern query truncated at MaxLines; patterns may be incomplete", "max_lines", maxLines)
-		}
+	n := 0
+	for ; n < maxLines && it.Next(); n++ {
 		e := it.At()
 		key := it.Labels()
 		sd := streams[key]
@@ -123,6 +121,9 @@ func (p *Querier) Query(ctx context.Context, req *logproto.QueryPatternsRequest)
 			sd.byLvl[lvl] = d
 		}
 		d.Train(e.Line, e.Timestamp.UnixNano())
+	}
+	if n == maxLines && it.Next() {
+		level.Warn(p.logger()).Log("msg", "pattern query truncated at MaxLines; patterns may be incomplete", "max_lines", maxLines)
 	}
 	if err := it.Err(); err != nil {
 		return nil, err

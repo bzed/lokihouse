@@ -196,7 +196,8 @@ func TestTail_NoHistoryDuplicates(t *testing.T) {
 func TestTail_CloseStopsPolling(t *testing.T) {
 	i, cc := newIngester(t, 20*time.Millisecond, 5*time.Second)
 	start := time.Now().UTC().Truncate(time.Second)
-	ctx, _ := context.WithCancel(orgCtx())
+	ctx, cancel := context.WithCancel(orgCtx())
+	defer cancel() // the test closes the client via CloseSend; this only releases ctx
 	clients, err := i.Tail(ctx, tailReq(`{app="t"}`, start))
 	require.NoError(t, err)
 	c := clients["clickhouse"]
@@ -230,4 +231,22 @@ func TestTail_CloseStopsPolling(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 	time.Sleep(150 * time.Millisecond)
 	require.LessOrEqual(t, cc.queries(), got+1, "no sustained polls after the client is closed")
+}
+
+// An entry stamped in the future (Loki accepts up to creation_grace_period
+// ahead) must not hide entries with current timestamps that arrive after it.
+func TestTail_FutureEntryDoesNotHideCurrent(t *testing.T) {
+	i, cc := newIngester(t, 20*time.Millisecond, 2*time.Second)
+	start := time.Now().UTC()
+	ctx, cancel := context.WithCancel(orgCtx())
+	defer cancel()
+	clients, err := i.Tail(ctx, tailReq(`{app="t"}`, start))
+	require.NoError(t, err)
+	c := clients["clickhouse"]
+
+	write(t, cc, []logproto.Entry{{Timestamp: start.Add(5 * time.Minute), Line: "future"}})
+	require.Equal(t, "future", collect(t, c, 1, 10*time.Second)[0].Line)
+
+	write(t, cc, []logproto.Entry{{Timestamp: time.Now().UTC(), Line: "current"}})
+	require.Equal(t, "current", collect(t, c, 1, 10*time.Second)[0].Line)
 }

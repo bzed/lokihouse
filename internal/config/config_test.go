@@ -38,7 +38,7 @@ compactor: {delete_request_cancel_period: 2h}
 	require.NoError(t, err)
 	require.Equal(t, 2*time.Hour, c.Compactor.DeleteRequestCancelPeriod)
 	require.Equal(t, 10*time.Minute, c.Compactor.CompactionInterval) // default kept
-	require.Equal(t, 24*time.Hour, c.Compactor.DeleteMaxInterval)     // default kept
+	require.Equal(t, 24*time.Hour, c.Compactor.DeleteMaxInterval)    // default kept
 }
 
 func TestLoad_Cluster(t *testing.T) {

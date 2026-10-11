@@ -2,6 +2,7 @@ package chstore_test
 
 import (
 	"context"
+	"math"
 	"sort"
 	"testing"
 	"time"
@@ -125,4 +126,15 @@ func t1Lines(t *testing.T, conn driver.Conn) []string {
 	}
 	require.NoError(t, rows.Err())
 	return out
+}
+
+// Worst-case keys beyond one statement's worth are split so each DELETE stays
+// under the server's max_query_size (256 KiB by default).
+func TestDeleteRows_LargeBatch(t *testing.T) {
+	conn, db := chtest.New(t)
+	keys := make([]chstore.RowKey, 5*chstore.DeleteBatch+1)
+	for i := range keys {
+		keys[i] = chstore.RowKey{StreamID: math.MaxUint64 - uint64(i), TS: math.MaxInt64 - int64(i), EntryHash: math.MaxUint64 - uint64(i)}
+	}
+	require.NoError(t, chstore.DeleteRows(context.Background(), conn, db, chtest.Topology(), "t1", keys))
 }

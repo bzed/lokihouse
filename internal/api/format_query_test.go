@@ -1,8 +1,8 @@
 package api
 
 import (
-	"flag"
 	"encoding/json"
+	"flag"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

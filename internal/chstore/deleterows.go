@@ -58,22 +58,32 @@ func deleteCtx(ctx context.Context) context.Context {
 	return clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{"lightweight_deletes_sync": 2}))
 }
 
-// DeleteRows removes the given rows with a lightweight DELETE on the storage
-// table (ON CLUSTER on a cluster). The tuple list is rendered from integers only.
+// DeleteBatch is the most keys one DELETE statement carries: a worst-case key
+// renders to ~64 bytes of SQL, and the statement must stay under the server's
+// max_query_size (256 KiB by default).
+const DeleteBatch = 2_000
+
+// DeleteRows removes the given rows with lightweight DELETEs on the storage
+// table (ON CLUSTER on a cluster), DeleteBatch keys per statement. The tuple
+// list is rendered from integers only.
 func DeleteRows(ctx context.Context, conn driver.Conn, db string, topo Topology, tenant string, keys []RowKey) error {
-	if len(keys) == 0 {
-		return nil
-	}
-	var b strings.Builder
-	for i, k := range keys {
-		if i > 0 {
-			b.WriteByte(',')
+	for len(keys) > 0 {
+		n := min(len(keys), DeleteBatch)
+		var b strings.Builder
+		for i, k := range keys[:n] {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			fmt.Fprintf(&b, "(%d,%d,%d)", k.StreamID, k.TS, k.EntryHash)
 		}
-		fmt.Fprintf(&b, "(%d,%d,%d)", k.StreamID, k.TS, k.EntryHash)
+		sql := fmt.Sprintf("DELETE FROM %s.%s %s WHERE tenant = ? AND (stream_id, toUnixTimestamp64Nano(ts), entry_hash) IN (%s)",
+			quoteIdent(db), topo.Local("logs"), topo.OnCluster(), b.String())
+		if err := conn.Exec(deleteCtx(ctx), sql, tenant); err != nil {
+			return err
+		}
+		keys = keys[n:]
 	}
-	sql := fmt.Sprintf("DELETE FROM %s.%s %s WHERE tenant = ? AND (stream_id, toUnixTimestamp64Nano(ts), entry_hash) IN (%s)",
-		quoteIdent(db), topo.Local("logs"), topo.OnCluster(), b.String())
-	return conn.Exec(deleteCtx(ctx), sql, tenant)
+	return nil
 }
 
 // DeleteRange removes every row of the given streams with fromNs <= ts <= throughNs.

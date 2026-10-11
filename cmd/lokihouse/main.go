@@ -21,8 +21,8 @@ import (
 	"github.com/bzed/lokihouse/internal/deletes"
 	"github.com/bzed/lokihouse/internal/ingest"
 	"github.com/bzed/lokihouse/internal/patterns"
-	lhtail "github.com/bzed/lokihouse/internal/tail"
 	"github.com/bzed/lokihouse/internal/pushdown"
+	lhtail "github.com/bzed/lokihouse/internal/tail"
 )
 
 func main() {

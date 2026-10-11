@@ -359,7 +359,9 @@ func deletesOracle(t *testing.T, loki, house string, base time.Time) {
 	// Sanity check that Loki's own result is filtered to 10 lines.
 	var lr struct {
 		Data struct {
-			Result []struct{ Values [][]any `json:"values"` } `json:"result"`
+			Result []struct {
+				Values [][]any `json:"values"`
+			} `json:"result"`
 		} `json:"data"`
 	}
 	if json.Unmarshal(a, &lr) == nil {
