@@ -3,6 +3,8 @@ package chstore
 import (
 	"strings"
 
+	regexpSyntax "regexp/syntax"
+
 	"github.com/grafana/loki/v3/pkg/logql/log"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
 	"github.com/prometheus/prometheus/model/labels"
@@ -104,7 +106,149 @@ func lineFilterSQL(f *syntax.LineFilterExpr) Fragment {
 			parts = append(parts, Fragment{"position(line, ?) = 0", []any{a.Match}})
 		}
 		return and(parts)
+	case log.LineMatchRegexp:
+		if len(alts) > 1 {
+			return Fragment{}
+		}
+		return regexNecessary(f.Match)
+	case log.LineMatchPattern:
+		if len(alts) > 1 {
+			return Fragment{}
+		}
+		return patternNecessary(f.Match)
 	default:
 		return Fragment{}
 	}
+}
+
+// regexNecessary returns a necessary SQL condition for a |~ regex: every line the
+// regex matches must satisfy it. It is NOT exact (Loki re-applies the real filter).
+func regexNecessary(re string) Fragment {
+	n, err := regexpSyntax.Parse(re, regexpSyntax.Perl)
+	if err != nil {
+		return Fragment{}
+	}
+	if hasFoldCase(n) {
+		return Fragment{}
+	}
+	n = unwrap(n)
+	if n.Op == regexpSyntax.OpLiteral {
+		return litFragment(n.Rune)
+	}
+	if n.Op == regexpSyntax.OpConcat {
+		var parts []Fragment
+		for _, c := range n.Sub {
+			c = unwrap(c)
+			if c.Op != regexpSyntax.OpLiteral {
+				continue
+			}
+			parts = append(parts, litFragment(c.Rune))
+		}
+		return and(parts)
+	}
+	if n.Op == regexpSyntax.OpAlternate {
+		var sqls []string
+		var args []any
+		for _, c := range n.Sub {
+			c = unwrap(c)
+			if c.Op != regexpSyntax.OpLiteral {
+				return Fragment{}
+			}
+			p := litFragment(c.Rune)
+			if p.Empty() {
+				return Fragment{}
+			}
+			sqls = append(sqls, p.SQL)
+			args = append(args, p.Args...)
+		}
+		return Fragment{"(" + strings.Join(sqls, " OR ") + ")", args}
+	}
+	return Fragment{}
+}
+
+// patternNecessary returns a necessary SQL condition for a |> pattern: every line the
+// pattern matches must satisfy it. It is NOT exact (Loki re-applies the real filter).
+func patternNecessary(p string) Fragment {
+	literals := extractPatternLiterals(p)
+	if len(literals) == 0 {
+		return Fragment{}
+	}
+	var likeParts []string
+	for _, l := range literals {
+		likeParts = append(likeParts, escapedLike(l))
+	}
+	like := "%" + strings.Join(likeParts, "%") + "%"
+	return Fragment{"line LIKE ?", []any{like}}
+}
+
+// extractPatternLiterals splits a |> pattern into its non-capture literal pieces,
+// dropping the <...> captures and anything inside them.
+func extractPatternLiterals(p string) []string {
+	var out []string
+	var cur strings.Builder
+	inCap := false
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		if !inCap && c == '<' {
+			inCap = true
+			if cur.Len() > 0 {
+				out = append(out, cur.String())
+				cur.Reset()
+			}
+			continue
+		}
+		if inCap {
+			if c == '>' {
+				inCap = false
+			}
+			continue
+		}
+		cur.WriteByte(c)
+	}
+	if cur.Len() > 0 {
+		out = append(out, cur.String())
+	}
+	return out
+}
+
+// escapedLike escapes the LIKE wildcards in a literal piece.
+func escapedLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+// litFragment turns a literal rune run into position(line, ?) > 0, skipping runs
+// shorter than 2 bytes (they are too weak to be a useful pre-filter).
+func litFragment(r []rune) Fragment {
+	if len(r) < 2 {
+		return Fragment{}
+	}
+	return Fragment{"position(line, ?) > 0", []any{string(r)}}
+}
+
+// hasFoldCase reports whether any node in the regexp tree carries the FoldCase flag.
+func hasFoldCase(n *regexpSyntax.Regexp) bool {
+	if n == nil {
+		return false
+	}
+	if n.Flags&regexpSyntax.FoldCase != 0 {
+		return true
+	}
+	for _, s := range n.Sub {
+		if hasFoldCase(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// unwrap peels OpCapture and OpEmptyMatch wrappers off a regexp node.
+func unwrap(n *regexpSyntax.Regexp) *regexpSyntax.Regexp {
+	for n != nil && (n.Op == regexpSyntax.OpCapture || n.Op == regexpSyntax.OpEmptyMatch) {
+		if len(n.Sub) == 1 {
+			n = n.Sub[0]
+		} else {
+			return n
+		}
+	}
+	return n
 }

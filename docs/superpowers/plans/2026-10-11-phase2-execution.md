@@ -8,7 +8,8 @@ on 19001-19004 (keeper + ch1-ch4).
 - [x] Task 1: Stream Tier-B samples (samples.go) — commit
   - Note: plan's expected label order at equal ts was inverted; actual order is
     by stream_id (cityHash64) as the SQL guarantees. Test fixed, semantics unchanged.
-- [ ] Task 2: Keyset-chunked log reads (keyset.go) — commit
+- [x] Task 2: Keyset-chunked log reads (keyset.go) — commit
+  - Found & fixed: empty base on no-streams path produced bare `LIMIT ?` SQL.
 - [ ] Task 3: Necessary pre-filters from regex/pattern filters — commit
 - [ ] Task 4: Regex parity gate (regexgate.go) — commit
 - [ ] Task 5: Leaf mapper + Downstreamer, pushdown mode — commit
