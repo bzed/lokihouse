@@ -13,3 +13,18 @@ clickhouse:
   # replica_name: '{replica}'
   # settings: {insert_quorum: 2}  # any ClickHouse session setting
 limits_config: {}
+# Loki's ruler (alerting and recording rules), with Loki's own config keys.
+# It runs only when ruler_storage is set, and on one lokihouse instance only
+# (no ruler ring; see docs/divergences.md).
+# ruler:
+#   rule_path: /var/lib/lokihouse/rules-temp   # default: rules-temp (relative)
+#   alertmanager_url: http://alertmanager:9093
+#   external_url: http://grafana:3000
+#   remote_write:
+#     enabled: true
+#     clients:
+#       prom: {url: http://prometheus:9090/api/v1/write}
+#   wal: {dir: /var/lib/lokihouse/ruler-wal}   # wiped at every start
+# ruler_storage:
+#   backend: filesystem                        # local = read-only rule files
+#   filesystem: {dir: /var/lib/lokihouse/rules}
