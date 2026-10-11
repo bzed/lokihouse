@@ -26,7 +26,10 @@ on 19001-19004 (keeper + ch1-ch4).
     assertion). Test skipped due to known 1-count difference at boundary points
     between Tier A (SQL buckets) and Tier B (LogQL range vector). Needs further
     investigation to fix the boundary condition.
-- [ ] Task 8: Oracle coverage (pushdown corpus, modes, coverage) — commit
+- [x] Task 8: Oracle coverage (pushdown corpus, modes, coverage) — commit
+  - Note: added pushdown.logql corpus (40+ queries), debug endpoint for
+    TierALeaves, coverage assertion, and oracle-all Makefile target. All
+    modes (off, downstream, on) pass on single node and cluster.
 - [ ] Task 9: Benchmark + docs/phase2-status.md — commit
 
 Verification per task: `go test -count=1 ./internal/...` (single node),
