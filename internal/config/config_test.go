@@ -45,3 +45,29 @@ clickhouse:
 	require.EqualValues(t, 60, s["max_execution_time"])
 	require.EqualValues(t, 1, s["distributed_foreground_insert"])
 }
+
+func TestLoad_RetentionStreamMatchersPopulated(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(`limits_config:
+  retention_stream:
+    - selector: '{app="a"}'
+      priority: 1
+      period: 48h
+`), 0o600))
+	c, err := Load(p)
+	require.NoError(t, err)
+	require.Len(t, c.LimitsConfig.StreamRetention, 1)
+	require.NotEmpty(t, c.LimitsConfig.StreamRetention[0].Matchers, "Validate must populate matchers")
+}
+
+func TestLoad_InvalidRetentionStreamRejected(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(`limits_config:
+  retention_stream:
+    - selector: '{app="a"}'
+      priority: 1
+      period: 1h
+`), 0o600))
+	_, err := Load(p)
+	require.ErrorContains(t, err, "retention period must be >= 24h")
+}

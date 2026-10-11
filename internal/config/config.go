@@ -62,6 +62,9 @@ func Load(path string) (*Config, error) {
 	if err := dec.Decode(c); err != nil {
 		return nil, err
 	}
+	if err := c.LimitsConfig.Validate(); err != nil {
+		return nil, fmt.Errorf("limits_config: %w", err)
+	}
 	if !PushdownModes[c.Query.Pushdown] {
 		return nil, fmt.Errorf("query.pushdown: invalid value %q (want on, off or downstream)", c.Query.Pushdown)
 	}

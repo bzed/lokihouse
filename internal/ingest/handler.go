@@ -9,6 +9,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/loki/v3/pkg/compactor/retention"
 	"github.com/grafana/loki/v3/pkg/loghttp/push"
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/prometheus/prometheus/model/labels"
@@ -59,9 +60,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// retentionDays maps the tenant's retention_period onto the row TTL in whole days,
-// rounded up; 0 (Loki's default) keeps rows forever. Per-stream retention is not applied yet.
+// retentionDays returns the row TTL in whole days (rounded up) for each stream:
+// Loki's compactor rule (retention_stream, highest priority wins, shorter period
+// on a tie, else the tenant retention_period). 0 keeps rows forever.
 func (h *Handler) retentionDays(tenantID string) func(labels.Labels) uint16 {
-	d := min((h.Limits.RetentionPeriod(tenantID)+24*time.Hour-1)/(24*time.Hour), math.MaxUint16)
-	return func(labels.Labels) uint16 { return uint16(d) }
+	snap := retention.NewTenantRetentionSnapshot(h.Limits, tenantID)
+	return func(ls labels.Labels) uint16 {
+		d := min((snap.RetentionPeriodFor(ls)+24*time.Hour-1)/(24*time.Hour), math.MaxUint16)
+		return uint16(d)
+	}
 }

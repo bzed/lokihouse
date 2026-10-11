@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/validation"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bzed/lokihouse/internal/chstore"
@@ -103,3 +104,50 @@ func (f fakeTenantLimits) TenantLimits(id string) *validation.Limits  { return f
 func (f fakeTenantLimits) AllByUserID() map[string]*validation.Limits { return f }
 
 func itoa(i int64) string { return strconv.FormatInt(i, 10) }
+
+func TestPush_StreamRetention(t *testing.T) {
+	conn, _ := chtest.New(t)
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	l.RetentionPeriod = model.Duration(31 * 24 * time.Hour)
+	l.StreamRetention = []validation.StreamRetention{
+		{Period: model.Duration(48 * time.Hour), Priority: 1, Selector: `{app="short"}`},
+		// equal priority: the shorter period wins
+		{Period: model.Duration(72 * time.Hour), Priority: 1, Selector: `{app="short"}`},
+		// higher priority wins over a shorter period
+		{Period: model.Duration(96 * time.Hour), Priority: 2, Selector: `{app="prio"}`},
+		{Period: model.Duration(24 * time.Hour), Priority: 1, Selector: `{app="prio"}`},
+		// a selector on the label discovered at ingest
+		{Period: model.Duration(120 * time.Hour), Priority: 1, Selector: `{service_name="svc"}`},
+	}
+	require.NoError(t, l.Validate())
+	o, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+	h := &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: o, Logger: log.NewNopLogger()}
+
+	ts := itoa(time.Now().UnixNano())
+	body := `{"streams":[` +
+		`{"stream":{"app":"short"},"values":[["` + ts + `","a"]]},` +
+		`{"stream":{"app":"prio"},"values":[["` + ts + `","b"]]},` +
+		`{"stream":{"app":"other","service_name":"svc"},"values":[["` + ts + `","c"]]},` +
+		`{"stream":{"app":"default"},"values":[["` + ts + `","d"]]}]}`
+	rec := push(t, h, "t1", body)
+	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+
+	got := map[string]uint16{}
+	rows, err := conn.Query(context.Background(), "SELECT line, retention_days FROM logs WHERE tenant = 't1'")
+	require.NoError(t, err)
+	for rows.Next() {
+		var line string
+		var d uint16
+		require.NoError(t, rows.Scan(&line, &d))
+		got[line] = d
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, map[string]uint16{"a": 2, "b": 4, "c": 5, "d": 31}, got)
+
+	var sd uint16
+	require.NoError(t, conn.QueryRow(context.Background(),
+		"SELECT retention_days FROM streams WHERE tenant = 't1' AND labels['app'] = 'short'").Scan(&sd))
+	require.Equal(t, uint16(2), sd, "streams rows carry the same retention as their logs")
+}
