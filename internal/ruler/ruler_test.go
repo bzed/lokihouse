@@ -325,3 +325,36 @@ func TestRules_MissingStorageDir(t *testing.T) {
 		})
 	}
 }
+
+// TestRules_EncodedSlash: like Loki's gorilla router, which matches on the
+// decoded path, %2F separates namespace and group: /rules/ns%2Fg1 is group g1
+// in namespace ns, and a namespace containing "/" cannot be created.
+func TestRules_EncodedSlash(t *testing.T) {
+	conn, _ := chtest.New(t)
+	h := startRuler(t, t.TempDir(), engine(t, conn), nil)
+
+	code, body := h.do(t, http.MethodPost, "/loki/api/v1/rules/ns", "t1", group)
+	require.Equal(t, http.StatusAccepted, code, body)
+
+	for _, p := range []string{"/loki/api/v1/rules/ns%2Fg1", "/api/prom/rules/ns%2fg1"} {
+		code, body = h.do(t, http.MethodGet, p, "t1", "")
+		require.Equal(t, http.StatusOK, code, "%s: %s", p, body)
+		require.Contains(t, body, "name: g1", p)
+	}
+
+	// POST has no {namespace}/{groupName} route: Loki answers 405.
+	code, body = h.do(t, http.MethodPost, "/loki/api/v1/rules/a%2Fb", "t1", group)
+	require.Equal(t, http.StatusMethodNotAllowed, code, body)
+
+	// Double-encoded characters are unescaped twice, as in Loki (router + handler).
+	code, body = h.do(t, http.MethodPost, "/loki/api/v1/rules/team%2520x", "t1", group)
+	require.Equal(t, http.StatusAccepted, code, body)
+	code, body = h.do(t, http.MethodGet, "/loki/api/v1/rules", "t1", "")
+	require.Equal(t, http.StatusOK, code, body)
+	require.Contains(t, body, "team x:")
+
+	code, body = h.do(t, http.MethodDelete, "/loki/api/v1/rules/ns%2Fg1", "t1", "")
+	require.Equal(t, http.StatusAccepted, code, body)
+	code, _ = h.do(t, http.MethodGet, "/loki/api/v1/rules/ns/g1", "t1", "")
+	require.Equal(t, http.StatusNotFound, code)
+}

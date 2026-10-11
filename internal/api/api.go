@@ -92,6 +92,9 @@ func (a *API) Router() http.Handler {
 		})
 	}
 
+	if a.Rules != nil {
+		return decodedRulePaths(mux)
+	}
 	return mux
 }
 

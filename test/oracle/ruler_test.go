@@ -246,6 +246,9 @@ func rulerOracle(t *testing.T, loki, house string, ls, hs *rulerSinks) {
 	both("rules_list_ns", "GET", "/loki/api/v1/rules/oracle%20ns", "tenant-a", "")
 	both("rules_get_group", "GET", "/loki/api/v1/rules/oracle%20ns/oracle", "tenant-a", "")
 	both("rules_get_missing", "GET", "/loki/api/v1/rules/oracle%20ns/missing", "tenant-a", "")
+	// %2F separates namespace and group in both (Loki routes on the decoded path).
+	both("rules_get_group_encoded_slash", "GET", "/loki/api/v1/rules/oracle%20ns%2Foracle", "tenant-a", "")
+	both("rules_legacy_get_group_encoded_slash", "GET", "/api/prom/rules/oracle%20ns%2foracle", "tenant-a", "")
 	both("rules_legacy_list", "GET", "/api/prom/rules", "tenant-a", "")
 	both("rules_other_tenant", "GET", "/loki/api/v1/rules", "tenant-b", "")
 	both("rules_tmp_create", "POST", "/loki/api/v1/rules/tmp", "tenant-a", tmpGroup)

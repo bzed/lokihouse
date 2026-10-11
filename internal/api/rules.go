@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	gmux "github.com/gorilla/mux"
 	"github.com/grafana/loki/v3/pkg/util/constants"
@@ -36,4 +37,23 @@ func (a *API) ruleRoutes(mux *http.ServeMux) {
 		mux.Handle("GET "+p.group, h(a.Rules.GetRuleGroup))
 		mux.Handle("DELETE "+p.group, h(a.Rules.DeleteRuleGroup))
 	}
+}
+
+// decodedRulePaths makes the rules API route on the decoded URL path, as
+// Loki's gorilla router does (Loki does not set UseEncodedPath): an encoded
+// slash separates the namespace from the group, so /rules/ns%2Fg1 is group g1
+// in namespace ns. ServeMux would otherwise match the escaped path and keep
+// "ns/g1" as one namespace. Loki's handlers unescape the variables once more.
+func decodedRulePaths(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawPath != "" &&
+			(strings.HasPrefix(r.URL.Path, constants.PathLokiRules+"/") || strings.HasPrefix(r.URL.Path, constants.PathPromRules+"/")) {
+			u := *r.URL
+			u.RawPath = ""
+			r2 := *r
+			r2.URL = &u
+			r = &r2
+		}
+		next.ServeHTTP(w, r)
+	})
 }
