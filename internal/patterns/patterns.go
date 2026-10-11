@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/loki/v3/pkg/logproto"
@@ -34,6 +36,14 @@ type Querier struct {
 	Q        *chstore.Querier
 	Limits   drain.Limits
 	MaxLines int
+	Logger   log.Logger // optional; when set, MaxLines truncation is logged
+}
+
+func (p *Querier) logger() log.Logger {
+	if p.Logger == nil {
+		return log.NewNopLogger()
+	}
+	return p.Logger
 }
 
 // Copied from grafana/loki@fbc3f077 pkg/pattern/ingester_querier.go (minClusterSize, maxPatterns).
@@ -87,6 +97,9 @@ func (p *Querier) Query(ctx context.Context, req *logproto.QueryPatternsRequest)
 	streams := map[string]*streamDrains{}
 	var order []string
 	for n := 0; n < maxLines && it.Next(); n++ {
+		if n == maxLines-1 {
+			level.Warn(p.logger()).Log("msg", "pattern query truncated at MaxLines; patterns may be incomplete", "max_lines", maxLines)
+		}
 		e := it.At()
 		key := it.Labels()
 		sd := streams[key]

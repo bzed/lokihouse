@@ -77,7 +77,7 @@ func run(path string, logger log.Logger) error {
 		Q:           q,
 		Push:        &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: limits, Logger: logger},
 		Limits:      limits,
-		Patterns:    &patterns.Querier{Q: q, Limits: limits},
+		Patterns:    &patterns.Querier{Q: q, Limits: limits, Logger: logger},
 		Deletes:     &deletes.Handler{Store: store, Limits: limits, MaxInterval: cfg.Compactor.DeleteMaxInterval, CancelPeriod: cfg.Compactor.DeleteRequestCancelPeriod},
 		AuthEnabled: cfg.AuthEnabled,
 	}

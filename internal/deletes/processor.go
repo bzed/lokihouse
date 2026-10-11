@@ -37,24 +37,40 @@ type Processor struct {
 
 // ProcessDue physically deletes every received request older than CancelPeriod,
 // then marks it processed. lightweight_deletes_sync=2 makes the rows invisible
-// on every replica before the call returns.
+// on every replica before the call returns. Requests are fault-isolated: a
+// failing request is logged, retried on the next pass (the rows are still
+// hidden by query-time filtering) and does not stop the others.
 func (p *Processor) ProcessDue(ctx context.Context, now time.Time) error {
 	reqs, err := p.Store.Unprocessed(ctx)
 	if err != nil {
 		return err
 	}
+	var first error
 	for _, r := range reqs {
 		if r.CreatedAt.Time().Add(p.CancelPeriod).After(now) {
 			continue
 		}
 		if err := p.process(ctx, r); err != nil {
-			return fmt.Errorf("delete request %s: %w", r.RequestID, err)
+			p.logRequestErr(r.RequestID, "process", err)
+			if first == nil {
+				first = fmt.Errorf("delete request %s: %w", r.RequestID, err)
+			}
+			continue
 		}
 		if err := p.Store.MarkProcessed(ctx, r); err != nil {
-			return err
+			p.logRequestErr(r.RequestID, "mark processed", err)
+			if first == nil {
+				first = fmt.Errorf("delete request %s: %w", r.RequestID, err)
+			}
 		}
 	}
-	return nil
+	return first
+}
+
+func (p *Processor) logRequestErr(id, what string, err error) {
+	if p.Logger != nil {
+		level.Error(p.Logger).Log("msg", "delete request failed; will retry", "request", id, "step", what, "err", err)
+	}
 }
 
 const deleteBatch = 10_000

@@ -27,13 +27,45 @@ import (
 // time requests are created at (so ProcessDue only acts on requests old enough).
 func newProcessor(t *testing.T, cancelPeriod, interval time.Duration, now, created time.Time) (*deletes.Processor, *deletes.Store, driver.Conn, string) {
 	conn, db := chtest.New(t)
+	p, store, _ := buildProcessor(conn, db, cancelPeriod, interval, now, created)
+	return p, store, conn, db
+}
+
+// buildProcessor wires a Processor over an existing conn+db (so a test can
+// swap conn for a fault-injecting wrapper).
+func buildProcessor(conn driver.Conn, db string, cancelPeriod, interval time.Duration, now, created time.Time) (*deletes.Processor, *deletes.Store, driver.Conn) {
 	store := &deletes.Store{Conn: conn, Now: func() time.Time { return created }}
 	p := &deletes.Processor{
 		Store: store, Conn: conn, DB: db, Topo: chtest.Topology(),
 		CancelPeriod: cancelPeriod, Interval: interval, Logger: log.NewNopLogger(),
 		Now: func() time.Time { return now },
 	}
-	return p, store, conn, db
+	return p, store, conn
+}
+
+// failConn wraps a driver.Conn and makes Query fail exactly once, to simulate
+// a transient ClickHouse failure mid-scan.
+type failConn struct {
+	driver.Conn
+	once bool
+}
+
+func (f *failConn) Query(ctx context.Context, q string, args ...any) (driver.Rows, error) {
+	if !f.once {
+		f.once = true
+		return nil, context.DeadlineExceeded
+	}
+	return f.Conn.Query(ctx, q, args...)
+}
+
+// contains reports whether v is in s.
+func contains(s []string, v string) (int, bool) {
+	for i, x := range s {
+		if x == v {
+			return i, true
+		}
+	}
+	return -1, false
 }
 
 // lines returns the sorted distinct lines of a tenant's logs table.
@@ -168,6 +200,52 @@ func TestProcessor_RespectsCancelPeriod(t *testing.T) {
 	reqs, err := store.Unprocessed(context.Background())
 	require.NoError(t, err)
 	require.Len(t, reqs, 1, "request still pending")
+}
+
+func TestProcessor_FaultIsolation(t *testing.T) {
+	// Two due requests: req1's scan hits a transient failure, req2 must still
+	// be processed in the same pass (per-request fault isolation), and req1 is
+	// retried to completion on the next pass.
+	conn, db := chtest.New(t)
+	p, store, _ := buildProcessor(conn, db, 0, time.Hour, t0, t0)
+
+	w := &chstore.Writer{Conn: conn}
+	base := t0
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: []logproto.Entry{
+			{Timestamp: base, Line: "keep a"},
+			{Timestamp: base.Add(time.Millisecond), Line: "secret a"},
+		}},
+		{Labels: `{app="b"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "secret b"}}},
+	}, nil))
+	end := base.Add(time.Hour)
+	_, err := store.Add(context.Background(), "t1", `{app="a"}`,
+		model.TimeFromUnixNano(base.UnixNano()), model.TimeFromUnixNano(end.UnixNano()))
+	require.NoError(t, err)
+	_, err = store.Add(context.Background(), "t1", `{app="b"}`,
+		model.TimeFromUnixNano(base.UnixNano()), model.TimeFromUnixNano(end.UnixNano()))
+	require.NoError(t, err)
+
+	// First pass with a conn that fails once: whichever request hits the
+	// failure is skipped, the other must still be processed in the same pass.
+	bad := &failConn{Conn: conn}
+	p.Conn = bad
+	err = p.ProcessDue(context.Background(), t0)
+	require.Error(t, err, "the failed request must surface an error")
+	remaining := lines(t, conn, "t1")
+	_, aStill := contains(remaining, "secret a")
+	_, bStill := contains(remaining, "secret b")
+	require.NotEqual(t, aStill, bStill, "exactly one of the two requests was processed")
+	reqs, err := store.Unprocessed(context.Background())
+	require.NoError(t, err)
+	require.Len(t, reqs, 1, "only the failed request is still pending")
+
+	// Second pass (good conn): the remaining request completes.
+	p.Conn = conn
+	require.NoError(t, p.ProcessDue(context.Background(), t0))
+	reqs, err = store.Unprocessed(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, reqs, "the failed request was retried and marked processed")
 }
 
 func TestProcessor_ParserStageScans(t *testing.T) {

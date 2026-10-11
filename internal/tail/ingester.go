@@ -39,6 +39,10 @@ func (i *Ingester) Tail(ctx context.Context, req *logproto.TailRequest) (map[str
 	if look == 0 {
 		look = 10 * time.Second
 	}
+	sel, err := syntax.ParseLogSelector(req.Query, true)
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	c := &client{
 		ctx:    ctx,
@@ -48,6 +52,8 @@ func (i *Ingester) Tail(ctx context.Context, req *logproto.TailRequest) (map[str
 		poll:   poll,
 		look:   look,
 		start:  req.Start,
+		sel:    sel,
+		plan:   &plan.QueryPlan{AST: sel},
 		seen:   map[seenKey]int64{},
 	}
 	i.addActive(1)
@@ -84,8 +90,11 @@ type seenKey struct {
 }
 
 // client is a logproto.Querier_TailClient. Each poll reads rows with
-// ts > max(start, pollTime-lookback), skips those already sent, and forgets
-// sent rows once they are older than the window.
+// ts > max(start, lastSeen-lookback), skips those already sent (seen-set),
+// and forgets sent rows once they are older than the window. It is
+// single-consumer: Loki's Tailer drives each client from exactly one
+// readTailClient goroutine, and all state is guarded by mu so a second
+// consumer could never corrupt it.
 type client struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -94,26 +103,33 @@ type client struct {
 	poll    time.Duration
 	look    time.Duration
 	start   time.Time
+	sel     syntax.LogSelectorExpr
+	plan    *plan.QueryPlan
+	lastMax int64 // highest entry ts sent so far (0 until the first entry)
+
+	mu      sync.Mutex
 	seen    map[seenKey]int64
 	pending []*logproto.TailResponse
 }
 
 func (c *client) Recv() (*logproto.TailResponse, error) {
-	// If the caller passed a bounded context (e.g. a test deadline), respect it:
-	// poll at most once, then block on a short tick so the deadline can fire.
-	// Otherwise poll every c.poll until an entry arrives.
-	if d, ok := c.ctx.Deadline(); ok && time.Until(d) <= c.poll {
-		if err := c.pollOnce(time.Now()); err != nil {
-			return nil, err
-		}
-	}
+	// With a bounded context (e.g. a test deadline) use a short tick so the
+	// deadline is honored promptly instead of waiting a full poll interval.
 	step := c.poll
 	if _, ok := c.ctx.Deadline(); ok {
-		step = 10 * time.Millisecond
+		step = min(step, 10*time.Millisecond)
 	}
 	t := time.NewTicker(step)
 	defer t.Stop()
-	for len(c.pending) == 0 {
+	for {
+		c.mu.Lock()
+		if n := len(c.pending); n > 0 {
+			r := c.pending[0]
+			c.pending = c.pending[1:]
+			c.mu.Unlock()
+			return r, nil
+		}
+		c.mu.Unlock()
 		select {
 		case <-c.ctx.Done():
 			return nil, c.ctx.Err()
@@ -123,25 +139,26 @@ func (c *client) Recv() (*logproto.TailResponse, error) {
 			return nil, err
 		}
 	}
-	r := c.pending[0]
-	c.pending = c.pending[1:]
-	return r, nil
 }
 
+// pollOnce reads the window [lower, now+24h) and enqueues every row not yet
+// seen. lower is max(start, lastMax-lookback): already-sent rows fall below it
+// and are not re-read, while the lookback keeps catching late arrivals.
 func (c *client) pollOnce(now time.Time) error {
 	lower := now.Add(-c.look)
+	if c.lastMax != 0 {
+		if lm := time.Unix(0, c.lastMax).Add(-c.look); lm.After(lower) {
+			lower = lm
+		}
+	}
 	if lower.Before(c.start) {
 		lower = c.start
-	}
-	sel, err := syntax.ParseLogSelector(c.req.Query, true)
-	if err != nil {
-		return err
 	}
 	it, err := c.i.Q.SelectLogs(c.ctx, logql.SelectLogParams{QueryRequest: &logproto.QueryRequest{
 		Selector: c.req.Query,
 		Start:    lower.Add(time.Nanosecond).UTC(),
 		End:      now.Add(24 * time.Hour).UTC(),
-		Plan:     &plan.QueryPlan{AST: sel},
+		Plan:     c.plan,
 	}})
 	if err != nil {
 		return err
@@ -156,6 +173,9 @@ func (c *client) pollOnce(now time.Time) error {
 			continue
 		}
 		c.seen[k] = k.ts
+		if k.ts > c.lastMax {
+			c.lastMax = k.ts
+		}
 		s, ok := byLabels[k.labels]
 		if !ok {
 			s = &logproto.Stream{Labels: k.labels}
@@ -167,6 +187,7 @@ func (c *client) pollOnce(now time.Time) error {
 	if err := it.Err(); err != nil {
 		return err
 	}
+	c.mu.Lock()
 	for k, ts := range c.seen {
 		if ts <= lower.UnixNano() {
 			delete(c.seen, k)
@@ -175,6 +196,7 @@ func (c *client) pollOnce(now time.Time) error {
 	for _, l := range order {
 		c.pending = append(c.pending, &logproto.TailResponse{Stream: byLabels[l]})
 	}
+	c.mu.Unlock()
 	return nil
 }
 

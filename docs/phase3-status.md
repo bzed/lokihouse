@@ -19,8 +19,7 @@ Run on 2026-10-11, on `main` after task 9.
 | Cluster oracle | `make oracle-cluster` | ok (Loki vs 4-node lokihouse) |
 
 Note: `detected_labels` oracle cases are intermittently flaky (Loki TSDB index
-readiness race) and are retried until clean; the flakiness is documented in
-`docs/divergences.md` and is unrelated to Phase 3 code.
+readiness race — see `docs/divergences.md`) and are retried until clean.
 
 ## Endpoints
 
@@ -56,12 +55,16 @@ processor rewrites the physical rows after `delete_request_cancel_period`
 - **Tail** — the in-process ingester's tail client polls ClickHouse every
   1 s (`Ingester.Poll`, default) for rows with `ts` newer than the previous
   poll minus a 10 s lookback (`Ingester.Lookback`, default) for late
-  arrivals, deduplicated by a seen-set. Entries older than the window, or
-  before the tail start, are not sent live (range queries reach them).
+  arrivals, deduplicated by a seen-set. Each poll re-scans the lookback
+  window (bounded by the highest ts already sent), so a busy stream pays a
+  10 s re-read per second per tail; the seen-set makes this idempotent.
+  Entries older than the window, or before the tail start, are not sent
+  live (range queries reach them).
 - **Patterns** — `patterns.Querier.MaxLines` caps the rows read per pattern
-  query; 0 means the built-in default of 1,000,000 rows. The per-stream
-  Drain training is rebuilt at query time, so there is no persistent training
-  state to operate.
+  query; 0 means the built-in default of 1,000,000 rows. When the cap
+  truncates a query the querier logs a warning (no response field signals
+  truncation). The per-stream Drain training is rebuilt at query time, so
+  there is no persistent training state to operate.
 
 ## Backfilling `stream_stats_hourly`
 
