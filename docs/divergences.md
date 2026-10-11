@@ -27,3 +27,4 @@ Loki keeps insertion order; lokihouse cannot. The oracle compares such groups as
 - **`ruler.rule_path` default:** `rules-temp` relative to the working directory instead of Loki's `/rules` (Loki's single binary uses `<common.path_prefix>/rules-temp`; lokihouse has no `path_prefix`).
 - **Namespaces containing `/`:** Loki's router (gorilla mux on the decoded path) splits `/loki/api/v1/rules/a%2Fb` into namespace `a` and group `b`; lokihouse's `ServeMux` keeps `a/b` as one namespace. Other escaped characters (spaces, `%`, unicode) behave the same in both.
 - **Ruler metrics:** collected in a private registry and not exposed (lokihouse has no `/metrics` endpoint before Phase 5).
+- **Ruler WAL directory guard:** with remote write enabled, Loki wipes `ruler.wal.dir` (`os.RemoveAll`) at every start. lokihouse refuses to start when that directory is empty or contains the working directory, the rule storage directory or `rule_path`; Loki would delete them.
