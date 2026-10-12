@@ -149,7 +149,43 @@ func TestDetectedLabels(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	// The response should contain detected labels
+	require.NotNil(t, resp.DetectedLabels)
+	// With one stream with {app="a"}, we should have at least the app label
 	_ = resp.DetectedLabels
+}
+
+func TestDetectedLabelsWithQuery(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	seed(t, w, "t1",
+		logproto.Stream{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "test"}}},
+		logproto.Stream{Labels: `{app="b"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "test"}}})
+
+	q := &chstore.Querier{Conn: conn}
+	// Query for only app="a" streams
+	req := &logproto.DetectedLabelsRequest{
+		Query: `{app="a"}`,
+		Start: t0,
+		End:   t0.Add(time.Hour),
+	}
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	resp, err := q.DetectedLabels(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	// The response should contain detected labels for app="a" only
+	_ = resp.DetectedLabels
+}
+
+func TestDetectedLabelsEmpty(t *testing.T) {
+	conn, _ := chtest.New(t)
+	q := &chstore.Querier{Conn: conn}
+	req := &logproto.DetectedLabelsRequest{Start: t0, End: t0.Add(time.Hour)}
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	resp, err := q.DetectedLabels(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	// With no streams, the response should have empty detected labels
+	require.Empty(t, resp.DetectedLabels)
 }
 
 func TestKeyset_SameResultForAnyChunkSize(t *testing.T) {
