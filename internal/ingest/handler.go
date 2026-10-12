@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/loki/v3/pkg/compactor/retention"
 	"github.com/grafana/loki/v3/pkg/loghttp/push"
@@ -26,10 +28,12 @@ const (
 )
 
 // Handler handles Loki push requests and writes them to ClickHouse.
+// RateLimiter is nil when the rate limit is disabled.
 type Handler struct {
-	Writer *chstore.Writer
-	Limits *validation.Overrides
-	Logger log.Logger
+	Writer      *chstore.Writer
+	Limits      *validation.Overrides
+	Logger      log.Logger
+	RateLimiter *limiter.RateLimiter
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -48,9 +52,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	streams, verr := distcopy.Prepare(r.Context(), h.Limits, tenantID, req, time.Now())
-	if len(streams) > 0 {
-		if err := h.Writer.Write(r.Context(), tenantID, streams, h.retentionDays(tenantID)); err != nil {
+	res, verr := distcopy.Prepare(r.Context(), h.Limits, tenantID, req, time.Now())
+	if h.RateLimiter != nil && len(res.Streams) > 0 && !h.RateLimiter.AllowN(time.Now(), tenantID, res.Bytes) {
+		// Rejected before the write, as in Loki's distributor: nothing is
+		// stored, and the push consumes no tokens.
+		distcopy.ReportDiscarded(r.Context(), h.Limits, tenantID, validation.RateLimited, res.Streams, time.Now())
+		http.Error(w, fmt.Sprintf(validation.RateLimitedErrorMsg, tenantID, int(h.RateLimiter.Limit(time.Now(), tenantID)), res.Lines, res.Bytes), http.StatusTooManyRequests)
+		return
+	}
+	if len(res.Streams) > 0 {
+		if err := h.Writer.Write(r.Context(), tenantID, res.Streams, h.retentionDays(tenantID)); err != nil {
 			level.Error(h.Logger).Log("msg", "write failed", "err", err) //nolint:gosec // G104: go-kit logger errors are not actionable
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

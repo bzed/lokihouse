@@ -43,7 +43,8 @@ func req(labels string, entries ...logproto.Entry) *logproto.InternalPushRequest
 func TestPrepare_Basic(t *testing.T) {
 	o := overrides(t, func(*validation.Limits) {})
 	now := time.Now()
-	out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, logproto.Entry{Timestamp: now, Line: "test"}), now)
+	res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, logproto.Entry{Timestamp: now, Line: "test"}), now)
+	out := res.Streams
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Len(t, out[0].Entries, 1)
@@ -53,7 +54,8 @@ func TestPrepare_Basic(t *testing.T) {
 func TestPrepare_TruncatesLongLines(t *testing.T) {
 	o := overrides(t, func(l *validation.Limits) { l.MaxLineSize = 5; l.MaxLineSizeTruncate = true })
 	now := time.Now()
-	out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, logproto.Entry{Timestamp: now, Line: "0123456789"}), now)
+	res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, logproto.Entry{Timestamp: now, Line: "0123456789"}), now)
+	out := res.Streams
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	// Loki appends its truncation marker
@@ -73,8 +75,9 @@ func TestPrepare_MissingEnforcedLabels(t *testing.T) {
 func TestPrepare_IncrementsDuplicateTimestamps(t *testing.T) {
 	o := overrides(t, func(l *validation.Limits) { l.IncrementDuplicateTimestamp = true })
 	now := time.Now().Truncate(time.Second)
-	out, err := distcopy.Prepare(context.Background(), o, "t",
+	res, err := distcopy.Prepare(context.Background(), o, "t",
 		req(`{a="b"}`, logproto.Entry{Timestamp: now, Line: "1"}, logproto.Entry{Timestamp: now, Line: "2"}), now)
+	out := res.Streams
 	require.NoError(t, err)
 	require.Equal(t, now.Add(time.Nanosecond), out[0].Entries[1].Timestamp)
 }
@@ -83,7 +86,8 @@ func TestPrepare_NormalisesStructuredMetadataNames(t *testing.T) {
 	o := overrides(t, func(*validation.Limits) {})
 	now := time.Now()
 	e := logproto.Entry{Timestamp: now, Line: "x", StructuredMetadata: []logproto.LabelAdapter{{Name: "trace-id", Value: "1"}}}
-	out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+	res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+	out := res.Streams
 	require.NoError(t, err)
 	require.Equal(t, "trace_id", out[0].Entries[0].StructuredMetadata[0].Name)
 }
@@ -104,7 +108,8 @@ func TestPrepare_NormalisesLogLevelInMetadata(t *testing.T) {
 			{Name: "detected_level", Value: "WaRn"},
 		},
 	}
-	out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+	res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+	out := res.Streams
 	require.NoError(t, err)
 	// The level should be normalized to lowercase
 	// Check that we have structured metadata
@@ -164,7 +169,8 @@ func TestPrepare_NormalisesAllLogLevels(t *testing.T) {
 					{Name: "detected_level", Value: tc.input},
 				},
 			}
-			out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+			res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+			out := res.Streams
 			require.NoError(t, err)
 			require.Len(t, out, 1)
 			// The level should be normalized
@@ -186,7 +192,8 @@ func TestPrepare_MultipleStreams(t *testing.T) {
 			{Labels: `{c="d"}`, Entries: []logproto.Entry{{Timestamp: now, Line: "test2"}}},
 		},
 	}
-	out, err := distcopy.Prepare(context.Background(), o, "t", logproto.FromPushRequest(req), now)
+	res, err := distcopy.Prepare(context.Background(), o, "t", logproto.FromPushRequest(req), now)
+	out := res.Streams
 	require.NoError(t, err)
 	require.Len(t, out, 2)
 }
@@ -201,7 +208,8 @@ func TestPrepare_DuplicateTimestampsIncremented(t *testing.T) {
 		{Timestamp: now, Line: "2"},
 		{Timestamp: now, Line: "3"},
 	}
-	out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, entries...), now)
+	res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, entries...), now)
+	out := res.Streams
 	require.NoError(t, err)
 	require.Len(t, out[0].Entries, 3)
 	// Each duplicate should be incremented by 1ns
@@ -214,7 +222,8 @@ func TestPrepare_EmptyEntry(t *testing.T) {
 	o := overrides(t, func(*validation.Limits) {})
 	now := time.Now()
 	// Empty line should still be processed
-	out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, logproto.Entry{Timestamp: now, Line: ""}), now)
+	res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, logproto.Entry{Timestamp: now, Line: ""}), now)
+	out := res.Streams
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 }
@@ -231,7 +240,8 @@ func TestPrepare_DetectsLogLevelFromLine(t *testing.T) {
 		Timestamp: now,
 		Line:      "this is a warning message",
 	}
-	out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+	res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+	out := res.Streams
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Len(t, out[0].Entries, 1)
@@ -265,7 +275,8 @@ func TestPrepare_DetectsGenericFields(t *testing.T) {
 		Timestamp: now,
 		Line:      `{"service":"web","message":"test"}`,
 	}
-	out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+	res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+	out := res.Streams
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Len(t, out[0].Entries, 1)
@@ -298,7 +309,8 @@ func TestPrepare_DetectsGenericFieldsFromLogfmt(t *testing.T) {
 		Timestamp: now,
 		Line:      `service=web message=test`,
 	}
-	out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+	res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+	out := res.Streams
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Len(t, out[0].Entries, 1)
@@ -347,7 +359,8 @@ func TestPrepare_DetectsLogLevelFromOTLPSeverity(t *testing.T) {
 					{Name: "severity_number", Value: tc.severity},
 				},
 			}
-			out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+			res, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+			out := res.Streams
 			require.NoError(t, err)
 			require.Len(t, out, 1)
 			// Just ensure the test doesn't panic and returns something

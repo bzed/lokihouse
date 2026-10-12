@@ -2,36 +2,60 @@
 
 > **Last Updated:** 2026-10-12
 > **Current Branch:** main
-> **Latest Commit:** bee0418 - "test: add comprehensive tests for coverage improvement (83.7% -> 84.9%)"
+> **Latest Commit:** 4586c9d - "ci: checks, tests, coverage, deb, docs, nightly, release, pages"
 
 ## Executive Summary
 
-Phase 5 is **~94% complete**. The main blocking issue is reaching the 85% test coverage target. We have improved coverage from 83.7% to approximately 84.9% through comprehensive test additions, but a pre-existing test failure in the pushdown package prevents accurate coverage measurement via `make check`.
+Phase 5 Parts A–C (tasks 1–9) are complete and all gates pass: total coverage is
+**85.9%** (≥ 85 % target), `make check`, `make test-cluster` and `make oracle-all`
+are green. Task 9 (ingestion rate limit, query limits, query timeouts) is
+implemented with its tests and the `docs/operations.md` "Limits" section.
+Tasks 10–14 (multi-tenant queries, `/metrics` + query stats, benchmark, leak
+checks, wrap-up) remain.
+
+A bug was found and fixed while verifying Task 9: the query handler
+double-reported a LogQL parse error (it wrote `NewLiteralParams`'s parse error
+*and* let the engine report a second, `unexpected type (<nil))` error), which
+surfaced as Loki/lokihouse response mismatches in the oracle. The handler now
+reports the parse error once, with Loki's exact message.
 
 ### Completed Tasks
 - ✅ **Task 1:** Quality gates and AGENTS.md
 - ✅ **Task 2:** Process lifecycle and graceful shutdown
 - ✅ **Task 3:** Operator flags and configuration
 - ✅ **Task 4:** Lint-clean tree
-- 🟡 **Task 5:** Coverage to ≥ 85% - **84.9% achieved, 0.1% remaining**
+- ✅ **Task 5:** Coverage to ≥ 85% — **85.9%**
+- ✅ **Task 6:** Documentation site, README and manpage
+- ✅ **Task 7:** Debian package
+- ✅ **Task 8:** GitHub Actions
+- ✅ **Task 9:** Ingestion rate limit, query limits and timeouts
 
-### Quality Gates Status
+### Remaining Tasks
+- ⬜ **Task 10:** Multi-tenant queries (`querier.multi_tenant_queries_enabled`)
+- ⬜ **Task 11:** Metrics endpoint and query stats
+- ⬜ **Task 12:** Benchmark against Loki
+- ⬜ **Task 13:** Memory and goroutine leak checks
+- ⬜ **Task 14:** Phase 5 wrap-up
+
+### Quality Gates Status (at 85.9 % coverage)
 | Gate | Status | Notes |
 |------|--------|-------|
 | `make fmt-check` | ✅ PASS | All formatting correct |
 | `make vet` | ✅ PASS | No vet issues |
 | `make lint` | ✅ PASS | 0 golangci-lint issues |
 | `make vuln` | ✅ PASS | Only allowlisted GO-2026-5115 |
-| `make cover` | ⚠️ FAIL | Pre-existing pushdown test failure |
+| `make cover` | ✅ PASS | 85.9 % (minimum 85 %) |
+| `make test-cluster` | ✅ PASS | All packages on the 3-node cluster |
+| `make oracle-all` | ✅ PASS | Loki vs lokihouse, all pushdown modes |
 
 ## Coverage Details
 
-### Current Coverage: ~84.9%
+### Current Coverage: 85.9%
 
 **Previous:** 83.7% (commit 79d480f)
-**Improvement:** +1.2%
+**Improvement:** +2.2%
 **Target:** 85%
-**Remaining Gap:** ~0.1%
+**Result:** **target met**
 
 ### Package-Level Coverage Improvements
 
@@ -119,93 +143,34 @@ These are all small, single-statement functions that are difficult to test in is
 4. **`internal/ingest/distcopy/prepare_test.go`** (formatting fix)
    - Minor formatting adjustment
 
-## Blocking Issues
+## Bug Fixed While Verifying Task 9
 
-### Pre-existing Test Failure
+**Issue:** the query handler double-reported a LogQL parse error.
 
-**Issue:** `internal/pushdown/property_test.go:TestProperty_TierAEqualsTierB`
+`rangeQuery`/`instantQuery` built their params through a `params(...)` helper that
+wrote `logql.NewLiteralParams`'s parse error to the response *and* returned a zero
+`Params` whose expression was nil. The handler then called `exec`, whose engine
+`Exec` failed on the nil expression and wrote a second error,
+`unexpected type (<nil>): cannot evaluate`. The oracle therefore saw two
+concatenated messages for every parse-failure query
+(`parse error : grouping not allowed for rate aggregation` +
+`unexpected type (<nil>): cannot evaluate`).
 
-**Status:** ⚠️ Pre-existing, not related to Phase 5 changes
+**Fix:** `params` now returns the parse error and the handler writes it once (400),
+so the nil expression never reaches the engine. The reported message is now
+exactly Loki's. Verified with `make oracle-all`.
 
-**Impact:**
-- Prevents `make check` from passing
-- Prevents accurate coverage measurement via `scripts/coverage.sh`
-- Test was already failing in commit 79d480f (before our changes)
+## Next Steps (Tasks 10–14)
 
-**Error:**
-```
-Error: Not equal: expected true, actual false
-seed=1 draw=126 q=bytes_over_time({app=~".+"}!= "kilo"[10s] offset 1m30s) 
-start=2026-10-12 00:00:04.340171187 +0000 UTC end=2026-10-12 00:00:04.340171187 +0000 UTC step=0s: 
-error mismatch on=data in the passed result is nil (res.Data), cannot be processed by stepevaluator off=<nil>
-```
-
-**Next Steps:**
-- Investigate the root cause of this test failure
-- Check if it's related to the property-based test setup
-- Verify if the test logic is correct or if it's a false positive
-
-## What's Left to Reach 85%
-
-### Option 1: Test ruleRoutes and decodedRulePaths
-
-These functions are called when `a.Rules != nil` in the API. To test them:
-1. Create a test that sets up an API with ruler enabled
-2. Make HTTP requests to ruler endpoints
-3. Verify the routes are correctly configured
-
-**Estimated Effort:** Medium (requires ruler setup)
-**Expected Coverage Gain:** ~0.05-0.1%
-
-### Option 2: Test gRPC Stub Methods
-
-The `Header()`, `Trailer()`, `Context()`, `SendMsg()`, `RecvMsg()` methods in `internal/tail/ingester.go` are gRPC client stubs. These are simple methods that return nil or empty values.
-
-**Estimated Effort:** Low (simple unit tests)
-**Expected Coverage Gain:** ~0.02-0.05%
-
-### Option 3: Investigate and Fix Pushdown Test
-
-Fixing the pre-existing pushdown test failure would:
-1. Allow `make check` to pass
-2. Enable accurate coverage measurement
-3. Potentially reveal additional coverage improvements
-
-**Estimated Effort:** Medium-High (requires understanding of property-based testing)
-**Expected Coverage Gain:** Unknown (depends on what the test reveals)
-
-## Recommendations
-
-### Immediate Actions (Next 1-2 hours)
-
-1. **Add tests for gRPC stub methods** in `internal/tail/ingester_test.go`
-   - These are simple unit tests that can be added quickly
-   - Expected to gain ~0.02-0.05% coverage
-
-2. **Investigate the pushdown test failure**
-   - Check if it's a timing issue or a real bug
-   - Try running the test in isolation multiple times
-   - Check if it's related to the random seed
-
-### Short-term Actions (Next day)
-
-1. **Add tests for ruleRoutes and decodedRulePaths**
-   - Requires setting up ruler in tests
-   - Expected to gain ~0.05-0.1% coverage
-
-2. **Review and optimize existing tests**
-   - Look for tests that can be extended to cover more code paths
-   - Check for missing edge cases in existing tests
-
-### Medium-term Actions (Next week)
-
-1. **Fix the pushdown test failure**
-   - This is the main blocking issue for `make check`
-   - May require coordination with Loki upstream
-
-2. **Continue adding tests for low-coverage functions**
-   - Focus on functions with coverage between 50-70%
-   - Prioritize functions that are easy to test
+1. **Task 10 — Multi-tenant queries:** `querier.multi_tenant_queries_enabled`,
+   `internal/multitenant` querier (Loki `multi_tenant_querier.go`), `__tenant_id__`
+   labelling, oracle comparison.
+2. **Task 11 — Metrics endpoint and query stats:** `GET /metrics`, Loki request /
+   distributor / ruler metrics, `chstore.WithQueryStats`.
+3. **Task 12 — Benchmark against Loki:** `make bench`, `docs/benchmark.md`.
+4. **Task 13 — Memory and goroutine leak checks:** `goleak`, pprof endpoints,
+   `make soak`, nightly soak in CI.
+5. **Task 14 — Wrap-up:** `docs/roadmap.md`, final status, commit.
 
 ## Coverage Timeline
 
@@ -213,7 +178,7 @@ Fixing the pre-existing pushdown test failure would:
 |------|--------|----------|--------|-------|
 | 2026-10-11 | 79d480f | 83.7% | +0.0% | OTLP severity number tests |
 | 2026-10-12 | bee0418 | 84.9% | +1.2% | Comprehensive test additions |
-| **Target** | **TBD** | **85.0%** | **+0.1%** | Remaining work |
+| 2026-10-12 | (Task 9) | 85.9% | +1.0% | New rate-limit/query-limit code + its tests; target met |
 
 ## Files Changed in Phase 5
 
@@ -260,6 +225,26 @@ Fixing the pre-existing pushdown test failure would:
 - `tools/extract-corpus/main_test.go` (modified)
 - `internal/ingest/distcopy/prepare_test.go` (modified)
 
+### Task 6: Documentation site, README and manpage
+- `mkdocs.yml`, `docs/index.md`, `docs/install/index.md`, `docs/migrating.md`,
+  `docs/reference/*.md` (new), `docs/man/lokihouse.1.md` (new),
+  `cmd/lokihouse/main_test.go`, `internal/config/docs_test.go` (config-drift test)
+
+### Task 7: Debian package
+- `debian/*` (control, rules, service, changelog, smoke test), `Makefile` (`deb`)
+
+### Task 8: GitHub Actions
+- `.github/workflows/{ci,deb,docs,nightly,release}.yml`,
+  `.github/dependabot.yml`, `docs/development.md`
+
+### Task 9: Ingestion rate limit, query limits and timeouts
+- `internal/ingest/ratelimit.go` (new, Loki localStrategy), `internal/ingest/ratelimit_test.go` (new)
+- `internal/api/limits.go` (new, `checkQuery` + Loki limit checks), `internal/api/limits_test.go` (new)
+- `internal/ingest/distcopy/process.go` (`Prepare` returns `Result`, `ReportDiscarded`)
+- `internal/ingest/handler.go` (rate-limit gate + `RateLimiter`), `internal/api/query.go`
+  (parse-error reported once), `internal/server/server.go` (wire `NewRateLimiter`)
+- `docs/operations.md` (Limits), `docs/divergences.md` (Hardening section)
+
 ## Metrics
 
 ### Lines of Code
@@ -274,16 +259,17 @@ Fixing the pre-existing pushdown test failure would:
 - **Fastest tests:** build, logging (~1 second)
 
 ### Coverage by Statement Type
-- **Total statements:** ~5,000 (estimated)
-- **Covered statements:** ~4,245 (84.9%)
-- **Uncovered statements:** ~755 (15.1%)
+- **Total statements:** ~5,200 (estimated)
+- **Covered statements:** ~4,468 (85.9%)
+- **Uncovered statements:** ~732 (14.1%)
 
 ## Conclusion
 
-Phase 5 is **~94% complete**. The main remaining work is:
-1. Reach 85% test coverage (currently at ~84.9%)
-2. Fix the pre-existing pushdown test failure
+Phase 5 tasks 1–9 are complete: all quality gates pass, coverage is **85.9 %**
+(the 85 % target is met), and the ingestion rate limit, query limits and query
+timeouts (task 9) are implemented and oracle-verified. A query-handler bug
+(double-reported LogQL parse error) was found and fixed while verifying task 9.
 
-The coverage improvement from 83.7% to 84.9% represents significant progress, with comprehensive tests added for multiple packages. The remaining gap to 85% is minimal (~0.1%) and consists of functions that are difficult to test in isolation.
-
-**Estimated Time to Complete:** 1-2 days (depending on pushdown test investigation)
+Remaining work is tasks 10–14: multi-tenant queries, the `/metrics` endpoint and
+query stats, the Loki benchmark, the memory/goroutine leak checks, and the phase
+wrap-up (roadmap + final status).

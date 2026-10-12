@@ -4,7 +4,10 @@
 // newMetadataGroup, duplicateTimestampTracker and the push request loop);
 // modifications: methods turned into functions on a small preparer; rate
 // limiting, writeFailuresManager, metrics, usage tracker, ingester/ring and
-// Kafka paths removed; labelCache inlined; processStreamEntries takes a context.
+// Kafka paths removed; labelCache inlined; processStreamEntries takes a
+// context; Prepare returns the kept bytes/lines for rate limiting (Loki's
+// rlBuckets accounting, tenant bucket only); ReportDiscarded records the
+// rate-limited discard metrics.
 package distcopy
 
 import (
@@ -105,13 +108,22 @@ func calculateStreamSizes(stream logproto.InternalStreamAdapter) (uint64, uint64
 	return entriesSize, structuredMetadataSize
 }
 
+// Result is what Prepare returns: the surviving streams plus the kept bytes
+// and lines, counted the way Loki's rate limiter counts them
+// (streamStats.unexpandedSize, entriesKept).
+type Result struct {
+	Streams []logproto.Stream
+	Bytes   int
+	Lines   int
+}
+
 // Prepare validates and normalises the push request, the way the Loki distributor does,
 // and returns the streams that survive validation with discovered fields applied.
 // validationErr is non-nil when any entry or stream was rejected; its message matches
 // Loki's. Kept entries of rejected streams are still returned, as in Loki.
-func Prepare(ctx context.Context, limits *validation.Overrides, tenantID string, req *logproto.InternalPushRequest, now time.Time) ([]logproto.Stream, error) {
+func Prepare(ctx context.Context, limits *validation.Overrides, tenantID string, req *logproto.InternalPushRequest, now time.Time) (Result, error) {
 	if len(req.Streams) == 0 {
-		return nil, fmt.Errorf(validation.MissingStreamsErrorMsg)
+		return Result{}, fmt.Errorf(validation.MissingStreamsErrorMsg)
 	}
 	p := &preparer{validator: &Validator{Overrides: limits}}
 	vctx := p.validator.getValidationContextForTime(now, tenantID)
@@ -119,6 +131,7 @@ func Prepare(ctx context.Context, limits *validation.Overrides, tenantID string,
 	tenantsRetention := retention.NewTenantsRetention(limits)
 
 	var validationErrors util.GroupedErrors
+	var res Result
 
 	for i := range req.Streams {
 		stream := &req.Streams[i]
@@ -153,11 +166,16 @@ func Prepare(ctx context.Context, limits *validation.Overrides, tenantID string,
 				continue
 			}
 			p.validator.reportDiscardedDataWithTracker(ctx, reason, vctx, lbs, "", "", nestedStreamSize(*stream), stream.EntryCount(), "")
-			return nil, err
+			return Result{}, err
 		}
 
-		if _, err := p.processStreamEntries(ctx, vctx, stream, lbs, fieldDetector, &validationErrors); err != nil {
-			return nil, err
+		stats, err := p.processStreamEntries(ctx, vctx, stream, lbs, fieldDetector, &validationErrors)
+		if err != nil {
+			return Result{}, err
+		}
+		if stream.EntryCount() > 0 {
+			res.Bytes += stats.unexpandedSize
+			res.Lines += stats.entriesKept
 		}
 		if stream.EntryCount() == 0 {
 			// Empty stream after validating all the entries
@@ -166,19 +184,33 @@ func Prepare(ctx context.Context, limits *validation.Overrides, tenantID string,
 	}
 
 	// Collect the surviving streams in Loki's flat view.
-	var out []logproto.Stream
 	for _, s := range req.Streams {
 		if s.EntryCount() == 0 {
 			continue
 		}
-		out = append(out, s.FlatView())
+		res.Streams = append(res.Streams, s.FlatView())
 	}
 
 	var validationErr error
 	if validationErrors.Err() != nil {
 		validationErr = fmt.Errorf("%s", validationErrors.Error())
 	}
-	return out, validationErr
+	return res, validationErr
+}
+
+// ReportDiscarded records Loki's discarded samples and bytes metrics for each
+// stream under the given reason (Loki uses validation.RateLimited for a
+// rejected push).
+func ReportDiscarded(ctx context.Context, limits *validation.Overrides, tenantID, reason string, streams []logproto.Stream, now time.Time) {
+	v := &Validator{Overrides: limits}
+	vctx := v.getValidationContextForTime(now, tenantID)
+	for _, s := range streams {
+		lbs, err := syntax.ParseLabels(s.Labels)
+		if err != nil {
+			continue
+		}
+		v.reportDiscardedDataWithTracker(ctx, reason, vctx, lbs, "", "", nestedStreamSize(*logproto.FromStream(s)), len(s.Entries), "")
+	}
 }
 
 // parseStreamLabels parses and validates the stream label string, as the Loki distributor does.

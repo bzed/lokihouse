@@ -1,0 +1,38 @@
+# Operations
+
+## Limits
+
+lokihouse enforces Loki's `limits_config` keys at the points below. A tenant is
+the value of the `X-Scope-OrgID` header.
+
+### Ingestion
+
+| Key | Where enforced | Behaviour |
+| --- | --- | --- |
+| `ingestion_rate_mb` | distributor (push) | Per-tenant tokens/second. A push over the limit is rejected with `429` and nothing is stored; the push consumes no tokens. |
+| `ingestion_burst_size_mb` | distributor (push) | Burst for the bucket above. |
+| `max_line_size`, `max_line_size_truncate` | push validation | Lines over the limit are truncated (with Loki's marker) or rejected. |
+| `max_received_message_size` / `max_decompressed_message_size` | push parsing | Oversized pushes are rejected. |
+| `enforced_labels`, `enforced_metric_name_labels` | push validation | Streams missing them are rejected. |
+| `reject_new_samples_max_age`, `reject_new_samples_max_offset` | push validation | Out-of-window samples are dropped. |
+| `stream_granularity` (retention) | push | `retention_days` written per stream. |
+
+### Query
+
+| Key | Where enforced | Behaviour |
+| --- | --- | --- |
+| `max_query_length` | `checkQuery` (all query endpoints) | `400` if the range is longer than the limit. |
+| `max_query_lookback` | `checkQuery` | Start clamped to `now - lookback`; a range entirely before that returns an empty result. |
+| `max_entries_limit_per_query` | `checkQuery` | `400` if `limit` exceeds it (log queries only). |
+| `max_streams_matchers_per_query` | `checkQuery` | `400` if a stream selector has more matchers than the limit. |
+| `required_labels` | `checkQuery` | `400` if a stream selector lacks a required label. |
+| `required_number_labels` | `checkQuery` | `400` if a stream selector has fewer matchers than required. |
+| `query_timeout` | Loki engine `Eval` | A timed-out query is a `504`. |
+| `max_query_series` | Loki engine | `400` if the result would exceed the cap. |
+| `max_query_range` | Loki engine | `400` if the range is wider than allowed. |
+
+Per-tenant values are read with the smallest positive value across the
+tenants in the request, as in Loki.
+
+See [Differences from Loki](divergences.md#hardening-phase-5) for the rate-limit
+strategy difference.

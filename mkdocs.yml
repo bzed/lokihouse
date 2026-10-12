@@ -52,6 +52,7 @@ exclude_docs: |
 nav:
   - Index: index.md
   - Installation: install/index.md
+  - Operations: operations.md
   - Migrating from Loki: migrating.md
   - Reference:
       - Configuration: reference/configuration.md
