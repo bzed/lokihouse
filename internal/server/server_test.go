@@ -20,6 +20,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/go-kit/log"
 	"github.com/gorilla/websocket"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bzed/lokihouse/internal/chstore"
@@ -154,6 +155,28 @@ func TestRun_PushQueryShutdown(t *testing.T) {
 	require.Error(t, err, "listener must be closed after Run returns")
 }
 
+// inflightPosts is the number of POST requests the server's handlers are
+// serving (loki_inflight_requests, a process-wide collector).
+func inflightPosts(t *testing.T) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	var n float64
+	for _, mf := range families {
+		if mf.GetName() != "loki_inflight_requests" {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "method" && l.GetValue() == http.MethodPost {
+					n += m.GetGauge().GetValue()
+				}
+			}
+		}
+	}
+	return n
+}
+
 func TestRun_InFlightPushCompletes(t *testing.T) {
 	cfg := testConfig(t, defaultServer, "")
 	r := start(t, cfg, log.NewNopLogger())
@@ -182,8 +205,11 @@ func TestRun_InFlightPushCompletes(t *testing.T) {
 		defer resp.Body.Close()
 		resc <- result{code: resp.StatusCode}
 	}()
-	_, err = pw.Write([]byte(body[:10])) // the request is now in flight
+	_, err = pw.Write([]byte(body[:10]))
 	require.NoError(t, err)
+	// The request is in flight once the server's handler runs. Until then the
+	// connection is idle to net/http and Shutdown would close it under the client.
+	require.Eventually(t, func() bool { return inflightPosts(t) > 0 }, 10*time.Second, 5*time.Millisecond)
 
 	stopped := make(chan error, 1)
 	go func() { stopped <- r.stop() }()
