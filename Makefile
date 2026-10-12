@@ -52,3 +52,12 @@ vuln:
 cover:
 	COVERAGE_MIN=$(COVERAGE_MIN) sh scripts/coverage.sh
 check: fmt-check vet lint vuln cover
+
+.PHONY: docs man
+docs:
+	python3 -m venv /tmp/lokihouse-docs-venv
+	/tmp/lokihouse-docs-venv/bin/pip install -q -r docs/requirements.txt
+	/tmp/lokihouse-docs-venv/bin/mkdocs build --strict --site-dir site
+man:
+	mkdir -p bin
+	go-md2man -in docs/man/lokihouse.1.md -out bin/lokihouse.1
