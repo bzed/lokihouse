@@ -102,7 +102,7 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	}
 	// cancel the keyset reader with the request context so a cancelled query stops the read
 	k.ctx, k.cancel = context.WithCancel(ctx)
-	return &entryIter{rr: k, byID: byID, pipeline: pipeline, sp: map[uint64]log.StreamPipeline{}}, nil
+	return &entryIter{rr: k, byID: byID, pipeline: pipeline, sp: map[uint64]log.StreamPipeline{}, stats: stats.FromContext(ctx)}, nil
 }
 
 type entryIter struct {
@@ -110,6 +110,7 @@ type entryIter struct {
 	byID     map[uint64]Stream
 	pipeline log.Pipeline
 	sp       map[uint64]log.StreamPipeline
+	stats    *stats.Context
 	cur      logproto.Entry
 	lbls     string
 	hash     uint64
@@ -127,6 +128,7 @@ func (it *entryIter) Next() bool {
 		if !matches {
 			continue
 		}
+		it.stats.AddPostFilterLines(1)
 		it.cur = logproto.Entry{
 			Timestamp:          r.ts,
 			Line:               line,
