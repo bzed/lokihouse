@@ -1,0 +1,63 @@
+# Build and publish the lokihouse documentation site to GitHub Pages.
+#
+# Trigger: push to main only (the docs are a stable "current" set; PRs and
+# tags do not publish).
+#
+# BEFORE THE FIRST DEPLOY, configure the repo's Pages setting:
+#   Settings → Pages → Source: "GitHub Actions"  (branch: main)
+#
+# The workflow is split into two jobs (build, then deploy) so a broken
+# build does not touch the live site.
+#
+# Site URL: https://bzed.github.io/lokihouse/
+
+name: docs
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install mkdocs
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install mkdocs mkdocs-material
+
+      - name: Build site (strict)
+        run: mkdocs build --strict
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

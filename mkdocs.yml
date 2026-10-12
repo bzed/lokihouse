@@ -1,0 +1,60 @@
+# mkdocs configuration for the lokihouse documentation site.
+#
+# The site is a stable "current" set of pages, not a per-phase changelog.
+# The per-phase status docs (docs/phase1-status.md … docs/phase4-status.md)
+# and the canonical divergences list (docs/divergences.md) live in the repo
+# and are linked to from the site, not duplicated on it.
+#
+# CI (see .github/workflows/docs.yml) runs `mkdocs build --strict` and
+# deploys to GitHub Pages at https://bzed.github.io/lokihouse/.
+#
+# NOTE: before the first deploy, the repo's Pages setting must be configured:
+#   Settings → Pages → Source: "GitHub Actions" (branch: main)
+
+site_name: lokihouse
+site_description: Grafana Loki's HTTP API, backed by ClickHouse
+site_url: https://bzed.github.io/lokihouse/
+
+repo_name: bzed/lokihouse
+repo_url: https://github.com/bzed/lokihouse
+
+theme:
+  name: material
+  logo: null
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+
+strict: true
+
+# External links are not validated by mkdocs' link validator (it only
+# checks internal links); this keeps transient network failures on the CI
+# runner from blocking a publish. Broken *internal* links still fail the
+# strict build.
+
+docs_dir: docs
+
+# The repo's docs/ folder also holds developer-facing docs (per-phase status,
+# the design spec, the implementation plans, the canonical divergences
+# list). Those are not part of the public site; they are linked to via
+# absolute GitHub URLs in the site pages. exclude_docs keeps them out of
+# the published site without moving them out of docs/.
+exclude_docs: |
+  phase1-status.md
+  phase2-status.md
+  phase3-status.md
+  phase4-status.md
+  /divergences.md
+  /superpowers/
+
+nav:
+  - Index: index.md
+  - Installation: install/index.md
+  - Migrating from Loki: migrating.md
+  - Reference:
+      - Configuration: reference/configuration.md
+      - HTTP API: reference/http-api.md
+      - Divergences: reference/divergences.md
+  - About: about.md
