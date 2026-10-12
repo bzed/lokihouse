@@ -249,3 +249,30 @@ func TestTail_FutureEntryDoesNotHideCurrent(t *testing.T) {
 	write(t, cc, []logproto.Entry{{Timestamp: time.Now().UTC(), Line: "current"}})
 	require.Equal(t, "current", collect(t, c, 1, 10*time.Second)[0].Line)
 }
+
+func TestTailDisconnectedIngesters(t *testing.T) {
+	i, _ := newIngester(t, 0, 0)
+	ctx := orgCtx()
+	req := tailReq(`{app="t"}`, time.Now())
+
+	// Test when clickhouse is in the connected list
+	clients, err := i.TailDisconnectedIngesters(ctx, req, []string{"clickhouse"})
+	require.NoError(t, err)
+	require.Empty(t, clients)
+
+	// Test when clickhouse is not in the connected list
+	clients, err = i.TailDisconnectedIngesters(ctx, req, []string{"other"})
+	require.NoError(t, err)
+	require.Len(t, clients, 1)
+	require.NotNil(t, clients["clickhouse"])
+}
+
+func TestTailersCount(t *testing.T) {
+	i, _ := newIngester(t, 0, 0)
+	ctx := orgCtx()
+
+	// Initially, there should be 0 active tailers
+	n, err := i.TailersCount(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []uint32{0}, n)
+}

@@ -334,7 +334,7 @@ func TestPrepare_DetectsLogLevelFromOTLPSeverity(t *testing.T) {
 		{"17", "Error"},
 		{"21", "Fatal"},
 		{"0", "Unspecified"},
-		{"25", "Unknown"}, // Above fatal
+		{"25", "Unknown"},   // Above fatal
 		{"invalid", "Info"}, // Invalid number defaults to Info
 	}
 

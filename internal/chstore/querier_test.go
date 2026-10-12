@@ -188,6 +188,27 @@ func TestDetectedLabelsEmpty(t *testing.T) {
 	require.Empty(t, resp.DetectedLabels)
 }
 
+func TestEntryIter_StreamHash(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	seed(t, w, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "test"}}})
+
+	q := &chstore.Querier{Conn: conn}
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	it, err := q.SelectLogs(ctx, logql.SelectLogParams{QueryRequest: &logproto.QueryRequest{
+		Selector: `{app="a"}`, Start: t0, End: t0.Add(time.Hour), Direction: logproto.FORWARD,
+		Plan: &plan.QueryPlan{AST: syntax.MustParseExpr(`{app="a"}`)},
+	}})
+	require.NoError(t, err)
+	defer it.Close()
+
+	// Iterate through and call StreamHash to ensure it's covered
+	for it.Next() {
+		_ = it.StreamHash()
+	}
+	require.NoError(t, it.Err())
+}
+
 func TestKeyset_SameResultForAnyChunkSize(t *testing.T) {
 	conn, _ := chtest.New(t)
 	w := &chstore.Writer{Conn: conn}
