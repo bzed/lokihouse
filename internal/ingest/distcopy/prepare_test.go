@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grafana/loki/v3/pkg/logproto"
+	"github.com/grafana/loki/v3/pkg/util/constants"
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/stretchr/testify/require"
 
@@ -114,6 +115,65 @@ func TestPrepare_NormalisesLogLevelInMetadata(t *testing.T) {
 		if sm.Name == "detected_level" {
 			require.Equal(t, "warn", sm.Value)
 		}
+	}
+}
+
+func TestPrepare_NormalisesAllLogLevels(t *testing.T) {
+	// Test that all log level variations are normalized
+	o := overrides(t, func(l *validation.Limits) {
+		l.DiscoverLogLevels = true
+		l.AllowStructuredMetadata = true
+	})
+	now := time.Now()
+
+	// Test all the level variations in structured metadata
+	levels := []struct {
+		input    string
+		expected string
+	}{
+		{"trace", constants.LogLevelTrace},
+		{"TRACE", constants.LogLevelTrace},
+		{"trc", constants.LogLevelTrace},
+		{"debug", constants.LogLevelDebug},
+		{"DEBUG", constants.LogLevelDebug},
+		{"dbg", constants.LogLevelDebug},
+		{"info", constants.LogLevelInfo},
+		{"INFO", constants.LogLevelInfo},
+		{"inf", constants.LogLevelInfo},
+		{"information", constants.LogLevelInfo},
+		{"warn", constants.LogLevelWarn},
+		{"WARN", constants.LogLevelWarn},
+		{"wrn", constants.LogLevelWarn},
+		{"warning", constants.LogLevelWarn},
+		{"error", constants.LogLevelError},
+		{"ERROR", constants.LogLevelError},
+		{"err", constants.LogLevelError},
+		{"critical", constants.LogLevelCritical},
+		{"CRITICAL", constants.LogLevelCritical},
+		{"fatal", constants.LogLevelFatal},
+		{"FATAL", constants.LogLevelFatal},
+		{"unknown", "unknown"}, // Should be returned as-is
+	}
+
+	for _, tc := range levels {
+		t.Run(tc.input, func(t *testing.T) {
+			e := logproto.Entry{
+				Timestamp: now,
+				Line:      "test",
+				StructuredMetadata: []logproto.LabelAdapter{
+					{Name: "detected_level", Value: tc.input},
+				},
+			}
+			out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+			require.NoError(t, err)
+			require.Len(t, out, 1)
+			// The level should be normalized
+			for _, sm := range out[0].Entries[0].StructuredMetadata {
+				if sm.Name == "detected_level" {
+					require.Equal(t, tc.expected, sm.Value, "Input: %s, Expected: %s", tc.input, tc.expected)
+				}
+			}
+		})
 	}
 }
 

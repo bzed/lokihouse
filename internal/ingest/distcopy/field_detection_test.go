@@ -293,6 +293,7 @@ func Test_NormalizeLogLevel(t *testing.T) {
 		entry            string
 		expectedLogLevel string
 	}{
+		// Test all the level variations
 		{name: "WaRn", entry: `{"level":"WaRn"}`, expectedLogLevel: constants.LogLevelWarn},
 		{name: "InFo", entry: `{"level":"InFo"}`, expectedLogLevel: constants.LogLevelInfo},
 		{name: "CRITICAL", entry: `{"level":"CRITICAL"}`, expectedLogLevel: constants.LogLevelCritical},
@@ -300,6 +301,16 @@ func Test_NormalizeLogLevel(t *testing.T) {
 		{name: "FaTaL", entry: `{"level":"FaTaL"}`, expectedLogLevel: constants.LogLevelFatal},
 		{name: "tRaCe", entry: `{"level":"tRaCe"}`, expectedLogLevel: constants.LogLevelTrace},
 		{name: "ERROR", entry: `{"level":"ERROR"}`, expectedLogLevel: constants.LogLevelError},
+		// Test abbreviations
+		{name: "wrn", entry: `{"level":"wrn"}`, expectedLogLevel: constants.LogLevelWarn},
+		{name: "dbg", entry: `{"level":"dbg"}`, expectedLogLevel: constants.LogLevelDebug},
+		{name: "inf", entry: `{"level":"inf"}`, expectedLogLevel: constants.LogLevelInfo},
+		{name: "err", entry: `{"level":"err"}`, expectedLogLevel: constants.LogLevelError},
+		// Test full words
+		{name: "warning", entry: `{"level":"warning"}`, expectedLogLevel: constants.LogLevelWarn},
+		{name: "information", entry: `{"level":"information"}`, expectedLogLevel: constants.LogLevelInfo},
+		// Test unknown level (should be returned as-is)
+		{name: "unknown", entry: `{"level":"unknown"}`, expectedLogLevel: "unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry := logproto.Entry{
