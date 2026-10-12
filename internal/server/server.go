@@ -26,13 +26,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/bzed/lokihouse/internal/multitenant"
-
 	"github.com/bzed/lokihouse/internal/api"
 	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/config"
 	"github.com/bzed/lokihouse/internal/deletes"
 	"github.com/bzed/lokihouse/internal/ingest"
+	"github.com/bzed/lokihouse/internal/multitenant"
 	"github.com/bzed/lokihouse/internal/patterns"
 	"github.com/bzed/lokihouse/internal/pushdown"
 	lhruler "github.com/bzed/lokihouse/internal/ruler"
@@ -80,9 +79,12 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 	if cfg.Server.RegisterInstrumentation {
 		a.Pprof = true
 		a.Metrics = promhttp.HandlerFor(prometheus.Gatherers{prometheus.DefaultGatherer, rulerReg}, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError})
-		// AlreadyRegisteredError is the no-op we want on a second Run in one process.
+		// A second Run in one process (tests) finds the collector registered.
 		if err := prometheus.Register(version.NewCollector("lokihouse")); err != nil {
-			_ = err
+			if are := (prometheus.AlreadyRegisteredError{}); !errors.As(err, &are) {
+				closeConn()
+				return fmt.Errorf("register version collector: %w", err)
+			}
 		}
 	}
 

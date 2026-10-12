@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,8 +33,6 @@ var (
 func instrument(mux *http.ServeMux, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		route := routeName(routeOf(mux, r))
-		ctx := context.WithValue(r.Context(), routeKey{}, route)
-		r = r.WithContext(ctx)
 		g := inflightRequests.WithLabelValues(r.Method, route)
 		g.Inc()
 		defer g.Dec()
@@ -50,9 +47,6 @@ func routeOf(mux *http.ServeMux, r *http.Request) string {
 	_, pattern := mux.Handler(r)
 	return pattern
 }
-
-// routeKey is the context key of the routed ServeMux pattern.
-type routeKey struct{}
 
 // routeName turns a ServeMux pattern ("GET /loki/api/v1/query") into dskit's
 // route label ("loki_api_v1_query"); unmatched requests are "other".

@@ -42,6 +42,7 @@ func (a *API) rangeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	if !start.Equal(rq.Start) {
 		rq.Start = start
+		// The query parsed above; only the start changed, so this cannot fail.
 		p, _ = params(rq.Query, rq.Start, rq.End, rq.Step, rq.Interval, rq.Direction, rq.Limit, rq.Shards)
 	}
 	a.exec(w, r, p)
