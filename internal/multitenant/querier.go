@@ -10,7 +10,9 @@
 // lokihouse's Store instead of Loki's querier.Querier; the store-chunk
 // overrides (partitionChunkRefsByTenant) and the IndexStats/Volume/Patterns/
 // Detected* methods are omitted because lokihouse has no chunks and answers
-// those endpoints for one tenant only (see docs/divergences.md).
+// those endpoints for one tenant only (see docs/divergences.md); SelectLogs
+// closes the iterators it opened when a later tenant fails, as Loki's
+// SelectSamples does.
 package multitenant
 
 import (
@@ -25,6 +27,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
 	"github.com/grafana/loki/v3/pkg/querier/plan"
+	"github.com/grafana/loki/v3/pkg/util"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -54,7 +57,7 @@ type Querier struct {
 
 // SelectLogs fans out to Next per tenant, wrapping each iterator so every
 // stream is labelled with its tenant, and merges them in the requested order.
-func (q *Querier) SelectLogs(ctx context.Context, params logql.SelectLogParams) (iter.EntryIterator, error) {
+func (q *Querier) SelectLogs(ctx context.Context, params logql.SelectLogParams) (_ iter.EntryIterator, returnErr error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, err
@@ -81,6 +84,14 @@ func (q *Querier) SelectLogs(ctx context.Context, params logql.SelectLogParams) 
 	params.Selector = updatedSelector.String()
 
 	iters := make([]iter.EntryIterator, 0, len(matchedTenants))
+	defer func() {
+		if returnErr == nil {
+			return
+		}
+		for _, opened := range iters {
+			util.LogErrorWithContext(ctx, "closing per-tenant entry iterator after SelectLogs failed", opened.Close)
+		}
+	}()
 	for id := range matchedTenants {
 		singleContext := user.InjectOrgID(ctx, id)
 		tenantIter, err := q.Next.SelectLogs(singleContext, params)
@@ -113,6 +124,16 @@ func (q *Querier) SelectSamples(ctx context.Context, params logql.SelectSamplePa
 	params.Selector = updatedExpr.String()
 
 	iters := make([]iter.SampleIterator, 0, len(matchedTenants))
+	// If SelectSamples returns an error below, close every per-tenant iterator opened so far,
+	// so neither a later tenant's error nor a rejected order leaks them.
+	defer func() {
+		if returnErr == nil {
+			return
+		}
+		for _, opened := range iters {
+			util.LogErrorWithContext(ctx, "closing per-tenant sample iterator after SelectSamples failed", opened.Close)
+		}
+	}()
 	for id := range matchedTenants {
 		singleContext := user.InjectOrgID(ctx, id)
 		tenantIter, err := q.Next.SelectSamples(singleContext, params)
@@ -272,6 +293,8 @@ func (r relabel) relabel(original string) string {
 	if ok {
 		return lbls.String()
 	}
+	// The labels come from our own iterator, which formats them with
+	// labels.String; Loki ignores the parse error here too.
 	lbls, _ = syntax.ParseLabels(original)
 	builder := labels.NewBuilder(lbls).Del(defaultTenantLabel)
 	if lbls.Has(defaultTenantLabel) {
