@@ -322,16 +322,36 @@ func TestPrepare_DetectsLogLevelFromOTLPSeverity(t *testing.T) {
 	})
 	now := time.Now()
 	// Entry with OTLP severity number in structured metadata
-	e := logproto.Entry{
-		Timestamp: now,
-		Line:      "test",
-		StructuredMetadata: []logproto.LabelAdapter{
-			{Name: "severity_number", Value: "9"},
-		},
+	// Test various severity numbers
+	severityNumbers := []struct {
+		severity string
+		name     string
+	}{
+		{"1", "Trace"},
+		{"5", "Debug"},
+		{"9", "Info"},
+		{"13", "Warn"},
+		{"17", "Error"},
+		{"21", "Fatal"},
+		{"0", "Unspecified"},
+		{"25", "Unknown"}, // Above fatal
+		{"invalid", "Info"}, // Invalid number defaults to Info
 	}
-	out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
-	require.NoError(t, err)
-	require.Len(t, out, 1)
-	// Just ensure the test doesn't panic and returns something
-	_ = out[0].Entries[0].StructuredMetadata
+
+	for _, tc := range severityNumbers {
+		t.Run(tc.name, func(t *testing.T) {
+			e := logproto.Entry{
+				Timestamp: now,
+				Line:      "test",
+				StructuredMetadata: []logproto.LabelAdapter{
+					{Name: "severity_number", Value: tc.severity},
+				},
+			}
+			out, err := distcopy.Prepare(context.Background(), o, "t", req(`{a="b"}`, e), now)
+			require.NoError(t, err)
+			require.Len(t, out, 1)
+			// Just ensure the test doesn't panic and returns something
+			_ = out[0].Entries[0].StructuredMetadata
+		})
+	}
 }
