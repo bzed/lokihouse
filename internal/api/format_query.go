@@ -12,7 +12,7 @@ import (
 // registered without the tenant wrapper: Loki serves it without auth.
 
 // Copyright (c) 2015-2026 Grafana Labs.
-// Copied from grafana/loki@fbc3f077 pkg/loki/format_query_handler.go;
+// Copied from grafana/loki@bc196286 pkg/loki/format_query_handler.go;
 // modifications: moved into the api package.
 
 // FormatQueryResponse is the JSON body of /loki/api/v1/format_query.

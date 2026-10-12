@@ -2,7 +2,7 @@
 // field detection, trimmed to lokihouse (no ring, Kafka, rate limiting,
 // metrics or usage tracking).
 //
-// Copied from grafana/loki@fbc3f077 pkg/distributor/validator.go;
+// Copied from grafana/loki@bc196286 pkg/distributor/validator.go;
 // modifications: package renamed; Limits interface replaced by
 // *validation.Overrides (implements every method used); reportDiscardedData*
 // made no-ops; usageTracker removed.

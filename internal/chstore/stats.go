@@ -66,7 +66,7 @@ func statsFromHours(rows []HourStat, from, through int64) *logproto.IndexStatsRe
 	return res
 }
 
-// Copied from grafana/loki@fbc3f077 pkg/ingester/instance.go (getVolume); modifications:
+// Copied from grafana/loki@bc196286 pkg/ingester/instance.go (getVolume); modifications:
 // ClickHouse streams and hourly buckets instead of ingester streams and chunks.
 func volumeFromHours(streams []Stream, rows []HourStat, from, through int64, req *logproto.VolumeRequest, labelsToMatch map[string]struct{}, matchAny bool) *logproto.VolumeResponse {
 	sizes := map[uint64]uint64{}

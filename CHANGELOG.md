@@ -14,6 +14,12 @@ changelog (`debian/changelog`) carries the same releases.
   with cosign, with SBOM and provenance.
 - `SECURITY.md`, `CONTRIBUTING.md` and this changelog.
 
+### Changed
+
+- Pinned Loki commit bumped from `fbc3f077` to `bc196286` (2026-10-12). The Loki
+  code lokihouse copies is unchanged between the two; unit, cluster and oracle
+  suites pass.
+
 ### Fixed
 
 - Documentation links that pointed at the site root instead of `/lokihouse/`.

@@ -7,7 +7,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 )
 
-// Copied from grafana/loki@fbc3f077 pkg/distributor/ingestion_rate_strategy.go
+// Copied from grafana/loki@bc196286 pkg/distributor/ingestion_rate_strategy.go
 // (localStrategy); modifications: tenant-only keys (lokihouse has no policies),
 // also used for Loki's "global" strategy (lokihouse has no distributor ring:
 // one instance holds the whole limit, see docs/divergences.md).

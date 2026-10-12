@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// Copied from grafana/loki@fbc3f077 pkg/querier/querier.go (countLabelsAndCardinality,
+// Copied from grafana/loki@bc196286 pkg/querier/querier.go (countLabelsAndCardinality,
 // shouldRejectLabel, containsAllIDTypes, parsedFields and its methods); modifications:
 // no ingester branch (lokihouse is store-only), and the sketch is marshalled via the
 // same method the original uses.

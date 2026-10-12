@@ -1,6 +1,6 @@
 package distcopy
 
-// Copied from grafana/loki@fbc3f077 pkg/distributor/field_detection.go;
+// Copied from grafana/loki@bc196286 pkg/distributor/field_detection.go;
 // modifications: package renamed only.
 
 import (

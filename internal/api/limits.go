@@ -1,6 +1,6 @@
 // Package api query limits.
 //
-// Copied from grafana/loki@fbc3f077 pkg/querier/queryrange/limits.go
+// Copied from grafana/loki@bc196286 pkg/querier/queryrange/limits.go
 // (validateMaxEntriesLimits, validateMatchers, requiredLabelsErrTmpl,
 // requiredNumberLabelsErrTmpl, maxSeriesErrTmpl), pkg/querier/queryrange/
 // roundtrip.go (the matcher and entry-limit part of roundTripper.Do), the
