@@ -1,0 +1,19 @@
+# lokihouse configuration (Debian package). All options:
+#   man lokihouse, /usr/share/doc/lokihouse/examples/lokihouse.example.yaml,
+#   https://bzed.github.io/lokihouse/configuration/
+# The service runs with -config.expand-env, so ${VAR} is expanded.
+auth_enabled: false              # true: clients must send X-Scope-OrgID
+server:
+  http_listen_address: 127.0.0.1 # only local clients; use 0.0.0.0 to listen everywhere
+  http_listen_port: 3100
+  log_level: info
+clickhouse:
+  addr: ["localhost:9000"]
+  database: lokihouse
+  username: default
+  # Keep the password out of this file: store it as a systemd credential
+  #   systemd-creds encrypt --name=lokihouse.clickhouse-password - \
+  #     /etc/credstore.encrypted/lokihouse.clickhouse-password
+  # and uncomment:
+  # password_file: ${CREDENTIALS_DIRECTORY}/lokihouse.clickhouse-password
+limits_config: {}

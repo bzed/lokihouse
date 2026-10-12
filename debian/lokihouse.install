@@ -1,0 +1,3 @@
+debian/.build/lokihouse usr/bin
+debian/lokihouse.yaml etc/lokihouse
+lokihouse.example.yaml usr/share/doc/lokihouse/examples

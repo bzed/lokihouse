@@ -1,0 +1,57 @@
+[Unit]
+Description=lokihouse - Loki-compatible log store on ClickHouse
+Documentation=man:lokihouse(1) https://bzed.github.io/lokihouse/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/lokihouse -config.file=/etc/lokihouse/lokihouse.yaml -config.expand-env=true
+Restart=on-failure
+RestartSec=5s
+# graceful_shutdown_timeout (30s) plus ruler and ClickHouse shutdown.
+TimeoutStopSec=45s
+DynamicUser=yes
+StateDirectory=lokihouse
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/lokihouse
+ConfigurationDirectory=lokihouse
+# Credentials named lokihouse.* from /etc/credstore{,.encrypted} (optional).
+ImportCredential=lokihouse.*
+UMask=0077
+LimitNOFILE=65536
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateUsers=yes
+PrivateIPC=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+# AF_UNIX is needed for sd_notify.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+DevicePolicy=closed
+KeyringMode=private
+
+[Install]
+WantedBy=multi-user.target

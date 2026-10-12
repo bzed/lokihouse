@@ -1,0 +1,3 @@
+Tests: smoke
+Depends: lokihouse, systemd
+Restrictions: needs-root, superficial

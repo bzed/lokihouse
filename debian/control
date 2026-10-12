@@ -1,0 +1,26 @@
+Source: lokihouse
+Section: net
+Priority: optional
+Maintainer: Bernd Zeimetz <bernd@bzed.de>
+Build-Depends: debhelper-compat (= 13),
+               ca-certificates,
+               curl,
+               git,
+               go-md2man
+Standards-Version: 4.7.2
+Homepage: https://github.com/bzed/lokihouse
+Vcs-Browser: https://github.com/bzed/lokihouse
+Vcs-Git: https://github.com/bzed/lokihouse.git
+Rules-Requires-Root: no
+
+Package: lokihouse
+Architecture: amd64 arm64
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Suggests: clickhouse-server
+Description: Loki-compatible log store on ClickHouse
+ lokihouse serves the HTTP API of Grafana Loki (push, LogQL queries, labels,
+ series, tail, index statistics, deletes and the ruler) and stores the logs in
+ ClickHouse, so Grafana, Promtail, Alloy and logcli use it like Loki.
+ .
+ The package ships a hardened systemd service using a dynamic user. It is not
+ enabled on installation: configure /etc/lokihouse/lokihouse.yaml first.

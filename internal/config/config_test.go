@@ -238,3 +238,10 @@ func TestLoad_ExampleConfig(t *testing.T) {
 	_, err := Load(filepath.Join("..", "..", "lokihouse.example.yaml"), false)
 	require.NoError(t, err)
 }
+
+func TestLoad_PackagedConfig(t *testing.T) {
+	t.Setenv("CREDENTIALS_DIRECTORY", t.TempDir())
+	c, err := Load(filepath.Join("..", "..", "debian", "lokihouse.yaml"), true)
+	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1", c.Server.HTTPListenAddress, "the package listens on localhost by default")
+}

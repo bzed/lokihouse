@@ -2,3 +2,9 @@ bin/
 .cache/
 coverage.out
 site/
+debian/.build/
+debian/lokihouse/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars

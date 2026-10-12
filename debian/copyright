@@ -1,0 +1,37 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: lokihouse
+Upstream-Contact: Bernd Zeimetz <bernd@bzed.de>
+Source: https://github.com/bzed/lokihouse
+
+Files: *
+Copyright: 2026 Bernd Zeimetz <bernd@bzed.de>
+License: AGPL-3.0
+
+Files: internal/api/format_query.go
+       internal/chstore/detected.go
+       internal/chstore/stats.go
+       internal/deletes/handler.go
+       internal/ingest/distcopy/field_detection.go
+       internal/ingest/distcopy/field_detection_test.go
+       internal/ingest/distcopy/process.go
+       internal/ingest/distcopy/validator.go
+       internal/ingest/distcopy/validator_test.go
+       internal/patterns/patterns.go
+       internal/ruler/evaluator.go
+Copyright: 2015-2026 Grafana Labs
+License: AGPL-3.0
+
+License: AGPL-3.0
+ GNU AFFERO GENERAL PUBLIC LICENSE
+ Version 3, 19 November 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+ This is a summary of the AGPL-3.0 license. The full text is available at:
+ /usr/share/common-licenses/AGPL-3
+ or https://www.gnu.org/licenses/agpl-3.0.txt
+
+ The binary statically embeds the Go modules listed in
+ /usr/share/doc/lokihouse/MODULES.txt, each under its own licence.

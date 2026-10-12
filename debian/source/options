@@ -1,0 +1,5 @@
+tar-ignore = .cache
+tar-ignore = bin
+tar-ignore = site
+tar-ignore = coverage.out
+tar-ignore = debian/.build

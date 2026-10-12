@@ -1,0 +1,23 @@
+lokihouse Debian-specific notes
+===============================
+
+* ClickHouse is not packaged in Debian. Install it from ClickHouse's
+  repository or point clickhouse.addr at a remote server.
+
+* The service is not enabled on install. Edit /etc/lokihouse/lokihouse.yaml,
+  then run: systemctl enable --now lokihouse
+
+* The service runs as a dynamic user with state in /var/lib/lokihouse.
+  Point ruler_storage.filesystem.dir at /var/lib/lokihouse/rules.
+
+* Put the ClickHouse password in a systemd credential:
+    systemd-creds encrypt --name=lokihouse.clickhouse-password - \
+      /etc/credstore.encrypted/lokihouse.clickhouse-password
+  then uncomment the password_file line in /etc/lokihouse/lokihouse.yaml.
+
+* The default listen address is 127.0.0.1. Change it to 0.0.0.0 (or the
+  interface address) to accept remote connections.
+
+* The ruler must run on one instance only. Configure ruler_storage on
+  exactly one lokihouse instance; otherwise alerts and recording-rule
+  samples are duplicated.

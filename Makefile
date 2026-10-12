@@ -61,3 +61,18 @@ docs:
 man:
 	mkdir -p bin
 	go-md2man -in docs/man/lokihouse.1.md -out bin/lokihouse.1
+
+.PHONY: deb
+# Builds the .deb for the host architecture in a debian:trixie container (podman).
+deb:
+	out=$$(mktemp -d /tmp/lokihouse-deb.XXXXXX); \
+	podman run --rm -v "$(CURDIR):/src:ro,Z" -v "$$out:/out:Z" docker.io/library/debian:trixie sh -euc '\
+		apt-get update -qq && apt-get install -y -qq --no-install-recommends devscripts equivs build-essential lintian git rsync >/dev/null; \
+		rsync -a --exclude .cache --exclude bin --exclude site /src/ /build/; cd /build; \
+		git config --global --add safe.directory /build; \
+		mk-build-deps -i -r -t "apt-get -y -qq --no-install-recommends" debian/control >/dev/null; \
+		dpkg-buildpackage -us -uc -b; \
+		lintian --fail-on error,warning --info ../lokihouse_*.deb; \
+		apt-get install -y -qq systemd ../lokihouse_*.deb >/dev/null && sh debian/tests/smoke; \
+		cp ../lokihouse_*.deb ../lokihouse_*.buildinfo ../lokihouse_*.changes /out/'; \
+	echo "packages in $$out"; ls -l "$$out"

@@ -1,0 +1,18 @@
+#!/bin/sh
+# Installed-package checks: binary, manpage, config, unit validity and hardening.
+set -eu
+lokihouse -version | grep -q '^lokihouse, version '
+test -f /etc/lokihouse/lokihouse.yaml
+dpkg-query -W -f='${Conffiles}\n' lokihouse | grep -q '/etc/lokihouse/lokihouse.yaml'
+test -f /usr/share/man/man1/lokihouse.1.gz
+test -f /usr/share/doc/lokihouse/examples/lokihouse.example.yaml
+unit=/usr/lib/systemd/system/lokihouse.service
+test -f "$unit"
+systemd-analyze verify --man=no "$unit"
+systemd-analyze security --offline=true --threshold=15 --no-pager "$unit"
+# Not enabled on install: there is no ClickHouse to talk to yet.
+if [ -d /run/systemd/system ]; then
+	! systemctl is-enabled --quiet lokihouse.service
+fi
+# The packaged config parses (no ClickHouse needed for parsing).
+lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -version >/dev/null
