@@ -1,6 +1,4 @@
-% LOKIHOUSE(1) lokihouse | User Commands
-% Bernd Zeimetz
-% October 2026
+% lokihouse 1 "October 2026" "lokihouse" "User Commands"
 
 # NAME
 

@@ -1,0 +1,2 @@
+# A static Go binary built as PIE (ET_DYN) has no DT_NEEDED entries by design.
+lokihouse: shared-library-lacks-prerequisites [usr/bin/lokihouse]
