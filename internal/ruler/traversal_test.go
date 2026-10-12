@@ -20,6 +20,9 @@ func TestRules_PathTraversalRejected(t *testing.T) {
 	for _, p := range []string{
 		"/loki/api/v1/rules/..%2F..%2Fetc",
 		"/loki/api/v1/rules/ns/..%2F..%2Fpasswd",
+		// Double-encoded: the router decodes once, Loki's parseNamespace
+		// decodes again (the CVE-2021-36156 bypass).
+		"/loki/api/v1/rules/..%252F..%252Fetc",
 	} {
 		code, body := h.do(t, http.MethodPost, p, "t1", group)
 		require.NotEqual(t, http.StatusAccepted, code, "%s: %s", p, body)
