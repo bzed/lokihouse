@@ -79,6 +79,19 @@ enforces the mechanical ones; reviewers enforce the rest.
 `//nolint:<linter> // <reason>` only, always with the specific linter and a
 reason (`nolintlint` enforces this). Prefer fixing the code.
 
+## Changelogs
+
+- Every user-visible change (feature, fix, behaviour or config change, new
+  divergence, packaging, security fix) adds a line to `CHANGELOG.md` under
+  `## [Unreleased]`, in the same commit. Pure refactors, tests and CI-internal
+  changes do not.
+- A release moves `Unreleased` to `## [x.y.z] - YYYY-MM-DD` and adds the same
+  version to `debian/changelog` (`dch -v x.y.z`, distribution `trixie`) in the
+  release commit. The tag is `vx.y.z`; `release.yml` fails if the tag, the top
+  of `debian/changelog` and the `CHANGELOG.md` section disagree.
+- Packaging changes (`debian/`, `Dockerfile`, `apt/`) also need a
+  `debian/changelog` entry at the next release; collect them under `Unreleased`.
+
 ## Commits
 
 One logical change per commit, conventional prefixes (`feat:`, `fix:`,
