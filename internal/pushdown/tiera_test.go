@@ -209,6 +209,28 @@ func TestTierA_InstantQuery(t *testing.T) {
 	}
 }
 
+// A leaf whose window holds no streams (here: the day before the only data)
+// must return an empty result, not nil Data, which Loki's step evaluator
+// rejects.
+func TestTierA_NoStreamsInRange(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	base := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "x"}}},
+	}, nil))
+	at := base.Add(-time.Hour)
+	for _, step := range []time.Duration{0, time.Minute} {
+		for _, q := range []string{
+			`count_over_time({app="a"}[1m])`,
+			`sum by (app) (rate({app="a"}[1m]))`,
+		} {
+			want, got := runTierA(t, conn, q, at, at.Add(step), step)
+			require.Equal(t, want, got, "q=%s step=%v", q, step)
+		}
+	}
+}
+
 // Loki keys range-vector series by the final label set, so a stream label and
 // an equal structured-metadata label from another stream land in one series.
 func TestTierA_MergesSeriesWithEqualLabels(t *testing.T) {

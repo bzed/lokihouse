@@ -101,8 +101,12 @@ func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logq
 
 	sel := e.Left.Left
 	streams, err := chstore.ResolveStreams(ctx, a.Conn, tenantID, sel.Matchers(), time.Unix(0, origin), time.Unix(0, E))
-	if err != nil || len(streams) == 0 {
+	if err != nil {
 		return logqlmodel.Result{}, err
+	}
+	if len(streams) == 0 {
+		// Non-nil empty Data: Loki's step evaluator rejects a nil res.Data.
+		return logqlmodel.Result{Data: promql.Matrix{}}, nil
 	}
 	byID := make(map[uint64]chstore.Stream, len(streams))
 	var ids []uint64

@@ -184,7 +184,10 @@ func seedPropData(t *testing.T, w *chstore.Writer) (time.Time, []string, error) 
 	const total = 3000
 	apps := []string{"web", "api", "worker", "cron", "batch", "edge"}
 
-	start := time.Now().UTC().Truncate(time.Hour).Add(-2 * time.Hour)
+	// A fixed start keeps the test reproducible. Midnight makes leaves with an
+	// offset reach into the previous day, where no streams exist (Tier A must
+	// return empty Data, not nil).
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	byApp := make(map[string][]propEntry, len(apps))
 	var dupes map[string][]logproto.Entry
 
