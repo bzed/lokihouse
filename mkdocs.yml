@@ -20,7 +20,8 @@ repo_url: https://github.com/bzed/lokihouse
 
 theme:
   name: material
-  logo: null
+  logo: assets/logo-icon.svg
+  favicon: assets/logo-icon.svg
   features:
     - navigation.sections
     - navigation.top

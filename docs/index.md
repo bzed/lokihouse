@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.svg" alt="lokihouse logo" width="160" height="160"></p>
+
 # lokihouse
 
 > **Work in progress.** lokihouse is under active development and not ready
