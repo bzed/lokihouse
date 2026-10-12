@@ -35,6 +35,7 @@ type Config struct {
 		HTTPServerWriteTimeout      time.Duration  `yaml:"http_server_write_timeout"`       // Loki/dskit default 30s
 		HTTPServerIdleTimeout       time.Duration  `yaml:"http_server_idle_timeout"`        // Loki/dskit default 120s
 		GracefulShutdownTimeout     time.Duration  `yaml:"graceful_shutdown_timeout"`       // Loki/dskit default 30s
+		RegisterInstrumentation     bool           `yaml:"register_instrumentation"`        // Loki/dskit default true; serves /metrics and /debug/pprof
 		LogLevel                    dskitlog.Level `yaml:"log_level"`                       // dskit level; default info
 		LogFormat                   string         `yaml:"log_format"`                      // logfmt | json; default logfmt
 	} `yaml:"server"`
@@ -85,6 +86,7 @@ func Load(path string, expandEnv bool) (*Config, error) {
 	c.Server.HTTPServerWriteTimeout = 30 * time.Second
 	c.Server.HTTPServerIdleTimeout = 120 * time.Second
 	c.Server.GracefulShutdownTimeout = 30 * time.Second
+	c.Server.RegisterInstrumentation = true // Loki/dskit default
 	c.ClickHouse.Addr = []string{"localhost:9000"}
 	c.ClickHouse.Database = "lokihouse"
 	c.ClickHouse.Username = "default"

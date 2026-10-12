@@ -55,6 +55,24 @@ registry plus the ruler's private registry (when the ruler is enabled).
 Ruler metrics (when enabled): `loki_ruler_*` series collected in a private
 registry and exposed through the same `/metrics` endpoint.
 
+## Profiling
+
+When `server.register_instrumentation` is `true` (the default), the Go runtime
+profiler is served on the HTTP port at `/debug/pprof/*`, with no tenant. Use
+`go tool pprof` to fetch and diff profiles:
+
+```console
+$ go tool pprof http://lokihouse:3100/debug/pprof/heap
+$ go tool pprof -base warm-heap.pb.gz end-heap.pb.gz   # diff two heap snapshots
+```
+
+`/debug/pprof/profile?seconds=30` and `/debug/pprof/trace` run for up to their
+`seconds` parameter; `server.http_server_write_timeout` (30 s default) bounds
+them, as in Loki.
+
+Keep port 3100 off untrusted networks, or set `server.register_instrumentation:
+false`, because pprof exposes allocation and call-stack internals.
+
 ## Multi-tenant queries
 
 `query.querier.multi_tenant_queries_enabled` (default `false`) accepts a

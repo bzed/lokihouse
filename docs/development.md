@@ -32,3 +32,28 @@ Pages → Source "GitHub Actions"; branch protection requiring `checks`,
   (`podman run -d -p 9000:9000 docker.io/clickhouse/clickhouse-server:26.9`).
 - `make bench` runs the latency benchmark against Loki (see
   [Benchmark](benchmark.md)); results land in `.cache/bench/results.md`.
+
+## Leak checks
+
+lokihouse is pure Go (`CGO_ENABLED=0`), so valgrind does not apply (it sees the
+runtime's allocator, not leaks). The equivalents are pprof, goleak and the race
+detector (which `make check` already runs).
+
+- **goleak**: `internal/api`, `internal/server`, `internal/tail` and
+  `internal/ruler` run `goleak.VerifyTestMain`, so any test that leaves a
+  goroutine behind fails the package. Each `leakIgnores()` entry names the
+  dependency that owns the goroutine.
+- **pprof / soak**: `make soak` (build tag `soak`) runs a mixed push/query/tail
+  workload against lokihouse for `LOKIHOUSE_SOAK_DURATION` (default 10m),
+  samples `go_memstats_heap_inuse_bytes` and `go_goroutines` after a forced GC,
+  and fails if post-warm-up heap grows >20% or goroutines grow >20. It writes
+  `samples.csv` and `warm-*`/`end-*` profiles to `LOKIHOUSE_SOAK_OUT`
+  (default `.cache/soak/`) for `go tool pprof -base`.
+- **Profiling in production**: with `server.register_instrumentation: true`
+  (the default) the Go profiler is served at `/debug/pprof/*` — see
+  [Profiling](operations.md#profiling).
+
+Recorded result (2026-10-12, 10m soak, 10 streams, push+query+tail+ruler,
+AMD Ryzen 9 9900X): 32 post-warm-up samples, post-GC heap floor first-quarter
+mean ~13.5 MiB, last-quarter mean ~15.6 MiB (no sustained growth, <20%);
+goroutines flat at ~26–35. PASS.

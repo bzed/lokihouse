@@ -84,6 +84,19 @@ func TestLoad_InvalidRetentionStreamRejected(t *testing.T) {
 	require.ErrorContains(t, err, "retention period must be >= 24h")
 }
 
+func TestLoad_RegisterInstrumentation(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("auth_enabled: false\n"), 0o600))
+	c, err := Load(p, false)
+	require.NoError(t, err)
+	require.True(t, c.Server.RegisterInstrumentation) // Loki/dskit default true
+
+	require.NoError(t, os.WriteFile(p, []byte("server: {register_instrumentation: false}\n"), 0o600))
+	c2, err := Load(p, false)
+	require.NoError(t, err)
+	require.False(t, c2.Server.RegisterInstrumentation)
+}
+
 func TestLoad_RulerDisabledByDefault(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
 	require.NoError(t, os.WriteFile(p, []byte("auth_enabled: false\n"), 0o600))

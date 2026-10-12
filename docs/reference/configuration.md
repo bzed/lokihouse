@@ -24,6 +24,7 @@ HTTP server settings.
 | `server.graceful_shutdown_timeout` | duration | `30s` | How long to wait for in-flight requests on shutdown. |
 | `server.log_level` | string | `info` | Log level: `debug`, `info`, `warn`, `error`. |
 | `server.log_format` | string | `logfmt` | Log format: `logfmt` or `json`. |
+| `server.register_instrumentation` | bool | `true` | When true, serves `GET /metrics` and `/debug/pprof/*` (no tenant). Set `false` to disable both, e.g. on untrusted networks. |
 
 ## `auth_enabled`
 

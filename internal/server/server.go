@@ -73,13 +73,17 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 	}
 	// Loki's default registry carries the request, distributor and (after the
 	// namespace change) ruler metrics; the ruler's own registry is merged in
-	// for /metrics.
+	// for /metrics. Both /metrics and /debug/pprof are gated on
+	// server.register_instrumentation (Loki/dskit default true).
 	rulerReg := prometheus.NewRegistry()
 	a, store, q := newAPI(cfg, conn, limits, logger, rulerReg)
-	a.Metrics = promhttp.HandlerFor(prometheus.Gatherers{prometheus.DefaultGatherer, rulerReg}, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError})
-	// AlreadyRegisteredError is the no-op we want on a second Run in one process.
-	if err := prometheus.Register(version.NewCollector("lokihouse")); err != nil {
-		_ = err
+	if cfg.Server.RegisterInstrumentation {
+		a.Pprof = true
+		a.Metrics = promhttp.HandlerFor(prometheus.Gatherers{prometheus.DefaultGatherer, rulerReg}, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError})
+		// AlreadyRegisteredError is the no-op we want on a second Run in one process.
+		if err := prometheus.Register(version.NewCollector("lokihouse")); err != nil {
+			_ = err
+		}
 	}
 
 	// Background loops run on their own context, cancelled after HTTP and the

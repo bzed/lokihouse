@@ -252,7 +252,8 @@ func TestTail_FutureEntryDoesNotHideCurrent(t *testing.T) {
 
 func TestTailDisconnectedIngesters(t *testing.T) {
 	i, _ := newIngester(t, 0, 0)
-	ctx := orgCtx()
+	ctx, cancel := context.WithCancel(orgCtx())
+	defer cancel()
 	req := tailReq(`{app="t"}`, time.Now())
 
 	// Test when clickhouse is in the connected list
@@ -265,6 +266,7 @@ func TestTailDisconnectedIngesters(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, clients, 1)
 	require.NotNil(t, clients["clickhouse"])
+	require.NoError(t, clients["clickhouse"].CloseSend())
 }
 
 func TestTailersCount(t *testing.T) {

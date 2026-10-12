@@ -49,6 +49,11 @@ enforces the mechanical ones; reviewers enforce the rest.
 - **Concurrency:** shared state is guarded by a mutex or atomics and documented.
   Tests run with `-race`. Never call `t.Parallel()` in ruler tests (Loki keeps
   ruler state in package variables).
+- **Leaks:** every goroutine has an owner that stops it. Packages that start
+  goroutines run `goleak.VerifyTestMain`; an ignore needs a comment naming the
+  dependency that owns the goroutine. Changes to long-lived paths (ingest,
+  query, tail, ruler) are checked with `make soak` (pprof heap/goroutine
+  profiles; valgrind does not apply to Go).
 - **Untrusted input** (HTTP bodies, headers, query strings, rule files, config):
   bound sizes, validate before use, never build SQL by string concatenation
   of user input (use ClickHouse parameters), never build file paths from user input

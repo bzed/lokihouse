@@ -232,10 +232,13 @@ func TestRun_Metrics(t *testing.T) {
 	cfg := testConfig(t, defaultServer, fmt.Sprintf("ruler_storage: {backend: filesystem, filesystem: {dir: %s}}\nruler: {rule_path: %s}\n",
 		filepath.Join(dir, "rules"), filepath.Join(dir, "rules-temp")))
 	r := start(t, cfg, log.NewNopLogger())
-	// metrics-t1: distributor counters are process-global, so a unique tenant
-	// keeps this test's exact values.
-	require.Equal(t, http.StatusNoContent, push(t, r.addr, "metrics-t1", pushBody(time.Now(), "hello")))
-	require.Equal(t, http.StatusBadRequest, push(t, r.addr, "metrics-t1", `{"streams":[{"stream":{},"values":[["1","x"]]}]}`))
+	// A unique tenant keeps this test's exact values: distributor counters are
+	// process-global, so a fixed tenant would accumulate across -count runs.
+	tb := make([]byte, 3)
+	_, _ = rand.Read(tb)
+	tenant := "metrics-" + hex.EncodeToString(tb)
+	require.Equal(t, http.StatusNoContent, push(t, r.addr, tenant, pushBody(time.Now(), "hello")))
+	require.Equal(t, http.StatusBadRequest, push(t, r.addr, tenant, `{"streams":[{"stream":{},"values":[["1","x"]]}]}`))
 
 	resp, err := http.Get("http://" + r.addr + "/metrics")
 	require.NoError(t, err)
@@ -245,7 +248,7 @@ func TestRun_Metrics(t *testing.T) {
 	m := string(b)
 	for _, want := range []string{
 		`loki_request_duration_seconds_count{method="POST",route="loki_api_v1_push",status_code="204",ws="false"}`,
-		`loki_distributor_lines_received_total{format="loki",is_internal_stream="false",policy="",tenant="metrics-t1"} 2`,
+		fmt.Sprintf(`loki_distributor_lines_received_total{format="loki",is_internal_stream="false",policy="",tenant=%q} 2`, tenant),
 		`loki_discarded_samples_total{`,
 		`loki_ruler_sync_rules_total`,
 		`lokihouse_build_info{`,

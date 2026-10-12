@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"strconv"
 
@@ -34,7 +35,9 @@ type API struct {
 	// Limits configures per-tenant limits.
 	Limits *validation.Overrides
 	// Metrics, when set, is served on GET /metrics (no tenant).
-	Metrics     http.Handler
+	Metrics http.Handler
+	// Pprof, when true, serves the Go profiler on /debug/pprof/* (no tenant).
+	Pprof       bool
 	AuthEnabled bool
 	Patterns    *patterns.Querier
 	Deletes     *deletes.Handler
@@ -105,6 +108,15 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("GET /loki/api/v1/status/buildinfo", buildInfo)
 	if a.Metrics != nil {
 		mux.Handle("GET /metrics", a.Metrics)
+	}
+	// Loki (dskit server) serves the Go profiler on its HTTP port while
+	// server.register_instrumentation is true; same here, without a tenant.
+	if a.Pprof {
+		mux.HandleFunc("GET /debug/pprof/", pprof.Index)
+		mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
 	}
 
 	// Debug endpoint: Tier A leaf counter (only when LOKIHOUSE_DEBUG=1)
