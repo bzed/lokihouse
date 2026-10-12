@@ -1,14 +1,95 @@
 # Installing lokihouse
 
-> **Work in progress.** Packaging (Debian repositories, Docker images) is
-> not yet available. The steps below are the manual path that works today:
-> build the static Go binary, write a config, run it under systemd, and
-> store logs in ClickHouse.
+> **Work in progress.** lokihouse is pre-release. CI builds the packages and
+> images below for every release; the apt suite `trixie-snapshot` follows
+> `main`.
 
-## Prerequisites
+There are three ways to run lokihouse. All of them need a running
+[ClickHouse](https://clickhouse.com/) server (26.9 or later).
+
+1. [Debian package](#debian-package-apt-repository) (Debian 13 "trixie",
+   amd64 and arm64): the easiest, with a hardened systemd unit.
+2. [Container image](#container-image) (linux/amd64 and linux/arm64).
+3. [Build from source](#build-from-source-manual-install): a static Go binary
+   that you run under any supervisor.
+
+## Debian package (apt repository)
+
+The repository is signed and published with this documentation. It has two
+suites: `trixie` (releases) and `trixie-snapshot` (the latest build of `main`).
+Packages are built for amd64 and arm64.
+
+```sh
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo curl -fsSLo /etc/apt/keyrings/lokihouse-archive-keyring.asc \
+    https://bzed.github.io/lokihouse/apt/lokihouse-archive-keyring.asc
+# compare the fingerprint with the one below
+gpg --show-keys --with-fingerprint /etc/apt/keyrings/lokihouse-archive-keyring.asc
+sudo tee /etc/apt/sources.list.d/lokihouse.sources <<'EOF'
+Types: deb
+URIs: https://bzed.github.io/lokihouse/apt
+Suites: trixie
+Components: main
+Signed-By: /etc/apt/keyrings/lokihouse-archive-keyring.asc
+EOF
+sudo apt update && sudo apt install lokihouse
+```
+
+The key's fingerprint is `74E9 21AC B040 DCC7 2C02  A144 1193 7B6E A8AF C649`.
+Use `Suites: trixie-snapshot` to follow `main` instead of the releases.
+
+The package installs `/usr/bin/lokihouse`, the man page, a hardened systemd
+unit (dynamic user, state in `/var/lib/lokihouse`) and
+`/etc/lokihouse/lokihouse.yaml`. It does **not** start the service: edit the
+config first (at least `clickhouse.addr`; see
+[the configuration reference](../reference/configuration.md)), then:
+
+```sh
+sudo systemctl enable --now lokihouse
+curl -fsS http://localhost:3100/ready
+```
+
+The default listen address is `127.0.0.1`; change `server.http_listen_address`
+to accept remote clients. Put the ClickHouse password in a systemd credential
+as described in `/usr/share/doc/lokihouse/README.Debian`. `apt upgrade` keeps
+lokihouse current; each release also has its `.deb` files and a `SHA256SUMS`
+file on the [GitHub releases page](https://github.com/bzed/lokihouse/releases).
+Then continue with [Step 5: first push and query](#step-5-first-push-and-query).
+
+## Container image
+
+```sh
+podman run -d --name lokihouse -p 3100:3100 \
+    -e LOKIHOUSE_CLICKHOUSE_ADDR=clickhouse.example.org:9000 \
+    ghcr.io/bzed/lokihouse:latest
+```
+
+(`docker run` works the same.) The image is based on distroless `static`, runs
+as a non-root user and listens on `0.0.0.0:3100`. The built-in config reads
+these variables: `LOKIHOUSE_CLICKHOUSE_ADDR` (default `clickhouse:9000`),
+`LOKIHOUSE_CLICKHOUSE_DATABASE` (`lokihouse`) and `LOKIHOUSE_CLICKHOUSE_USER`
+(`default`). For anything else, mount your own file (the image runs with
+`-config.expand-env=true`):
+
+```sh
+podman run -d -p 3100:3100 \
+    -v ./lokihouse.yaml:/etc/lokihouse/lokihouse.yaml:ro \
+    -v ./clickhouse-password:/run/secrets/clickhouse-password:ro \
+    ghcr.io/bzed/lokihouse:latest
+```
+
+Tags: `X.Y.Z` and `X.Y` for each release, and `latest`. Build it yourself with
+`make docker` (podman or docker) and test it with `make docker-test`, which
+starts a throwaway ClickHouse, pushes a line and queries it back.
+
+## Build from source (manual install)
+
+The steps below build the static binary and run it under systemd.
+
+### Prerequisites
 
 - **A running ClickHouse server** (26.9 or later), single-node or cluster.
-  The [configuration reference](/reference/configuration/#clickhouse) covers
+  The [configuration reference](../reference/configuration.md#clickhouse) covers
   the keys you will set. For a single server on `localhost:9000`, the
   default [ClickHouse container image](https://hub.docker.com/r/clickhouse/clickhouse-server)
   works out of the box.
@@ -18,7 +99,7 @@
 - **systemd** (or an equivalent process supervisor; the unit file below is
   systemd-specific, but the same `ExecStart` line works under any supervisor).
 
-## Step 1 — Build the binary
+### Step 1 — Build the binary
 
 From the repository root:
 
@@ -36,7 +117,7 @@ CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/lokihouse ./cmd/lokihou
 
 Copy `bin/lokihouse` to its final location, e.g. `/usr/local/bin/lokihouse`.
 
-## Step 2 — Write the config
+### Step 2 — Write the config
 
 Create `/etc/lokihouse/lokihouse.yaml`. A minimal working config for a
 single ClickHouse server on `localhost:9000` with the default `default`
@@ -64,9 +145,9 @@ clickhouse:
 ```
 
 The full key-by-key reference is in
-[Reference → Configuration](/reference/configuration/).
+[Reference → Configuration](../reference/configuration.md).
 
-## Step 3 — Create the systemd unit
+### Step 3 — Create the systemd unit
 
 Create `/etc/systemd/system/lokihouse.service`:
 
@@ -115,7 +196,7 @@ sudo install -m 600 -o lokihouse -g lokihouse /dev/null \
 `LoadCredentialEncrypted=` / `SetCredentialEncrypted=`; the config key is
 the same either way.)
 
-## Step 4 — Start and health-check
+### Step 4 — Start and health-check
 
 ```sh
 sudo systemctl daemon-reload
@@ -134,7 +215,7 @@ curl -fsS http://localhost:3100/ready
 curl -fsS http://localhost:3100/loki/api/v1/status/buildinfo
 ```
 
-## Step 5 — First push and query
+### Step 5 — First push and query
 
 Push one entry (Loki's push JSON shape):
 
@@ -177,7 +258,7 @@ Expected response shape (Loki's `loghttp` JSON, served unchanged):
 }
 ```
 
-## Upgrading
+### Upgrading
 
 Rebuild the binary, stop the unit, replace the binary, restart:
 
@@ -193,7 +274,7 @@ sudo systemctl start lokihouse
 > release, back up the ClickHouse database before upgrading if your data
 > matters.
 
-## Uninstall
+### Uninstall
 
 ```sh
 sudo systemctl disable --now lokihouse
@@ -225,5 +306,5 @@ and (when replicated) `insert_quorum`, so a push is acknowledged only when
 the rows are on a majority of replicas. Full cluster setup (Keeper,
 `remote_servers`, replica paths) is a ClickHouse operations task; see the
 [ClickHouse documentation](https://clickhouse.com/docs/en/enables/high-availability/overview)
-and the [configuration reference](/reference/configuration/#clickhouse)
+and the [configuration reference](../reference/configuration.md#clickhouse)
 for the lokihouse-side keys.

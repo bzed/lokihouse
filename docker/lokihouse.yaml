@@ -1,0 +1,15 @@
+# lokihouse configuration for the container image. The image runs with
+# -config.expand-env, so ${VAR} and ${VAR:-default} are expanded. Mount your own
+# file over /etc/lokihouse/lokihouse.yaml for anything beyond these variables;
+# all options: https://bzed.github.io/lokihouse/reference/configuration/
+auth_enabled: false
+server:
+  http_listen_address: 0.0.0.0
+  http_listen_port: 3100
+clickhouse:
+  addr: ["${LOKIHOUSE_CLICKHOUSE_ADDR:-clickhouse:9000}"]
+  database: ${LOKIHOUSE_CLICKHOUSE_DATABASE:-lokihouse}
+  username: ${LOKIHOUSE_CLICKHOUSE_USER:-default}
+  # Keep the password out of environment and image: mount it as a file.
+  # password_file: /run/secrets/clickhouse-password
+limits_config: {}

@@ -9,8 +9,9 @@ GitHub Actions (`.github/workflows/`), all on `ubuntu-24.04`:
 | `ci.yml` | push/PR to `main` | `checks` (fmt, vet, lint, vuln); `test` (`make cover` against a ClickHouse 26.9 service container, coverage artifact); `build` (binary + `-version`); `docs` (`make docs man`); `deb` (reusable `deb.yml`, snapshot version). |
 | `deb.yml` | called by `ci.yml` and `release.yml` | Builds the `.deb` for amd64 and arm64 in a `debian:trixie` container: pinned Go toolchain (SHA-256 checked), `dpkg-buildpackage`, `lintian --fail-on error,warning`, install + `debian/tests/smoke`. |
 | `nightly.yml` | daily 03:17 UTC, manual dispatch | `cluster` (`make test-cluster` on a 4-node podman cluster); `oracle` (`make oracle-all` with a Loki binary cache keyed on the Makefile, which pins `LOKI_COMMIT`); `oracle-cluster`; `soak` (30 min heap/goroutine soak, profiles uploaded). |
-| `release.yml` | push of a `v*` tag | `check-version` (tag must equal the version in `debian/changelog`), `deb` (release version), `publish` (`.deb` + `SHA256SUMS` as a GitHub release). |
-| `docs.yml` | push to `main` | `mkdocs build --strict` and deploy to GitHub Pages at <https://bzed.github.io/lokihouse/>. |
+| `release.yml` | push of a `v*` tag | `check-version` (tag must equal the version in `debian/changelog`), `deb` (release version), `docker` (pushes `ghcr.io/bzed/lokihouse`), `publish` (`.deb` + `SHA256SUMS` as a GitHub release), `pages` (calls `docs.yml`: apt suite `trixie` and the docs). |
+| `docs.yml` | push to `main`, called by `release.yml` | `build` (`mkdocs build --strict`); `deb` (snapshot, not in a release run); `apt` (reprepro, signed with `APT_GPG_PRIVATE_KEY`); `deploy` to GitHub Pages at <https://bzed.github.io/lokihouse/> (docs at `/`, the repository at `/apt/`). |
+| `docker.yml` | push to `main`, PRs touching the image, called by `release.yml` | `test` builds the image on native amd64 and arm64 runners and runs `scripts/docker-test.sh` against a ClickHouse container; with `push: true` (release only) `publish` pushes the multi-arch image with SBOM and provenance and signs it with cosign (keyless). |
 
 Release steps (maintainer):
 
@@ -20,8 +21,42 @@ Release steps (maintainer):
 4. Push the tag.
 
 One-time repository settings (maintainer, not the implementer): Settings →
-Pages → Source "GitHub Actions"; branch protection requiring `checks`,
-`test`, `build`, `docs` and `deb`.
+Pages → Source "GitHub Actions"; the `github-pages` environment must allow
+deployments from `main` and from `v*` tags; the secret `APT_GPG_PRIVATE_KEY`;
+branch protection requiring `checks`, `test`, `build`, `docs`, `deb` and the
+`docker` image job.
+
+## The apt repository and its key
+
+`scripts/build-apt-repo.sh` builds the repository with reprepro from
+`apt/conf/distributions`: suite `trixie` holds the latest release (amd64 and
+arm64), suite `trixie-snapshot` the latest build of `main`. A run of
+`docs.yml` rebuilds both: the one it does not build is carried over (`trixie`
+from the latest GitHub release, `trixie-snapshot` from the published site).
+
+The signing key is an Ed25519 key without a passphrase. The private key lives
+only in the secret `APT_GPG_PRIVATE_KEY` (ASCII-armoured); the public key is
+committed as `apt/lokihouse-archive-keyring.asc`, and the job fails if the two
+do not match. To rotate it:
+
+```sh
+export GNUPGHOME=$(mktemp -d /tmp/lh-gpg.XXXXXX)
+gpg --batch --passphrase '' --quick-generate-key 'lokihouse archive signing key <bernd@bzed.de>' ed25519 sign never
+gpg --armor --export > apt/lokihouse-archive-keyring.asc
+gpg --armor --export-secret-keys | gh secret set APT_GPG_PRIVATE_KEY
+gpg --list-keys --with-fingerprint   # update the fingerprint in docs/install/index.md
+```
+
+Users must fetch the new public key, so rotate rarely.
+
+## Container image
+
+`Dockerfile` is a multi-stage build (Go toolchain on the build platform,
+cross-compiled, into distroless `static`); `docker/lokihouse.yaml` is its
+default config. `make docker` builds it, `make docker-test` also runs
+`scripts/docker-test.sh` (version, `/ready`, push and query against a throwaway
+ClickHouse). Keep `GO_VERSION` in the `Dockerfile` and in `debian/rules` equal
+to the toolchain in `go.mod`.
 
 ## Local testing
 

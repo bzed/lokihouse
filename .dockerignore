@@ -1,0 +1,9 @@
+.git
+.github
+bin
+site
+docs
+debian
+test
+coverage.out
+.cache

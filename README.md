@@ -14,9 +14,8 @@
 ---
 
 > **Work in progress.** lokihouse is under active development and not ready
-> for production use yet. Packaging (Debian repositories, container images) is
-> still to come; the [installation guide](docs/install/index.md) is the manual
-> path that works today.
+> for production use yet. Packages and images are built from every release, but
+> the ClickHouse schema may still change between releases without a migration.
 
 lokihouse is a single static Go service that speaks
 [Grafana Loki](https://grafana.com/oss/loki/)'s HTTP API (push, LogQL queries,
@@ -47,10 +46,34 @@ lifting.
 - **One binary.** Static (`CGO_ENABLED=0`), no runtime dependencies besides a
   ClickHouse server.
 
-## Quick start
+## Install
 
-You need a ClickHouse server (26.9 or later) and a recent Go toolchain (see
-`go.mod`):
+**Debian 13 "trixie"** (amd64, arm64), from the signed apt repository:
+
+```console
+$ sudo install -d -m 0755 /etc/apt/keyrings
+$ sudo curl -fsSLo /etc/apt/keyrings/lokihouse-archive-keyring.asc https://bzed.github.io/lokihouse/apt/lokihouse-archive-keyring.asc
+$ sudo tee /etc/apt/sources.list.d/lokihouse.sources <<'EOF'
+Types: deb
+URIs: https://bzed.github.io/lokihouse/apt
+Suites: trixie
+Components: main
+Signed-By: /etc/apt/keyrings/lokihouse-archive-keyring.asc
+EOF
+$ sudo apt update && sudo apt install lokihouse
+```
+
+The key's fingerprint is `74E9 21AC B040 DCC7 2C02  A144 1193 7B6E A8AF C649`.
+Edit `/etc/lokihouse/lokihouse.yaml` (the service is not started on install),
+then `sudo systemctl enable --now lokihouse`.
+
+**Container** (linux/amd64, linux/arm64):
+
+```console
+$ podman run -d -p 3100:3100 -e LOKIHOUSE_CLICKHOUSE_ADDR=clickhouse.example.org:9000 ghcr.io/bzed/lokihouse:latest
+```
+
+**From source** (a ClickHouse server 26.9 or later and a recent Go toolchain, see `go.mod`):
 
 ```console
 $ podman run -d -p 9000:9000 -e CLICKHOUSE_SKIP_USER_SETUP=1 docker.io/clickhouse/clickhouse-server:26.9
@@ -68,8 +91,8 @@ $ ./bin/lokihouse -config.file lokihouse.yaml
 
 Then use it like Loki, for example as a Grafana Loki data source at
 `http://localhost:3100`. [`lokihouse.example.yaml`](lokihouse.example.yaml) lists
-the optional keys; the [installation guide](docs/install/index.md) covers
-running it under systemd.
+the optional keys; the [installation guide](docs/install/index.md) has the
+details, including systemd.
 
 ## Documentation
 

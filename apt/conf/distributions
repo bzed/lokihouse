@@ -1,0 +1,17 @@
+Origin: lokihouse
+Label: lokihouse
+Codename: trixie
+Suite: stable
+Architectures: amd64 arm64
+Components: main
+Description: lokihouse releases
+SignWith: yes
+
+Origin: lokihouse
+Label: lokihouse snapshot
+Codename: trixie-snapshot
+Suite: testing
+Architectures: amd64 arm64
+Components: main
+Description: lokihouse builds of main
+SignWith: yes

@@ -12,11 +12,22 @@ jobs:
       - run: |
           v=$(dpkg-parsechangelog -SVersion)
           test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match debian/changelog $v" >&2; exit 1; }
+          grep -q "^## \[$v\] - " CHANGELOG.md || { echo "CHANGELOG.md has no section for $v" >&2; exit 1; }
   deb:
     needs: check-version
     uses: ./.github/workflows/deb.yml
     with:
       snapshot: false
+  docker:
+    needs: check-version
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      push: true
   publish:
     needs: deb
     runs-on: ubuntu-24.04
@@ -35,3 +46,15 @@ jobs:
             dist/*.deb
             dist/SHA256SUMS
           generate_release_notes: true
+  # The apt repository (suite "trixie") and the docs, on GitHub Pages. After
+  # publish, so a later run of docs.yml finds this release.
+  pages:
+    needs: publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+    with:
+      release: true
+    secrets: inherit

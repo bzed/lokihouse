@@ -66,6 +66,16 @@ man:
 	mkdir -p bin
 	go-md2man -in docs/man/lokihouse.1.md -out bin/lokihouse.1
 
+.PHONY: docker docker-test
+# Container image for the host architecture (podman, or ENGINE=docker).
+ENGINE ?= $(shell command -v podman || command -v docker)
+docker:
+	$(ENGINE) build -t localhost/lokihouse:test \
+		--build-arg VERSION=$(VERSION) --build-arg REVISION=$(REVISION) \
+		--build-arg BRANCH=$(BRANCH) --build-arg BUILD_DATE=$(BUILD_DATE) .
+docker-test: docker
+	ENGINE=$(ENGINE) sh scripts/docker-test.sh localhost/lokihouse:test
+
 .PHONY: deb
 # Builds the .deb for the host architecture in a debian:trixie container (podman).
 deb:
