@@ -5,6 +5,7 @@
   <p><strong>Grafana Loki's HTTP API, with logs stored in ClickHouse.</strong></p>
 
   [![CI](https://github.com/bzed/lokihouse/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bzed/lokihouse/actions/workflows/ci.yml)
+  [![codecov](https://codecov.io/gh/bzed/lokihouse/branch/main/graph/badge.svg)](https://codecov.io/gh/bzed/lokihouse)
   [![Go Reference](https://pkg.go.dev/badge/github.com/bzed/lokihouse.svg)](https://pkg.go.dev/github.com/bzed/lokihouse)
   [![Docs](https://img.shields.io/badge/docs-bzed.github.io%2Flokihouse-blue)](https://bzed.github.io/lokihouse/)
   [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)

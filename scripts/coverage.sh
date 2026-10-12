@@ -1,13 +1,21 @@
 #!/bin/sh
 # Total statement coverage gate (AGENTS.md: >= 85 %).
-# Env: COVERAGE_MIN (default 85), COVERAGE_OUT (default coverage.out).
+# Env: COVERAGE_MIN (default 85), COVERAGE_OUT (default coverage.out),
+# JUNIT_OUT (optional: also write a JUnit test report there, via gotestsum).
 set -eu
 min=${COVERAGE_MIN:-85}
 out=${COVERAGE_OUT:-coverage.out}
 pkgs=$(go list ./... | grep -v -e '/internal/chstore/chtest$' -e '/test/')
 coverpkg=$(printf '%s\n' $pkgs | paste -sd, -)
 # shellcheck disable=SC2086 # word splitting of the package list is intended
-go test -race -count=1 -covermode=atomic -coverpkg="$coverpkg" -coverprofile="$out" $pkgs
+if [ -n "${JUNIT_OUT:-}" ]; then
+	# shellcheck disable=SC2086
+	go run gotest.tools/gotestsum@v1.13.0 --junitfile "$JUNIT_OUT" --format pkgname -- \
+		-race -count=1 -covermode=atomic -coverpkg="$coverpkg" -coverprofile="$out" $pkgs
+else
+	# shellcheck disable=SC2086
+	go test -race -count=1 -covermode=atomic -coverpkg="$coverpkg" -coverprofile="$out" $pkgs
+fi
 total=$(go tool cover -func="$out" | awk '/^total:/ { sub("%", "", $3); print $3 }')
 echo "total coverage: ${total}% (minimum ${min}%)"
 if ! awk -v t="$total" -v m="$min" 'BEGIN { exit !(t + 0 >= m + 0) }'; then

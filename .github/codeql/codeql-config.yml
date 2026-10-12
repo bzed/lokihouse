@@ -1,0 +1,9 @@
+# CodeQL configuration (used by .github/workflows/codeql.yml).
+name: lokihouse CodeQL
+queries:
+  - uses: security-and-quality
+paths-ignore:
+  # Test harnesses, not shipped code.
+  - test
+  - "**/*_test.go"
+  - site

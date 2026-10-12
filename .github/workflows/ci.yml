@@ -35,10 +35,29 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make cover
+        env:
+          JUNIT_OUT: junit.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
         with:
           name: coverage
-          path: coverage.out
+          path: |
+            coverage.out
+            junit.xml
+      # CODECOV_TOKEN: repository secret from https://app.codecov.io/gh/bzed/lokihouse
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        if: ${{ !cancelled() }}
+        with:
+          files: ./coverage.out
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        if: ${{ !cancelled() }}
+        with:
+          report_type: test_results
+          files: ./junit.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
   build:
     runs-on: ubuntu-24.04
     steps:
