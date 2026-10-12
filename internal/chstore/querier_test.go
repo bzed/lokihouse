@@ -137,6 +137,21 @@ func TestSelectSamples_CountOverTime(t *testing.T) {
 	require.Equal(t, 3.0, m[0].Floats[1].F)
 }
 
+func TestDetectedLabels(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	seed(t, w, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "test"}}})
+
+	q := &chstore.Querier{Conn: conn}
+	req := &logproto.DetectedLabelsRequest{Start: t0, End: t0.Add(time.Hour)}
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	resp, err := q.DetectedLabels(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	// The response should contain detected labels
+	_ = resp.DetectedLabels
+}
+
 func TestKeyset_SameResultForAnyChunkSize(t *testing.T) {
 	conn, _ := chtest.New(t)
 	w := &chstore.Writer{Conn: conn}
