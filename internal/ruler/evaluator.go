@@ -23,7 +23,7 @@ type Evaluator struct {
 }
 
 // Copyright (c) 2015-2026 Grafana Labs.
-// Copied from grafana/loki@fbc3f077 pkg/ruler/evaluator_local.go (LocalEvaluator.Eval);
+// Copied from grafana/loki@bc196286 pkg/ruler/evaluator_local.go (LocalEvaluator.Eval);
 // modifications: runs Engine instead of *logql.QueryEngine; the per-evaluation
 // info log line is dropped.
 

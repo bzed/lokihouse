@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const lokiCommit = "fbc3f0770b8c56ebec56fbd0fb16dc3b606822d1"
+const lokiCommit = "bc1962860a1607eccb7e0c8ee206970b292b9e80"
 
 func envOr(k, def string) string {
 	if v := os.Getenv(k); v != "" {
