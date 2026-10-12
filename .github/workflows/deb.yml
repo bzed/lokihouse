@@ -1,0 +1,43 @@
+name: deb
+on:
+  workflow_call:
+    inputs:
+      snapshot:
+        type: boolean
+        required: true
+permissions:
+  contents: read
+jobs:
+  deb:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    container: docker.io/library/debian:trixie
+    steps:
+      - run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: apt-get install -y --no-install-recommends devscripts equivs build-essential lintian systemd
+      - run: mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' debian/control
+      - if: inputs.snapshot
+        env:
+          DEBEMAIL: bernd@bzed.de
+          DEBFULLNAME: Bernd Zeimetz
+        run: |
+          v=$(dpkg-parsechangelog -SVersion)
+          dch --newversion "${v}+git$(date -u +%Y%m%d%H%M%S).$(git rev-parse --short=8 HEAD)" \
+            --distribution trixie --force-distribution "CI snapshot build."
+      - run: dpkg-buildpackage -us -uc -b
+      - run: lintian --fail-on error,warning --info ../lokihouse_*.deb
+      - run: apt-get install -y ../lokihouse_*.deb && sh debian/tests/smoke
+      - run: mkdir out && cp ../lokihouse_*.deb ../lokihouse_*.buildinfo ../lokihouse_*.changes out/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deb-${{ matrix.arch }}
+          path: out/

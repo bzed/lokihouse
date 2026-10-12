@@ -19,7 +19,7 @@ for i in 1 2 3 4; do
 done
 for i in 1 2 3 4; do
   n=0
-  until clickhouse-client --port "1900$i" -q "SELECT count() FROM system.zookeeper WHERE path = '/'" >/dev/null 2>&1; do
+  until podman exec "ch$i" clickhouse-client -q "SELECT count() FROM system.zookeeper WHERE path = '/'" >/dev/null 2>&1; do
     n=$((n + 1)); [ "$n" -lt 60 ] || { echo "ch$i not ready" >&2; exit 1; }; sleep 1
   done
 done
