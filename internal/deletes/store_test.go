@@ -107,3 +107,23 @@ func TestStore_TenantIsolation(t *testing.T) {
 	require.ErrorIs(t, err, deletion.ErrDeleteRequestNotFound)
 	require.Equal(t, deletion.ErrDeleteRequestNotFound, s.Cancel(context.Background(), "b", id))
 }
+
+// With a clock that does not advance (or steps back), a later write must still
+// supersede an earlier one: the ReplacingMergeTree version may never tie.
+func TestStore_LaterWriteWinsUnderFrozenClock(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	for range 40 {
+		_, err := s.Add(ctx, "t1", `{app="x"}`, model.TimeFromUnixNano(t0.UnixNano()), model.TimeFromUnixNano(t0.Add(time.Minute).UnixNano()))
+		require.NoError(t, err)
+	}
+	pending, err := s.Unprocessed(ctx)
+	require.NoError(t, err)
+	require.Len(t, pending, 40)
+	for _, r := range pending {
+		require.NoError(t, s.MarkProcessed(ctx, r))
+	}
+	pending, err = s.Unprocessed(ctx)
+	require.NoError(t, err)
+	require.Empty(t, pending, "every request was marked processed after it was added")
+}

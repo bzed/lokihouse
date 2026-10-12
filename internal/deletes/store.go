@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"sync/atomic"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -19,6 +20,8 @@ import (
 type Store struct {
 	Conn driver.Conn
 	Now  func() time.Time // default time.Now
+
+	lastVersion atomic.Uint64 // highest version written by this Store
 }
 
 const statusCancelled = "cancelled"
@@ -30,10 +33,24 @@ func (s *Store) now() time.Time {
 	return time.Now()
 }
 
+// nextVersion returns the ReplacingMergeTree version for a write: the clock in
+// nanoseconds, but strictly greater than every earlier version of this Store,
+// so a frozen or stepped-back clock cannot make a later write tie with, or lose
+// to, an earlier one (argMax of a tie is arbitrary).
+func (s *Store) nextVersion() uint64 {
+	for {
+		last := s.lastVersion.Load()
+		v := max(uint64(s.now().UnixNano()), last+1) //nolint:gosec // G115: the clock is after 1970
+		if s.lastVersion.CompareAndSwap(last, v) {
+			return v
+		}
+	}
+}
+
 func (s *Store) write(ctx context.Context, r deletionproto.DeleteRequest, status string) error {
 	return s.Conn.Exec(ctx,
 		"INSERT INTO delete_requests (tenant, request_id, query, start_ms, end_ms, created_ms, status, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		r.UserID, r.RequestID, r.Query, int64(r.StartTime), int64(r.EndTime), int64(r.CreatedAt), status, uint64(s.now().UnixNano()))
+		r.UserID, r.RequestID, r.Query, int64(r.StartTime), int64(r.EndTime), int64(r.CreatedAt), status, s.nextVersion())
 }
 
 // Add stores a new delete request and returns its id. The id is 8 random hex

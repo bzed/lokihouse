@@ -22,6 +22,9 @@ changelog (`debian/changelog`) carries the same releases.
 
 ### Fixed
 
+- Delete requests: a status change (processed, cancelled) written in the same
+  clock tick as the previous write could lose to it; versions are now strictly
+  increasing.
 - Documentation links that pointed at the site root instead of `/lokihouse/`.
 - The man page title (lintian `wrong-manual-section`).
 
