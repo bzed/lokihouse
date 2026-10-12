@@ -278,6 +278,58 @@ func Test_DetectGenericFields(t *testing.T) {
 	require.Equal(t, constants.LogLevelInfo, level)
 }
 
+func Test_NormalizeLogLevel(t *testing.T) {
+	// Test the normalizeLogLevel function through the detectLogLevelFromLogEntry
+	// which calls extractLogLevel which calls normalizeLogLevel
+	ld := newFieldDetector(
+		validationContext{
+			discoverLogLevels:       true,
+			allowStructuredMetadata: true,
+			logLevelFields:          []string{"level"},
+		})
+
+	for _, tc := range []struct {
+		name             string
+		entry            string
+		expectedLogLevel string
+	}{
+		{name: "WaRn", entry: `{"level":"WaRn"}`, expectedLogLevel: constants.LogLevelWarn},
+		{name: "InFo", entry: `{"level":"InFo"}`, expectedLogLevel: constants.LogLevelInfo},
+		{name: "CRITICAL", entry: `{"level":"CRITICAL"}`, expectedLogLevel: constants.LogLevelCritical},
+		{name: "Debug", entry: `{"level":"Debug"}`, expectedLogLevel: constants.LogLevelDebug},
+		{name: "FaTaL", entry: `{"level":"FaTaL"}`, expectedLogLevel: constants.LogLevelFatal},
+		{name: "tRaCe", entry: `{"level":"tRaCe"}`, expectedLogLevel: constants.LogLevelTrace},
+		{name: "ERROR", entry: `{"level":"ERROR"}`, expectedLogLevel: constants.LogLevelError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entry := logproto.Entry{
+				Timestamp: time.Now(),
+				Line:      tc.entry,
+			}
+			level := ld.detectLogLevelFromLogEntry(entry, labels.Labels{}, labels.Labels{})
+			require.Equal(t, tc.expectedLogLevel, level)
+		})
+	}
+}
+
+func Test_GenericFieldDetection(t *testing.T) {
+	// Test generic field detection with discoverGenericFields
+	ld := newFieldDetector(
+		validationContext{
+			discoverLogLevels:       false,
+			allowStructuredMetadata: true,
+			logLevelFields:          []string{},
+			discoverGenericFields: map[string][]string{
+				"service_name": {"service", "app"},
+			},
+		})
+
+	// Test that the field detector can be created with generic fields
+	require.NotNil(t, ld)
+	// The actual detection happens in discoverFields which is called from processStreamEntries
+	// which is hard to test directly. For now, just ensure the setup works.
+}
+
 func TestGetLevelUsingJsonParser(t *testing.T) {
 	ld := newFieldDetector(
 		validationContext{

@@ -85,3 +85,18 @@ func TestAPI_InstantQueryValid(t *testing.T) {
 	require.Equal(t, http.StatusOK, code, body)
 	require.Contains(t, body, `"resultType":"vector"`)
 }
+
+func TestAPI_InstantQueryInvalidLogQuery(t *testing.T) {
+	// Test that a log query (not a sample query) returns an error for instant query
+	srv := newServer(t, true)
+	now := time.Now()
+
+	q := url.Values{
+		"query": {`{app="a"}`}, // This is a log query, not a sample query
+		"time":  {strconv.FormatInt(now.Add(time.Second).UnixNano(), 10)},
+	}
+
+	code, _ := do(t, http.MethodGet, srv.URL+"/loki/api/v1/query?"+q.Encode(), "t1", "")
+	// Loki returns 400 for log queries in instant query
+	require.Equal(t, http.StatusBadRequest, code)
+}
