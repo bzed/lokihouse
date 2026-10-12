@@ -154,7 +154,7 @@ The topology is set in configuration (`clickhouse.cluster`, `clickhouse.replicat
 |---|---|---|
 | Single server (default) | `logs`, `streams` as above | — |
 | Replicated and/or sharded cluster | `logs_local`, `streams_local` (`ReplicatedReplacingMergeTree`, created `ON CLUSTER`), plus `Distributed` tables `logs` and `streams` over them, sharded by `cityHash64(tenant, stream_id)` | Needs `remote_servers` and Keeper. `replicated: false` gives sharding without replication. |
-| ClickHouse Cloud | Single-server DDL (Cloud maps it to SharedMergeTree) | Phase 5 verification |
+| ClickHouse Cloud | Single-server DDL (Cloud maps it to SharedMergeTree) | Deferred, see `docs/roadmap.md` |
 
 Rules that make the cluster mode correct:
 

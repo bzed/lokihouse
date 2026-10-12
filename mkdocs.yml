@@ -46,6 +46,7 @@ exclude_docs: |
   phase2-status.md
   phase3-status.md
   phase4-status.md
+  phase5-status.md
   /divergences.md
   /superpowers/
 
@@ -55,6 +56,7 @@ nav:
   - Operations: operations.md
   - Benchmark: benchmark.md
   - Migrating from Loki: migrating.md
+  - Roadmap: roadmap.md
   - Reference:
       - Configuration: reference/configuration.md
       - HTTP API: reference/http-api.md
