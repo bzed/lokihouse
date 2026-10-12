@@ -33,7 +33,7 @@ func BucketCounts(ctx context.Context, conn driver.Conn, tenant string, ids []ui
 	}
 	sql += " GROUP BY stream_id, structured_metadata, bucket"
 	var out []BucketRow
-	rows, err := conn.Query(ctx, sql, args...)
+	rows, err := conn.Query(WithQueryStats(ctx), sql, args...)
 	if err != nil {
 		return nil, err
 	}

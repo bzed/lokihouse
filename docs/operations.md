@@ -37,6 +37,24 @@ tenants in the request, as in Loki.
 See [Differences from Loki](divergences.md#hardening-phase-5) for the rate-limit
 strategy difference.
 
+## Metrics
+
+`GET /metrics` (no tenant) serves Prometheus text format from the default
+registry plus the ruler's private registry (when the ruler is enabled).
+
+| Metric | Type | Labels | Description |
+| --- | --- | --- | --- |
+| `loki_request_duration_seconds` | histogram | `method`, `route`, `status_code`, `ws` | Time spent serving each HTTP request. |
+| `loki_inflight_requests` | gauge | `method`, `route` | Current number of in-flight requests. |
+| `loki_distributor_bytes_received_total` | counter | `tenant`, `retention_hours`, `is_internal_stream`, `policy`, `format` | Bytes received per push (Loki's shared distributor collectors). |
+| `loki_distributor_lines_received_total` | counter | `tenant`, `is_internal_stream`, `policy`, `format` | Lines received per push (Loki's shared distributor collectors). |
+| `loki_discarded_samples_total` | counter | `tenant`, `reason` | Samples discarded by push validation. |
+| `go_goroutines`, `process_*`, etc. | — | — | Standard Go runtime metrics from the default registry. |
+| `lokihouse_build_info` | gauge | `version` | Build version string. |
+
+Ruler metrics (when enabled): `loki_ruler_*` series collected in a private
+registry and exposed through the same `/metrics` endpoint.
+
 ## Multi-tenant queries
 
 `query.querier.multi_tenant_queries_enabled` (default `false`) accepts a

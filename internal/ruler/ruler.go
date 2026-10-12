@@ -38,7 +38,7 @@ func New(ctx context.Context, rc lokiruler.Config, sc rulestore.Config, e Engine
 		return nil, nil, err
 	}
 	ev := lokiruler.NewEvaluatorWithJitter(&Evaluator{Engine: e}, rc.Evaluation.MaxJitter, fnv.New32a(), logger)
-	r, err := lokiruler.NewRuler(rc, ev, reg, logger, store, limits, "lokihouse")
+	r, err := lokiruler.NewRuler(rc, ev, reg, logger, store, limits, "loki")
 	if err != nil {
 		return nil, nil, err
 	}

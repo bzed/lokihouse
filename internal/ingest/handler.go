@@ -66,6 +66,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
 	}
 	if verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)

@@ -4,6 +4,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql/log"
+	"github.com/grafana/loki/v3/pkg/logqlmodel/stats"
 )
 
 // sampleIter turns the ts-ordered row cursor into samples one row at a time.
@@ -13,6 +14,7 @@ type sampleIter struct {
 	byID      map[uint64]Stream
 	extractor log.SampleExtractor
 	ex        map[uint64]log.StreamSampleExtractor
+	stats     *stats.Context
 	cur       logproto.Sample
 	lbls      string
 	hash      uint64
@@ -29,6 +31,9 @@ func (it *sampleIter) Next() bool {
 		s, ok := se.ProcessString(r.ts.UnixNano(), r.line, r.md)
 		if !ok {
 			continue
+		}
+		if it.stats != nil {
+			it.stats.AddPostFilterLines(1)
 		}
 		it.lbls = s.Labels.String()
 		it.hash = r.streamID

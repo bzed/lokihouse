@@ -23,6 +23,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/querier/tail"
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors/version"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/bzed/lokihouse/internal/multitenant"
 
@@ -69,7 +71,16 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 		closeConn()
 		return err
 	}
-	a, store, q := newAPI(cfg, conn, limits, logger)
+	// Loki's default registry carries the request, distributor and (after the
+	// namespace change) ruler metrics; the ruler's own registry is merged in
+	// for /metrics.
+	rulerReg := prometheus.NewRegistry()
+	a, store, q := newAPI(cfg, conn, limits, logger, rulerReg)
+	a.Metrics = promhttp.HandlerFor(prometheus.Gatherers{prometheus.DefaultGatherer, rulerReg}, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError})
+	// AlreadyRegisteredError is the no-op we want on a second Run in one process.
+	if err := prometheus.Register(version.NewCollector("lokihouse")); err != nil {
+		_ = err
+	}
 
 	// Background loops run on their own context, cancelled after HTTP and the
 	// ruler have stopped, and are waited for before ClickHouse is closed.
@@ -92,7 +103,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 
 	var r *rulerService
 	if cfg.RulerEnabled() {
-		r, err = startRuler(ctx, cfg, a, limits, logger)
+		r, err = startRuler(ctx, cfg, a, limits, logger, rulerReg)
 		if err != nil {
 			stopLoops()
 			closeConn()
@@ -173,7 +184,7 @@ func openClickHouse(ctx context.Context, cfg *config.Config) (driver.Conn, error
 }
 
 // newAPI builds the HTTP API over conn (moved unchanged from cmd/lokihouse).
-func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, logger log.Logger) (*api.API, *deletes.Store, *chstore.Querier) {
+func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, logger log.Logger, rulerReg prometheus.Registerer) (*api.API, *deletes.Store, *chstore.Querier) {
 	store := &deletes.Store{Conn: conn}
 	q := &chstore.Querier{Conn: conn, Deletes: store}
 	// When multi-tenant queries are enabled, log/metric queries fan out per
@@ -219,8 +230,8 @@ func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, 
 // rulerService is Loki's ruler; a nil *rulerService is a disabled ruler.
 type rulerService struct{ svc services.Service }
 
-func startRuler(ctx context.Context, cfg *config.Config, a *api.API, limits *validation.Overrides, logger log.Logger) (*rulerService, error) {
-	r, rapi, err := lhruler.New(ctx, cfg.Ruler, cfg.RulerStorage, a.Queries, limits, log.With(logger, "component", "ruler"), prometheus.NewRegistry())
+func startRuler(ctx context.Context, cfg *config.Config, a *api.API, limits *validation.Overrides, logger log.Logger, rulerReg prometheus.Registerer) (*rulerService, error) {
+	r, rapi, err := lhruler.New(ctx, cfg.Ruler, cfg.RulerStorage, a.Queries, limits, log.With(logger, "component", "ruler"), rulerReg)
 	if err != nil {
 		return nil, fmt.Errorf("ruler: %w", err)
 	}

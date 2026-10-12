@@ -49,6 +49,9 @@ const (
 // the lookback, and empty=true when the whole range lies before it (Loki
 // answers with an empty result).
 func (a *API) checkQuery(ctx context.Context, expr syntax.Expr, start, end time.Time, limit uint32) (time.Time, bool, error) {
+	if a.Limits == nil {
+		return start, false, nil
+	}
 	tenants, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return start, false, httpgrpc.Errorf(http.StatusBadRequest, "%s", err.Error())
@@ -124,6 +127,9 @@ func validateMaxEntriesLimits(ctx context.Context, limits *validation.Overrides,
 // (pkg/querier/queryrange/limits.go), with the tenant list taken as a
 // parameter.
 func validateMatchers(ctx context.Context, limits *validation.Overrides, tenants []string, matchers []*labels.Matcher) error {
+	if limits == nil {
+		return nil
+	}
 	actual := make(map[string]struct{}, len(matchers))
 	var present []string
 	for _, m := range matchers {

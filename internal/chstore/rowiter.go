@@ -57,6 +57,7 @@ func (r *rowReader) next() bool {
 
 // openCursor runs a query returning (stream_id, ts, line, structured_metadata) rows.
 func openCursor(ctx context.Context, conn driver.Conn, sql string, args ...any) (*rowReader, error) {
+	ctx = WithQueryStats(ctx)
 	ctx, cancel := context.WithCancel(ctx)
 	rows, err := conn.Query(ctx, sql, args...)
 	if err != nil {

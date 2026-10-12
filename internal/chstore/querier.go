@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/logql/log"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
+	"github.com/grafana/loki/v3/pkg/logqlmodel/stats"
 	querierdeletion "github.com/grafana/loki/v3/pkg/querier/deletion"
 	utildeletion "github.com/grafana/loki/v3/pkg/util/deletion"
 )
@@ -182,5 +183,5 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	if err != nil {
 		return iter.NoopSampleIterator, err
 	}
-	return &sampleIter{rr: rr, byID: byID, extractor: extractor, ex: map[uint64]log.StreamSampleExtractor{}}, nil
+	return &sampleIter{rr: rr, byID: byID, extractor: extractor, ex: map[uint64]log.StreamSampleExtractor{}, stats: stats.FromContext(ctx)}, nil
 }

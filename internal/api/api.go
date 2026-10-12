@@ -32,7 +32,9 @@ type API struct {
 	Meta MetaQuerier
 	Push http.Handler
 	// Limits configures per-tenant limits.
-	Limits      *validation.Overrides
+	Limits *validation.Overrides
+	// Metrics, when set, is served on GET /metrics (no tenant).
+	Metrics     http.Handler
 	AuthEnabled bool
 	Patterns    *patterns.Querier
 	Deletes     *deletes.Handler
@@ -101,6 +103,9 @@ func (a *API) Router() http.Handler {
 	}
 	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ready\n")) })
 	mux.HandleFunc("GET /loki/api/v1/status/buildinfo", buildInfo)
+	if a.Metrics != nil {
+		mux.Handle("GET /metrics", a.Metrics)
+	}
 
 	// Debug endpoint: Tier A leaf counter (only when LOKIHOUSE_DEBUG=1)
 	if os.Getenv("LOKIHOUSE_DEBUG") == "1" {
@@ -110,9 +115,9 @@ func (a *API) Router() http.Handler {
 	}
 
 	if a.Rules != nil {
-		return decodedRulePaths(mux)
+		return instrument(mux, decodedRulePaths(mux))
 	}
-	return mux
+	return instrument(mux, mux)
 }
 
 func (a *API) tenant(next http.Handler) http.Handler {
