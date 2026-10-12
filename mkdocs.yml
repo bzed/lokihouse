@@ -53,6 +53,7 @@ nav:
   - Index: index.md
   - Installation: install/index.md
   - Operations: operations.md
+  - Benchmark: benchmark.md
   - Migrating from Loki: migrating.md
   - Reference:
       - Configuration: reference/configuration.md

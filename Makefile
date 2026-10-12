@@ -5,7 +5,7 @@ BRANCH     ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 BUILD_DATE ?= $(shell date -u -d "@$${SOURCE_DATE_EPOCH:-$$(date +%s)}" +%Y-%m-%dT%H:%M:%SZ)
 PV := github.com/bzed/lokihouse/internal/build
 LDFLAGS := -X $(PV).Version=$(VERSION) -X $(PV).Revision=$(REVISION) -X $(PV).Branch=$(BRANCH) -X $(PV).BuildDate=$(BUILD_DATE) -X $(PV).BuildUser=lokihouse
-.PHONY: build test oracle oracle-downstream oracle-all
+.PHONY: build test oracle oracle-downstream oracle-all bench
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/lokihouse ./cmd/lokihouse
 test:
@@ -21,6 +21,8 @@ oracle-all:
 	LOKIHOUSE_ORACLE_PUSHDOWN=downstream go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
 	@echo "=== Mode: on ==="
 	go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
+bench:
+	go test -tags oracle,bench -run TestBench -count=1 -timeout 60m -v ./test/oracle/
 
 CLUSTER_ENV := LOKIHOUSE_TEST_CH_ADDR=localhost:19001 LOKIHOUSE_TEST_CH_CLUSTER=lokihouse
 .PHONY: cluster-up cluster-down test-cluster oracle-cluster

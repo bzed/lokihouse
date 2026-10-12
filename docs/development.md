@@ -22,3 +22,13 @@ Release steps (maintainer):
 One-time repository settings (maintainer, not the implementer): Settings →
 Pages → Source "GitHub Actions"; branch protection requiring `checks`,
 `test`, `build`, `docs` and `deb`.
+
+## Local testing
+
+- `make check` runs the full gate: gofmt/goimports, `go vet`, golangci-lint,
+  govulncheck, the unit tests with the race detector, and the coverage floor.
+- `make oracle` / `make oracle-all` run the lokihouse-vs-Loki oracle in one
+  push-down mode (or all three). Both need a running ClickHouse
+  (`podman run -d -p 9000:9000 docker.io/clickhouse/clickhouse-server:26.9`).
+- `make bench` runs the latency benchmark against Loki (see
+  [Benchmark](benchmark.md)); results land in `.cache/bench/results.md`.
