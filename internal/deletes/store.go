@@ -40,7 +40,7 @@ func (s *Store) now() time.Time {
 func (s *Store) nextVersion() uint64 {
 	for {
 		last := s.lastVersion.Load()
-		v := max(uint64(s.now().UnixNano()), last+1) //nolint:gosec // G115: the clock is after 1970
+		v := max(uint64(s.now().UnixNano()), last+1)
 		if s.lastVersion.CompareAndSwap(last, v) {
 			return v
 		}
