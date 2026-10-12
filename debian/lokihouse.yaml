@@ -1,6 +1,6 @@
 # lokihouse configuration (Debian package). All options:
 #   man lokihouse, /usr/share/doc/lokihouse/examples/lokihouse.example.yaml,
-#   https://bzed.github.io/lokihouse/configuration/
+#   https://bzed.github.io/lokihouse/reference/configuration/
 # The service runs with -config.expand-env, so ${VAR} is expanded.
 auth_enabled: false              # true: clients must send X-Scope-OrgID
 server:

@@ -216,7 +216,7 @@ balancer, push gateway, etc.).
 
 ### 1. Build and install lokihouse next to Loki
 
-Follow the [Installation](/install/) page. Loki stays up and serving
+Follow the [Installation](install/index.md) page. Loki stays up and serving
 traffic. lokihouse starts empty (its ClickHouse database is created on
 first start).
 
