@@ -35,7 +35,7 @@ oracle-cluster: cluster-up
 
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 # Raised to 85 at the end of Task 5; never lowered afterwards.
-COVERAGE_MIN ?= 78
+COVERAGE_MIN ?= 85
 
 .PHONY: fmt fmt-check vet lint vuln cover check
 fmt:

@@ -51,3 +51,20 @@ func TestAPI_BuildInfo(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 	require.Contains(t, body, `"goVersion"`)
 }
+
+func TestAPI_LabelValuesByNameAndBadQueries(t *testing.T) {
+	srv := newServer(t, true)
+	now := time.Now()
+	pushOne(t, srv.URL, "t1", now)
+	q := url.Values{"start": {strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(now.Add(time.Minute).UnixNano(), 10)}}
+
+	// /label/{name}/values sets req.Name via the path value.
+	code, body := do(t, http.MethodGet, srv.URL+"/loki/api/v1/label/env/values?"+q.Encode(), "t1", "")
+	require.Equal(t, http.StatusOK, code, body)
+	require.JSONEq(t, `{"status":"success","data":["dev"]}`, body)
+
+	// A malformed series query is a 400, not a panic.
+	badMatch := url.Values{"match": {"{bad"}}
+	code, _ = do(t, http.MethodGet, srv.URL+"/loki/api/v1/series?"+q.Encode()+"&"+badMatch.Encode(), "t1", "")
+	require.Equal(t, http.StatusBadRequest, code)
+}

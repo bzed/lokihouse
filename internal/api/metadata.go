@@ -31,6 +31,10 @@ func (a *API) label(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) series(w http.ResponseWriter, r *http.Request) {
+	// loghttp.ParseSeriesQuery reads r.Form["match"], which the net/http server
+	// does not populate; parse it first. The []-less "match" key is the one
+	// Loki's own docs show, and without this it is silently dropped.
+	_ = r.ParseForm()
 	req, err := loghttp.ParseAndValidateSeriesQuery(r)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)

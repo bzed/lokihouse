@@ -2,6 +2,7 @@ package pushdown
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"math"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql"
+	"github.com/grafana/loki/v3/pkg/logqlmodel"
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
@@ -23,6 +25,60 @@ import (
 type nopLogger struct{}
 
 func (nopLogger) Log(...any) error { return nil }
+
+// In ModeOn, a sample query whose leaves are all ineligible for Tier A must
+// run on Tier B (not the downstream path); the result is still identical.
+func TestEngine_ModeOnIneligibleFallsBackToTierB(t *testing.T) {
+	conn, _ := chtest.New(t)
+	ng := &chstore.Querier{Conn: conn}
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	overrides, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+	tierB := logql.NewEngine(logql.EngineOpts{}, ng, overrides, nopLogger{})
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	p, err := logql.NewLiteralParams(`sum by (app) (count_over_time({app="a"} | json [1m]))`, time.Now().Add(-time.Hour), time.Now(), time.Minute, 0, logproto.FORWARD, 0, nil, nil)
+	require.NoError(t, err)
+	e := &Engine{Mode: ModeOn, TierB: tierB, TierA: &TierA{Conn: conn, Limits: overrides}, Limits: overrides, Logger: nopLogger{}}
+	want, err := tierB.Query(p).Exec(ctx)
+	require.NoError(t, err)
+	got, err := e.Query(ctx, p).Exec(ctx)
+	require.NoError(t, err)
+	require.Equal(t, want.Data, got.Data)
+}
+
+// The downstream path must return its results to the accumulator in order,
+// even when one leaf fails: the failing query's index is where the error lands.
+type failingAcc struct {
+	idx  int
+	got  []int
+	fail int
+}
+
+func (f *failingAcc) Accumulate(context.Context, logqlmodel.Result, int) error {
+	f.got = append(f.got, f.idx)
+	f.idx++
+	if f.idx == f.fail {
+		return errors.New("boom")
+	}
+	return nil
+}
+
+func (f *failingAcc) Result() []logqlmodel.Result { return nil }
+
+func TestDownstreamer_AccumulatesInOrderAndStopsOnError(t *testing.T) {
+	execs := 0
+	ex := func(context.Context, logql.DownstreamQuery) (logqlmodel.Result, error) {
+		execs++
+		return logqlmodel.Result{}, nil
+	}
+	acc := &failingAcc{fail: 2}
+	res, err := (&downstreamer{execOne: ex}).Downstream(context.Background(), []logql.DownstreamQuery{{}, {}, {}}, acc)
+	require.ErrorContains(t, err, "boom")
+	require.Len(t, res, 3)
+	require.Equal(t, []int{0, 1}, acc.got)
+	require.Equal(t, 2, execs)
+}
 
 func TestEngine_DownstreamEqualsTierB(t *testing.T) {
 	conn, _ := chtest.New(t)

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -115,10 +117,26 @@ func TestGoStrings(t *testing.T) {
 	require.Nil(t, result)
 }
 
+func TestGoStrings_File(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "q_test.go")
+	src := "package x\nvar a = `{app=\"a\"}`\nvar b = `{app=\"a\", env=\"p\"}`\nvar c = `no braces`\n"
+	require.NoError(t, os.WriteFile(p, []byte(src), 0o600))
+	got := goStrings(p)
+	require.ElementsMatch(t, []string{`{app="a"}`, `{app="a", env="p"}`}, got)
+}
+
 func TestMdLogQL(t *testing.T) {
 	// This reads files from disk - can't easily test without temp files
 	result := mdLogQL("/nonexistent/file.md")
 	require.Nil(t, result)
+}
+
+func TestMdLogQL_Fences(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "q.md")
+	src := "text\n```logql\n{app=\"a\"}\n```\nmore\n```go\nfmt.Println(\"ignored\")\n```\n```logql\nrate({app=\"b\"}[1m])\n```\n"
+	require.NoError(t, os.WriteFile(p, []byte(src), 0o600))
+	got := mdLogQL(p)
+	require.ElementsMatch(t, []string{`{app="a"}`, `rate({app="b"}[1m])`}, got)
 }
 
 func TestParseExpr(t *testing.T) {

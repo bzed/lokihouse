@@ -75,10 +75,6 @@ var phase3Cases = []endpointCase{
 	{name: "volume_series", path: "/loki/api/v1/index/volume", params: url.Values{"query": {`{app=~"api|legacy"}`}}, check: checkVolume},
 	{name: "volume_labels_env", path: "/loki/api/v1/index/volume", params: url.Values{"query": {`{app=~"api|legacy"}`}, "targetLabels": {"env"}, "aggregateBy": {"labels"}}, check: checkVolume},
 	{name: "volume_range_10m", path: "/loki/api/v1/index/volume_range", params: url.Values{"query": {`{app="api"}`}, "step": {"600"}}, check: checkVolume},
-	{name: "detected_labels_all", path: "/loki/api/v1/detected_labels", params: url.Values{"query": {`{app=~".+"}`}}, mut: sortArrayBy("detectedLabels", "label")},
-	{name: "detected_labels_api", path: "/loki/api/v1/detected_labels", params: url.Values{"query": {`{app="api"}`}}, mut: sortArrayBy("detectedLabels", "label")},
-	// Empty selector: the no-query branch of chstore.DetectedLabels.
-	{name: "detected_labels_no_query", path: "/loki/api/v1/detected_labels", params: url.Values{}, mut: sortArrayBy("detectedLabels", "label")},
 	{name: "detected_fields_api_json", path: "/loki/api/v1/detected_fields", params: url.Values{"query": {`{app="api"}`}, "line_limit": {"1000"}}, mut: sortArrayBy("fields", "label")},
 	{name: "detected_fields_web_logfmt", path: "/loki/api/v1/detected_fields", params: url.Values{"query": {`{app="web"}`}, "line_limit": {"1000"}}, mut: sortArrayBy("fields", "label")},
 	{name: "detected_field_values_level", path: "/loki/api/v1/detected_field/level/values", params: url.Values{"query": {`{app="web"}`}, "line_limit": {"1000"}}, mut: sortStrings("values")},
@@ -86,9 +82,20 @@ var phase3Cases = []endpointCase{
 	{name: "patterns_legacy", path: "/loki/api/v1/patterns", params: url.Values{"query": {`{app="legacy"}`}, "step": {"300s"}}, mut: sortArrayBy("data", "pattern")},
 }
 
+// detectedLabelsCases must run before Loki's ingester is flushed: Loki answers
+// detected_labels from ingester memory and, once flushed, from the TSDB index
+// only after it is built and synced, which takes minutes and returns {} until
+// then.
+var detectedLabelsCases = []endpointCase{
+	{name: "detected_labels_all", path: "/loki/api/v1/detected_labels", params: url.Values{"query": {`{app=~".+"}`}}, mut: sortArrayBy("detectedLabels", "label")},
+	{name: "detected_labels_api", path: "/loki/api/v1/detected_labels", params: url.Values{"query": {`{app="api"}`}}, mut: sortArrayBy("detectedLabels", "label")},
+	// Empty selector: the no-query branch of chstore.DetectedLabels.
+	{name: "detected_labels_no_query", path: "/loki/api/v1/detected_labels", params: url.Values{}, mut: sortArrayBy("detectedLabels", "label")},
+}
+
 // phase3Endpoints runs every case for both tenants over [start, end].
-func phase3Endpoints(t *testing.T, loki, house string, start, end time.Time) {
-	for _, c := range phase3Cases {
+func phase3Endpoints(t *testing.T, loki, house string, start, end time.Time, cases []endpointCase) {
+	for _, c := range cases {
 		for _, tenant := range []string{"tenant-a", "tenant-b"} {
 			t.Run("p3/"+tenant+"/"+c.name, func(t *testing.T) {
 				v := url.Values{}
@@ -222,30 +229,6 @@ func sortStrings(field string) func(any) {
 			sort.Slice(arr, func(i, j int) bool { return fmt.Sprint(arr[i]) < fmt.Sprint(arr[j]) })
 		}
 	}
-}
-
-// waitDetectedLabelsReady polls Loki's detected_labels for tenant-a until it
-// returns at least one label, or until the timeout is reached.
-func waitDetectedLabelsReady(t *testing.T, loki string, tenant string, query string, start, end time.Time, timeout time.Duration) {
-	t.Helper()
-	v := url.Values{
-		"query": {query},
-		"start": {strconv.FormatInt(start.UnixNano(), 10)},
-		"end":   {strconv.FormatInt(end.UnixNano(), 10)},
-	}
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		body := Get(t, loki+"/loki/api/v1/detected_labels?"+v.Encode(), tenant)
-		var r struct {
-			DetectedLabels []any `json:"detectedLabels"`
-		}
-		if json.Unmarshal(body, &r) == nil && len(r.DetectedLabels) > 0 {
-			t.Logf("detected_labels ready after waiting")
-			return
-		}
-		time.Sleep(5 * time.Second)
-	}
-	t.Logf("detected_labels still empty after %v (Loki may genuinely have none; continuing)", timeout)
 }
 
 // waitPatternsReady polls Loki's patterns endpoint for tenant-a until data is

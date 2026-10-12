@@ -85,19 +85,18 @@ func TestOracle(t *testing.T) {
 		})
 	}
 
+	// detected_labels before the flush below (see detectedLabelsCases).
+	phase3Endpoints(t, loki, house, start.Add(-time.Minute), end, detectedLabelsCases)
+
 	// Wait for Loki's TSDB index to be ready before comparing index/stats.
 	// Loki's index/stats reads from the TSDB index, which is built asynchronously
 	// after the ingester flushes chunks.
 	waitStatsReady(t, loki, "tenant-a", `{app="api"}`, start, end, 5*time.Minute)
 
-	// detected_labels also reads from the store; wait until it returns at least one
-	// label so the comparison is not affected by store-readiness races.
-	waitDetectedLabelsReady(t, loki, "tenant-a", `{app=~".+"}`, start, end, 60*time.Second)
-
 	// The pattern ingester trains asynchronously; wait for it to produce data.
 	waitPatternsReady(t, loki, "tenant-a", `{app="web"}`, start, end, 60*time.Second)
 
-	phase3Endpoints(t, loki, house, start.Add(-time.Minute), end)
+	phase3Endpoints(t, loki, house, start.Add(-time.Minute), end, phase3Cases)
 
 	// The ruler: rule CRUD, evaluation state, remote write and notifications
 	// over tenant-a's fixture.

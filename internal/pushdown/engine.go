@@ -86,13 +86,18 @@ func (e *Engine) anyEligible(leaves []*syntax.RangeAggregationExpr) bool {
 
 // Downstreamer implements logql.Downstreamable: it executes each downstream query.
 func (e *Engine) Downstreamer(ctx context.Context) logql.Downstreamer {
-	return &downstreamer{e: e}
+	return &downstreamer{e: e, execOne: e.execOne}
 }
 
-type downstreamer struct{ e *Engine }
+// downstreamer runs every downstream query in order, executing Tier A for eligible
+// range-aggregation leaves and Tier B otherwise, accumulating each result at its
+// index. execOne is (*Engine).execOne in production; tests replace it with a
+// stub to drive the accumulation path without a store.
+type downstreamer struct {
+	e       *Engine
+	execOne func(context.Context, logql.DownstreamQuery) (logqlmodel.Result, error)
+}
 
-// Downstream runs every query in order, executing Tier A for eligible range-aggregation
-// leaves and Tier B otherwise, accumulating each result at its index.
 func (d *downstreamer) Downstream(ctx context.Context, queries []logql.DownstreamQuery, acc logql.Accumulator) ([]logqlmodel.Result, error) {
 	results := make([]logqlmodel.Result, len(queries))
 	for i, q := range queries {
@@ -108,11 +113,12 @@ func (d *downstreamer) Downstream(ctx context.Context, queries []logql.Downstrea
 	return results, nil
 }
 
-func (d *downstreamer) execOne(ctx context.Context, q logql.DownstreamQuery) (logqlmodel.Result, error) {
-	if d.e.Mode == ModeOn && d.e.TierA != nil {
+// execOne executes one downstream query: the Tier A leaf when eligible, Tier B otherwise.
+func (e *Engine) execOne(ctx context.Context, q logql.DownstreamQuery) (logqlmodel.Result, error) {
+	if e.Mode == ModeOn && e.TierA != nil {
 		if leaf, ok := q.Params.GetExpression().(*syntax.RangeAggregationExpr); ok {
-			if d.e.TierA.Eligible(leaf) {
-				res, err := d.e.TierA.Exec(ctx, leaf, q.Params)
+			if e.TierA.Eligible(leaf) {
+				res, err := e.TierA.Exec(ctx, leaf, q.Params)
 				if !errors.Is(err, ErrFallback) {
 					TierALeaves.Add(1)
 					return res, err
@@ -120,5 +126,5 @@ func (d *downstreamer) execOne(ctx context.Context, q logql.DownstreamQuery) (lo
 			}
 		}
 	}
-	return d.e.TierB.Query(q.Params).Exec(ctx)
+	return e.TierB.Query(q.Params).Exec(ctx)
 }
