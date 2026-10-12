@@ -69,6 +69,12 @@ file.
 | --- | --- | --- | --- |
 | `query.pushdown` | string | `on` | SQL push-down mode: `on` (push eligible queries into ClickHouse), `off` (always run Loki's engine over ClickHouse rows), or `downstream` (push down only when the client opts in). See the project's Phase 2 status doc for details. |
 
+### `query.querier`
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `query.querier.multi_tenant_queries_enabled` | bool | `false` | When `true`, a query whose `X-Scope-OrgID` names several tenants (`a|b`) is answered by querying each tenant and labelling results with `__tenant_id__` (Loki's multi-tenant queries). Multi-tenant queries always run on the plain engine (no SQL push-down). When `false` (the default), such a request is rejected with `multiple org IDs present`. |
+
 ## `compactor`
 
 Settings for the background delete-processing loop.

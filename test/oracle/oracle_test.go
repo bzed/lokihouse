@@ -98,6 +98,9 @@ func TestOracle(t *testing.T) {
 
 	phase3Endpoints(t, loki, house, start.Add(-time.Minute), end, phase3Cases)
 
+	// Multi-tenant queries (both fixture tenants in one X-Scope-OrgID).
+	multiTenantOracle(t, loki, house, start, end)
+
 	// The ruler: rule CRUD, evaluation state, remote write and notifications
 	// over tenant-a's fixture.
 	rulerOracle(t, loki, house, lokiSinks, houseSinks)

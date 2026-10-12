@@ -36,3 +36,15 @@ tenants in the request, as in Loki.
 
 See [Differences from Loki](divergences.md#hardening-phase-5) for the rate-limit
 strategy difference.
+
+## Multi-tenant queries
+
+`query.querier.multi_tenant_queries_enabled` (default `false`) accepts a
+comma-separated list of org IDs in `X-Scope-OrgID` (e.g. `tenant-a,tenant-b`)
+on the query, series and label endpoints and returns the merged result over
+the listed tenants, as Loki's multi-tenant querier does. The `__tenant_id__`
+label is always set on returned streams and series so the sources can be
+told apart. Index stats, volume, `detected_labels` and `detected_metric_names`
+endpoints do not fan out and keep the single-tenant resolution (see
+`divergences.md`). Multi-tenant queries run on the plain engine, not the
+ClickHouse pushdown path.

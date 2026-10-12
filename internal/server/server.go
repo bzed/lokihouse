@@ -24,6 +24,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/bzed/lokihouse/internal/multitenant"
+
 	"github.com/bzed/lokihouse/internal/api"
 	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/config"
@@ -174,15 +176,28 @@ func openClickHouse(ctx context.Context, cfg *config.Config) (driver.Conn, error
 func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, logger log.Logger) (*api.API, *deletes.Store, *chstore.Querier) {
 	store := &deletes.Store{Conn: conn}
 	q := &chstore.Querier{Conn: conn, Deletes: store}
+	// When multi-tenant queries are enabled, log/metric queries fan out per
+	// tenant through the multi-tenant querier; Tier A (SQL) is single-tenant
+	// and is bypassed for multi-tenant requests (pushdown engine guard).
+	var storeQuerier interface {
+		logql.Querier
+	} = q
+	var meta api.MetaQuerier
+	if cfg.Query.Querier.MultiTenantQueriesEnabled {
+		mq := &multitenant.Querier{Next: q}
+		storeQuerier = mq
+		meta = mq
+	}
 	a := &api.API{
 		Queries: &pushdown.Engine{
 			Mode:   pushdown.Mode(cfg.Query.Pushdown),
-			TierB:  logql.NewEngine(logql.EngineOpts{}, q, limits, logger),
+			TierB:  logql.NewEngine(logql.EngineOpts{}, storeQuerier, limits, logger),
 			TierA:  &pushdown.TierA{Conn: conn, Limits: limits, Deletes: store},
 			Limits: limits,
 			Logger: logger,
 		},
-		Q: q,
+		Q:    q,
+		Meta: meta,
 		Push: &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: limits, Logger: logger,
 			RateLimiter: ingest.NewRateLimiter(limits)},
 		Limits:      limits,

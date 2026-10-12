@@ -75,6 +75,7 @@ clickhouse:
   replicated: %t
 query:
   pushdown: %q
+  querier: {multi_tenant_queries_enabled: true}
 limits_config:
   max_query_series: 100000
   volume_enabled: true

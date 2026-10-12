@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql"
 	rulerbase "github.com/grafana/loki/v3/pkg/ruler/base"
 	"github.com/grafana/loki/v3/pkg/validation"
@@ -24,9 +25,13 @@ import (
 type API struct {
 	// Queries executes LogQL queries, choosing between the plain engine and
 	// the push-down engine.
-	Queries     Querier
-	Q           *chstore.Querier
-	Push        http.Handler
+	Queries Querier
+	Q       *chstore.Querier
+	// Meta answers label/series for the metadata endpoints. It is nil unless
+	// multi-tenant queries are enabled; then it is the multi-tenant querier.
+	Meta MetaQuerier
+	Push http.Handler
+	// Limits configures per-tenant limits.
 	Limits      *validation.Overrides
 	AuthEnabled bool
 	Patterns    *patterns.Querier
@@ -39,6 +44,14 @@ type API struct {
 // *pushdown.Engine satisfy it via the adapters below.
 type Querier interface {
 	Query(ctx context.Context, p logql.Params) logql.Query
+}
+
+// MetaQuerier is what the metadata endpoints call: label names/values and
+// series. The plain *chstore.Querier and the multi-tenant querier both
+// satisfy it.
+type MetaQuerier interface {
+	Label(ctx context.Context, req *logproto.LabelRequest) (*logproto.LabelResponse, error)
+	Series(ctx context.Context, req *logproto.SeriesRequest) (*logproto.SeriesResponse, error)
 }
 
 // plainQuerier adapts *logql.QueryEngine (Query(params)) to Querier (Query(ctx, params)).

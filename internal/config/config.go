@@ -53,6 +53,10 @@ type Config struct {
 	} `yaml:"clickhouse"`
 	Query struct {
 		Pushdown string `yaml:"pushdown"` // on | off | downstream; default on
+		// Querier multi-tenant settings (Loki's querier block).
+		Querier struct {
+			MultiTenantQueriesEnabled bool `yaml:"multi_tenant_queries_enabled"`
+		} `yaml:"querier"`
 	} `yaml:"query"`
 	Compactor struct {
 		CompactionInterval        time.Duration `yaml:"compaction_interval"`          // delete processing loop

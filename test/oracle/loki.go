@@ -179,6 +179,8 @@ schema_config:
 query_range:
   cache_results: false
   parallelise_shardable_queries: false
+querier:
+  multi_tenant_queries_enabled: true
 limits_config:
   split_queries_by_interval: 0
   # Keep both stores' series limits identical (100k >> any fixture cardinality).

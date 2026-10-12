@@ -234,6 +234,19 @@ func TestLoad_Logging(t *testing.T) {
 	require.ErrorContains(t, err, "log_format")
 }
 
+func TestLoad_MultiTenantQueriesKey(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("auth_enabled: false\n"), 0o600))
+	c, err := Load(p, false)
+	require.NoError(t, err)
+	require.False(t, c.Query.Querier.MultiTenantQueriesEnabled, "defaults to false")
+
+	require.NoError(t, os.WriteFile(p, []byte("query:\n  querier: {multi_tenant_queries_enabled: true}\n"), 0o600))
+	c, err = Load(p, false)
+	require.NoError(t, err)
+	require.True(t, c.Query.Querier.MultiTenantQueriesEnabled)
+}
+
 func TestLoad_ExampleConfig(t *testing.T) {
 	_, err := Load(filepath.Join("..", "..", "lokihouse.example.yaml"), false)
 	require.NoError(t, err)

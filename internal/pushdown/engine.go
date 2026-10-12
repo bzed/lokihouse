@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
 	"github.com/grafana/loki/v3/pkg/logqlmodel"
@@ -50,6 +51,11 @@ type Engine struct {
 // Query returns the query to execute for p: the mapped downstream query when the
 // mode and the expression allow it, otherwise TierB.Query(p).
 func (e *Engine) Query(ctx context.Context, p logql.Params) logql.Query {
+	// Tier A SQL is single-tenant; multi-tenant queries run on Tier B, whose
+	// querier fans out per tenant (internal/multitenant).
+	if ids, err := tenant.TenantIDs(ctx); err == nil && len(ids) > 1 {
+		return e.TierB.Query(p)
+	}
 	if e.Mode == ModeOff {
 		return e.TierB.Query(p)
 	}

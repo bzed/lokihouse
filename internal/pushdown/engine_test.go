@@ -47,6 +47,29 @@ func TestEngine_ModeOnIneligibleFallsBackToTierB(t *testing.T) {
 	require.Equal(t, want.Data, got.Data)
 }
 
+// A multi-tenant request (two org IDs) must run on Tier B, not Tier A: Tier A
+// SQL is single-tenant, so TierALeaves must not increase.
+func TestEngine_MultiTenantBypassesTierA(t *testing.T) {
+	conn, _ := chtest.New(t)
+	ng := &chstore.Querier{Conn: conn}
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	overrides, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+	tierB := logql.NewEngine(logql.EngineOpts{}, ng, overrides, nopLogger{})
+	before := TierALeaves.Load()
+	// A two-tenant context: "a|b".
+	ctx := user.InjectOrgID(context.Background(), "a|b")
+	// A range aggregation that would be eligible for Tier A in single-tenant mode.
+	p, err := logql.NewLiteralParams(`count_over_time({app="a"}[1m])`, time.Now().Add(-time.Hour), time.Now(), time.Minute, 0, logproto.FORWARD, 0, nil, nil)
+	require.NoError(t, err)
+	e := &Engine{Mode: ModeOn, TierB: tierB, TierA: &TierA{Conn: conn, Limits: overrides}, Limits: overrides, Logger: nopLogger{}}
+	q := e.Query(ctx, p)
+	require.NotNil(t, q, "multi-tenant must fall back to Tier B")
+	_ = q
+	require.Equal(t, before, TierALeaves.Load(), "Tier A must not run for a multi-tenant query")
+}
+
 // The downstream path must return its results to the accumulator in order,
 // even when one leaf fails: the failing query's index is where the error lands.
 type failingAcc struct {

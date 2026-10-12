@@ -21,7 +21,7 @@ func (a *API) label(w http.ResponseWriter, r *http.Request) {
 	if name := r.PathValue("name"); name != "" {
 		req.Name, req.Values = name, true
 	}
-	resp, err := a.Q.Label(r.Context(), req)
+	resp, err := a.meta().Label(r.Context(), req)
 	if err != nil {
 		serverutil.WriteError(err, w)
 		return
@@ -40,11 +40,20 @@ func (a *API) series(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	resp, err := a.Q.Series(r.Context(), req)
+	resp, err := a.meta().Series(r.Context(), req)
 	if err != nil {
 		serverutil.WriteError(err, w)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	_ = marshal.WriteSeriesResponseJSON(resp.Series, w)
+}
+
+// meta returns the metadata querier: the multi-tenant querier when set, else
+// the plain single-tenant querier.
+func (a *API) meta() MetaQuerier {
+	if a.Meta != nil {
+		return a.Meta
+	}
+	return a.Q
 }
