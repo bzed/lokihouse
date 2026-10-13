@@ -3,6 +3,7 @@ package ingest_test
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -186,4 +187,24 @@ func TestPush_StreamRetention(t *testing.T) {
 	require.NoError(t, conn.QueryRow(context.Background(),
 		"SELECT retention_days FROM streams WHERE tenant = 't1' AND labels['app'] = 'short'").Scan(&sd))
 	require.Equal(t, uint16(2), sd, "streams rows carry the same retention as their logs")
+}
+
+func TestPush_TooManyPartitionsIs400(t *testing.T) {
+	conn, _ := chtest.New(t)
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	l.RejectOldSamples = false // a backfill
+	o, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+	h := &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: o, Logger: log.NewNopLogger()}
+
+	day := time.Now().UTC().Truncate(24 * time.Hour).Add(time.Hour)
+	var values []string
+	for i := chstore.MaxPushPartitions + 1; i > 0; i-- {
+		values = append(values, fmt.Sprintf(`[%q,"x"]`, itoa(day.AddDate(0, 0, -i).UnixNano())))
+	}
+	body := `{"streams":[{"stream":{"app":"a"},"values":[` + strings.Join(values, ",") + `]}]}`
+	rec := push(t, h, "t1", body)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "at most 60 are accepted per push")
 }

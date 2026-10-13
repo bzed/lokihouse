@@ -2,6 +2,8 @@ package chstore_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -133,4 +135,74 @@ func TestWriter_MergeDedupKeyIncludesMetadata(t *testing.T) {
 	var n uint64
 	require.NoError(t, conn.QueryRow(ctx, "SELECT count() FROM logs FINAL").Scan(&n))
 	require.Equal(t, uint64(2), n)
+}
+
+// dailyEntries returns one entry per UTC day for the n days before today.
+func dailyEntries(n int) []logproto.Entry {
+	day := time.Now().UTC().Truncate(24 * time.Hour).Add(time.Hour)
+	var entries []logproto.Entry
+	for i := n; i > 0; i-- {
+		entries = append(entries, logproto.Entry{Timestamp: day.AddDate(0, 0, -i), Line: fmt.Sprintf("day %d", i)})
+	}
+	return entries
+}
+
+// lastLogsInsertAsync reports whether the latest INSERT INTO logs in db ran as an async insert.
+func lastLogsInsertAsync(t *testing.T, conn driver.Conn, db string) bool {
+	ctx := context.Background()
+	require.NoError(t, conn.Exec(ctx, "SYSTEM FLUSH LOGS"))
+	var v string
+	require.NoError(t, conn.QueryRow(ctx, `SELECT Settings['async_insert'] FROM system.query_log
+		WHERE type = 'QueryFinish' AND is_initial_query AND current_database = ? AND query LIKE 'INSERT INTO logs%'
+		ORDER BY event_time_microseconds DESC LIMIT 1`, db).Scan(&v))
+	// system.query_log lists only settings that differ from the server default,
+	// which is async_insert=1 here: an explicit 0 is the only reliable signal.
+	return v != "0"
+}
+
+func TestWriter_RejectsTooManyPartitions(t *testing.T) {
+	conn, _ := chtest.New(t)
+	ctx := context.Background()
+	w := &chstore.Writer{Conn: conn}
+	err := w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="backfill"}`, Entries: dailyEntries(chstore.MaxPushPartitions + 1)}}, nil)
+	require.True(t, errors.Is(err, chstore.ErrTooManyPartitions), "got %v", err)
+
+	var logs, streams uint64
+	require.NoError(t, conn.QueryRow(ctx, "SELECT count() FROM logs WHERE tenant='t1'").Scan(&logs))
+	require.NoError(t, conn.QueryRow(ctx, "SELECT count() FROM streams WHERE tenant='t1'").Scan(&streams))
+	require.Zero(t, logs, "a rejected push stores nothing")
+	require.Zero(t, streams, "a rejected push registers no streams")
+}
+
+// Two retention periods double the partitions: 31 days x 2 > 60.
+func TestWriter_PartitionsCountRetention(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	ret := func(ls labels.Labels) uint16 {
+		if ls.Get("app") == "short" {
+			return 7
+		}
+		return 30
+	}
+	err := w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="short"}`, Entries: dailyEntries(31)},
+		{Labels: `{app="long"}`, Entries: dailyEntries(31)},
+	}, ret)
+	require.ErrorIs(t, err, chstore.ErrTooManyPartitions)
+}
+
+func TestWriter_WidePushIsSynchronous(t *testing.T) {
+	conn, db := chtest.New(t)
+	ctx := context.Background()
+	w := &chstore.Writer{Conn: conn}
+
+	require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="live"}`, Entries: dailyEntries(1)}}, nil))
+	require.True(t, lastLogsInsertAsync(t, conn, db), "a narrow push uses the async-insert buffer")
+
+	require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="backfill"}`, Entries: dailyEntries(chstore.MaxPushPartitions)}}, nil))
+	require.False(t, lastLogsInsertAsync(t, conn, db), "a wide push bypasses the shared async buffer")
+
+	var rows uint64
+	require.NoError(t, conn.QueryRow(ctx, "SELECT count() FROM logs WHERE tenant='t1'").Scan(&rows))
+	require.Equal(t, uint64(1+chstore.MaxPushPartitions), rows)
 }

@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -21,6 +22,10 @@ import (
 	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/ingest/distcopy"
 )
+
+// reasonTooManyPartitions labels pushes rejected for spanning more than
+// chstore.MaxPushPartitions partitions in Loki's discarded-data metrics.
+const reasonTooManyPartitions = "too_many_partitions"
 
 const (
 	maxRecvMsgSize      = 100 << 20 // Loki's distributor default (-distributor.max-recv-msg-size)
@@ -62,6 +67,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(res.Streams) > 0 {
 		if err := h.Writer.Write(r.Context(), tenantID, res.Streams, h.retentionDays(tenantID)); err != nil {
+			if errors.Is(err, chstore.ErrTooManyPartitions) {
+				distcopy.ReportDiscarded(r.Context(), h.Limits, tenantID, reasonTooManyPartitions, res.Streams, time.Now())
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			level.Error(h.Logger).Log("msg", "write failed", "err", err) //nolint:gosec // G104: go-kit logger errors are not actionable
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

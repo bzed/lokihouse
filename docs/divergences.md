@@ -9,6 +9,7 @@ reason. Entries are grouped by topic.
 
 - **`ingestion_rate_strategy: global`:** Loki's `global` strategy divides the limit over the healthy distributors in the ring, so the ring as a whole enforces the limit. lokihouse has no distributor ring; `ingestion_rate_strategy` is not honoured and the limit is always enforced *per lokihouse instance* (the `local` behaviour). With several lokihouse instances behind a load balancer, each enforces the full `ingestion_rate_mb`, so the cluster total can be N times the configured limit.
 - **Per-policy rate limits:** Loki supports `policy_stream_mapping` to give a policy its own rate limit and burst. lokihouse does not support policies; only the tenant-wide `ingestion_rate_mb` / `ingestion_burst_size_mb` are enforced.
+- **Pushes spanning many days:** Loki accepts a push of any time span that passes its per-entry checks. lokihouse rejects a push touching more than 60 `(UTC day, retention period)` partitions with 400 (`too many partitions: … split it by time range`), stores nothing from it, and counts it under the discard reason `too_many_partitions`. With one retention period that is 60 days. Each partition becomes a separate ClickHouse part, and ClickHouse refuses inserts over 100 partitions. Pushes over 8 partitions are inserted synchronously instead of through the shared async-insert buffer, so a backfill cannot fail other tenants' pushes. Backfills must send at most 60 days per push.
 
 ## Query
 
