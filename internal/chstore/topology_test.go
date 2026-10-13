@@ -14,6 +14,7 @@ func TestTopology_SingleNode(t *testing.T) {
 	require.Equal(t, "", topo.OnCluster())
 	require.Equal(t, "logs", topo.Local("logs"))
 	require.Equal(t, "ReplacingMergeTree", topo.Engine("ReplacingMergeTree"))
+	require.Equal(t, "ReplacingMergeTree(version)", topo.Engine("ReplacingMergeTree", "version"))
 	require.Empty(t, topo.Settings())
 }
 
@@ -22,12 +23,15 @@ func TestTopology_ReplicatedCluster(t *testing.T) {
 	require.Equal(t, "ON CLUSTER `lokihouse`", topo.OnCluster())
 	require.Equal(t, "logs_local", topo.Local("logs"))
 	require.Equal(t, "ReplicatedReplacingMergeTree", topo.Engine("ReplacingMergeTree"))
+	require.Equal(t, "ReplicatedReplacingMergeTree(version)", topo.Engine("ReplacingMergeTree", "version"))
 	require.Equal(t, 1, topo.Settings()["distributed_foreground_insert"])
 	require.Equal(t, "auto", topo.Settings()["insert_quorum"])
 
 	topo.ReplicaPath, topo.ReplicaName = "/clickhouse/tables/{shard}/{database}/{table}", "{replica}"
 	require.Equal(t, "ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/{database}/{table}', '{replica}')",
 		topo.Engine("ReplacingMergeTree"))
+	require.Equal(t, "ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/{database}/{table}', '{replica}', version)",
+		topo.Engine("ReplacingMergeTree", "version"))
 }
 
 func TestTopology_ShardedWithoutReplication(t *testing.T) {

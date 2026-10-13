@@ -2,6 +2,7 @@ package deletes_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -50,6 +51,27 @@ func TestStore_CancelHidesRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, reqs)
 	_, err = s.Get(context.Background(), "t1", id)
+	require.ErrorIs(t, err, deletion.ErrDeleteRequestNotFound)
+}
+
+// Two instances with skewed clocks: the later write carries the lower version.
+// The status must stay the highest version's after ClickHouse merges the rows.
+func TestStore_HighestVersionSurvivesMerge(t *testing.T) {
+	ctx := context.Background()
+	conn, _ := chtest.New(t)
+	ahead := &deletes.Store{Conn: conn, Now: func() time.Time { return t0.Add(2 * time.Hour) }}
+	behind := &deletes.Store{Conn: conn, Now: func() time.Time { return t0 }}
+	id, err := behind.Add(ctx, "t1", `{app="x"}`, model.TimeFromUnixNano(t0.UnixNano()), model.TimeFromUnixNano(t0.Add(time.Minute).UnixNano()))
+	require.NoError(t, err)
+	r, err := behind.Get(ctx, "t1", id)
+	require.NoError(t, err)
+	require.NoError(t, ahead.Cancel(ctx, "t1", id))
+	require.NoError(t, behind.MarkProcessed(ctx, r))
+
+	topo := chtest.Topology()
+	require.NoError(t, conn.Exec(ctx, fmt.Sprintf("OPTIMIZE TABLE %s %s FINAL", topo.Local("delete_requests"), topo.OnCluster())))
+
+	_, err = behind.Get(ctx, "t1", id)
 	require.ErrorIs(t, err, deletion.ErrDeleteRequestNotFound)
 }
 

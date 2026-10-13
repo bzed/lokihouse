@@ -60,7 +60,9 @@ FROM {{.DBName}}.{{.Local "logs"}}
 GROUP BY tenant, stream_id, hour, retention_days;
 
 -- delete_requests: Loki delete API requests. Rows are never updated in place: a status
--- change inserts a newer version and readers take argMax(…, version).
+-- change inserts a newer version and readers take argMax(…, version). Merges must keep
+-- the same row, so version is the engine's version column: without it they keep the
+-- last-inserted row, which with skewed clocks across instances is not the highest version.
 CREATE TABLE IF NOT EXISTS {{.DBName}}.{{.Local "delete_requests"}}{{with .OnCluster}} {{.}}{{end}} (
   tenant     LowCardinality(String),
   request_id String,
@@ -70,7 +72,7 @@ CREATE TABLE IF NOT EXISTS {{.DBName}}.{{.Local "delete_requests"}}{{with .OnClu
   created_ms Int64,
   status     LowCardinality(String), -- received | processed | cancelled
   version    UInt64
-) ENGINE = {{.Engine "ReplacingMergeTree"}}
+) ENGINE = {{.Engine "ReplacingMergeTree" "version"}}
 ORDER BY (tenant, request_id);
 {{if .Cluster}}
 CREATE TABLE IF NOT EXISTS {{.DBName}}.stream_stats_hourly{{with .OnCluster}} {{.}}{{end}} AS {{.DBName}}.stream_stats_hourly_local

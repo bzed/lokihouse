@@ -32,15 +32,19 @@ func (t Topology) Local(name string) string {
 	return name + "_local"
 }
 
-// Engine returns the storage engine clause for a MergeTree-family engine.
-func (t Topology) Engine(base string) string {
-	if !t.Replicated {
+// Engine returns the storage engine clause for a MergeTree-family engine with
+// the given engine parameters (e.g. ReplacingMergeTree's version column).
+func (t Topology) Engine(base string, params ...string) string {
+	if t.Replicated {
+		base = "Replicated" + base
+		if t.ReplicaPath != "" {
+			params = append([]string{sqlString(t.ReplicaPath), sqlString(t.ReplicaName)}, params...)
+		}
+	}
+	if len(params) == 0 {
 		return base
 	}
-	if t.ReplicaPath == "" {
-		return "Replicated" + base
-	}
-	return "Replicated" + base + "(" + sqlString(t.ReplicaPath) + ", " + sqlString(t.ReplicaName) + ")"
+	return base + "(" + strings.Join(params, ", ") + ")"
 }
 
 // Settings returns the session settings every lokihouse connection needs

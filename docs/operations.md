@@ -45,6 +45,20 @@ strategy difference.
 
 A processed delete request removes rows with lightweight `DELETE`s and then runs `ALTER TABLE logs_local APPLY DELETED MASK` (ON CLUSTER on a cluster), which rewrites only the parts that hold deleted rows. Deleted lines therefore leave the disk at the end of the compactor pass that processed the request, as with Loki's compactor. The rewrite costs I/O proportional to the affected parts; it runs once per pass, not once per request.
 
+### `delete_requests` created by lokihouse 0.6.0 or earlier
+
+Up to 0.6.0, `delete_requests` was created as `ReplacingMergeTree` without its `version` column. A merge then keeps the last-inserted status of a request, not the newest one. When instances' clocks disagree, a cancelled request can come back as processed, or a processed one as received. lokihouse does not change existing tables. To rebuild the table on a single server, stop every lokihouse instance and run (database `lokihouse`):
+
+```sql
+CREATE TABLE lokihouse.delete_requests_new AS lokihouse.delete_requests
+  ENGINE = ReplacingMergeTree(version) ORDER BY (tenant, request_id);
+INSERT INTO lokihouse.delete_requests_new SELECT * FROM lokihouse.delete_requests;
+EXCHANGE TABLES lokihouse.delete_requests AND lokihouse.delete_requests_new;
+DROP TABLE lokihouse.delete_requests_new;
+```
+
+On a cluster, do the same for `delete_requests_local` with `ON CLUSTER` and `ReplicatedReplacingMergeTree(version)`, and run the `INSERT … SELECT` on one replica of each shard.
+
 ## Metrics
 
 `GET /metrics` (no tenant) serves Prometheus text format from the default

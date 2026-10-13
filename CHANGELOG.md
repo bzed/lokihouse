@@ -17,6 +17,10 @@ changelog (`debian/changelog`) carries the same releases.
 - `GET /ready` returns 503 when ClickHouse is unreachable (it always returned 200 before).
 - A push spanning more than 60 day/retention partitions is rejected with 400 (discard reason `too_many_partitions`) instead of failing in ClickHouse with 500 forever; pushes over 8 partitions bypass the async-insert buffer, so a backfill can no longer fail other pushes that share its flush.
 
+### Fixed
+
+- `delete_requests` is created as `ReplacingMergeTree(version)`. Before, a merge kept the last-inserted status of a delete request instead of the newest, so with skewed clocks between instances a cancelled request could reappear as processed. Existing tables are not changed; `docs/operations.md` shows how to rebuild them.
+
 ## [0.6.0] - 2026-10-13
 
 ### Added
