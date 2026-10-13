@@ -168,14 +168,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 }
 
 func openClickHouse(ctx context.Context, cfg *config.Config) (driver.Conn, error) {
-	opts := func(db string) *clickhouse.Options {
-		return &clickhouse.Options{
-			Addr:     cfg.ClickHouse.Addr,
-			Auth:     clickhouse.Auth{Database: db, Username: cfg.ClickHouse.Username, Password: cfg.ClickHouse.Password},
-			Settings: cfg.CHSettings(),
-		}
-	}
-	admin, err := clickhouse.Open(opts("default"))
+	admin, err := clickhouse.Open(cfg.CHOptions("default"))
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +179,7 @@ func openClickHouse(ctx context.Context, cfg *config.Config) (driver.Conn, error
 	if err := admin.Close(); err != nil {
 		return nil, fmt.Errorf("close admin connection: %w", err)
 	}
-	return clickhouse.Open(opts(cfg.ClickHouse.Database))
+	return clickhouse.Open(cfg.CHOptions(cfg.ClickHouse.Database))
 }
 
 // newAPI builds the HTTP API over conn (moved unchanged from cmd/lokihouse).

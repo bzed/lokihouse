@@ -45,12 +45,16 @@ type Config struct {
 		Database     string         `yaml:"database"`
 		Username     string         `yaml:"username"`
 		Password     string         `yaml:"password"`
-		PasswordFile string         `yaml:"password_file"` // file holding the password; mutually exclusive with password
-		Cluster      string         `yaml:"cluster"`       // remote_servers name; empty = single server
-		Replicated   bool           `yaml:"replicated"`    // Replicated*MergeTree on the cluster (default true)
-		ReplicaPath  string         `yaml:"replica_path"`  // optional; default: server's default_replica_path
-		ReplicaName  string         `yaml:"replica_name"`  // optional; default: server's default_replica_name
-		Settings     map[string]any `yaml:"settings"`      // extra ClickHouse session settings, override topology defaults
+		PasswordFile string         `yaml:"password_file"`  // file holding the password; mutually exclusive with password
+		Cluster      string         `yaml:"cluster"`        // remote_servers name; empty = single server
+		Replicated   bool           `yaml:"replicated"`     // Replicated*MergeTree on the cluster (default true)
+		ReplicaPath  string         `yaml:"replica_path"`   // optional; default: server's default_replica_path
+		ReplicaName  string         `yaml:"replica_name"`   // optional; default: server's default_replica_name
+		Settings     map[string]any `yaml:"settings"`       // extra ClickHouse session settings, override topology defaults
+		DialTimeout  time.Duration  `yaml:"dial_timeout"`   // connect and pool-acquire timeout; default 5s
+		ReadTimeout  time.Duration  `yaml:"read_timeout"`   // longest wait for a server packet; default 5m
+		MaxOpenConns int            `yaml:"max_open_conns"` // connection pool size; default 100
+		MaxIdleConns int            `yaml:"max_idle_conns"` // idle connections kept; default 20
 	} `yaml:"clickhouse"`
 	Query struct {
 		Pushdown string `yaml:"pushdown"` // on | off | downstream; default on
@@ -91,6 +95,12 @@ func Load(path string, expandEnv bool) (*Config, error) {
 	c.ClickHouse.Database = "lokihouse"
 	c.ClickHouse.Username = "default"
 	c.ClickHouse.Replicated = true
+	// clickhouse-go's own defaults (30s dial, 10 connections) cap one instance
+	// at ~50 pushes/s: each push holds a connection for the async-insert flush.
+	c.ClickHouse.DialTimeout = 5 * time.Second
+	c.ClickHouse.ReadTimeout = 5 * time.Minute
+	c.ClickHouse.MaxOpenConns = 100
+	c.ClickHouse.MaxIdleConns = 20
 	c.Query.Pushdown = "on"
 	c.Compactor.CompactionInterval = 10 * time.Minute
 	c.Compactor.DeleteRequestCancelPeriod = 24 * time.Hour
@@ -117,6 +127,9 @@ func Load(path string, expandEnv bool) (*Config, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if err := c.loadPasswordFile(); err != nil {
+		return nil, err
+	}
+	if err := c.validateClickHouseClient(); err != nil {
 		return nil, err
 	}
 	if c.Server.LogFormat != "logfmt" && c.Server.LogFormat != "json" {
@@ -174,4 +187,35 @@ func (c *Config) CHSettings() clickhouse.Settings {
 		s[k] = v
 	}
 	return s
+}
+
+// validateClickHouseClient rejects pool and timeout values clickhouse-go would
+// silently replace with its own defaults.
+func (c *Config) validateClickHouseClient() error {
+	ch := c.ClickHouse
+	switch {
+	case ch.DialTimeout <= 0:
+		return errors.New("clickhouse: dial_timeout must be positive")
+	case ch.ReadTimeout <= 0:
+		return errors.New("clickhouse: read_timeout must be positive")
+	case ch.MaxOpenConns <= 0:
+		return errors.New("clickhouse: max_open_conns must be positive")
+	case ch.MaxIdleConns <= 0 || ch.MaxIdleConns > ch.MaxOpenConns:
+		return errors.New("clickhouse: max_idle_conns must be between 1 and max_open_conns")
+	}
+	return nil
+}
+
+// CHOptions returns the clickhouse-go options for a connection to db.
+func (c *Config) CHOptions(db string) *clickhouse.Options {
+	ch := c.ClickHouse
+	return &clickhouse.Options{
+		Addr:         ch.Addr,
+		Auth:         clickhouse.Auth{Database: db, Username: ch.Username, Password: ch.Password},
+		Settings:     c.CHSettings(),
+		DialTimeout:  ch.DialTimeout,
+		ReadTimeout:  ch.ReadTimeout,
+		MaxOpenConns: ch.MaxOpenConns,
+		MaxIdleConns: ch.MaxIdleConns,
+	}
 }

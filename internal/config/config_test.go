@@ -271,3 +271,45 @@ func TestLoad_PackagedConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "127.0.0.1", c.Server.HTTPListenAddress, "the package listens on localhost by default")
 }
+
+func TestLoad_ClickHouseClientDefaults(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("{}\n"), 0o600))
+	c, err := Load(p, false)
+	require.NoError(t, err)
+	o := c.CHOptions("logs")
+	require.Equal(t, 5*time.Second, o.DialTimeout)
+	require.Equal(t, 5*time.Minute, o.ReadTimeout)
+	require.Equal(t, 100, o.MaxOpenConns)
+	require.Equal(t, 20, o.MaxIdleConns)
+	require.Equal(t, "logs", o.Auth.Database)
+	require.Equal(t, []string{"localhost:9000"}, o.Addr)
+}
+
+func TestLoad_ClickHouseClientOverrides(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte(`
+clickhouse: {dial_timeout: 2s, read_timeout: 1m, max_open_conns: 8, max_idle_conns: 4}
+`), 0o600))
+	c, err := Load(p, false)
+	require.NoError(t, err)
+	o := c.CHOptions("default")
+	require.Equal(t, 2*time.Second, o.DialTimeout)
+	require.Equal(t, time.Minute, o.ReadTimeout)
+	require.Equal(t, 8, o.MaxOpenConns)
+	require.Equal(t, 4, o.MaxIdleConns)
+}
+
+func TestLoad_ClickHouseClientInvalid(t *testing.T) {
+	for _, body := range []string{
+		"clickhouse: {max_open_conns: 0}\n",
+		"clickhouse: {max_open_conns: 4, max_idle_conns: 5}\n",
+		"clickhouse: {dial_timeout: 0s}\n",
+		"clickhouse: {read_timeout: -1s}\n",
+	} {
+		p := filepath.Join(t.TempDir(), "c.yaml")
+		require.NoError(t, os.WriteFile(p, []byte(body), 0o600))
+		_, err := Load(p, false)
+		require.Error(t, err, body)
+	}
+}

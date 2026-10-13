@@ -6,6 +6,10 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+### Added
+
+- `clickhouse.dial_timeout`, `clickhouse.read_timeout`, `clickhouse.max_open_conns` and `clickhouse.max_idle_conns`. The pool now defaults to 100 connections (was clickhouse-go's 10) and the dial timeout to 5s (was 30s).
+
 ### Changed
 
 - A push spanning more than 60 day/retention partitions is rejected with 400 (discard reason `too_many_partitions`) instead of failing in ClickHouse with 500 forever; pushes over 8 partitions bypass the async-insert buffer, so a backfill can no longer fail other pushes that share its flush.

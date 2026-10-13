@@ -52,6 +52,10 @@ Connection and topology settings for the ClickHouse storage.
 | `clickhouse.replica_path` | string | server's `default_replica_path` | Replicated table path. Optional; the server default is used when omitted. |
 | `clickhouse.replica_name` | string | server's `default_replica_name` | Replica name template. Optional. |
 | `clickhouse.settings` | map | `{}` | Extra ClickHouse session settings, applied to every connection. Overrides topology defaults (e.g. `insert_quorum`, `distributed_product_mode`). |
+| `clickhouse.dial_timeout` | duration | `5s` | Timeout for opening a ClickHouse connection and for waiting for a free pooled connection. |
+| `clickhouse.read_timeout` | duration | `5m` | Longest wait for a packet from ClickHouse during a query or insert. |
+| `clickhouse.max_open_conns` | int | `100` | Connection pool size. Each in-flight push holds a connection until its async insert is flushed; pushes, queries, tails and delete processing share the pool. |
+| `clickhouse.max_idle_conns` | int | `20` | Idle connections kept open (≤ `max_open_conns`). |
 
 ### Password handling
 
