@@ -1,6 +1,6 @@
 # Installing lokihouse
 
-> **Work in progress.** lokihouse is pre-release. CI builds the packages and
+> **Release candidate.** lokihouse is feature complete but not yet proven in production. CI builds the packages and
 > images below for every release; the apt suite `trixie-snapshot` follows
 > `main`.
 
@@ -268,7 +268,7 @@ sudo install -m 755 -o root -g root bin/lokihouse /usr/local/bin/lokihouse
 sudo systemctl start lokihouse
 ```
 
-> **Note:** lokihouse is pre-release. The ClickHouse schema may change
+> **Note:** lokihouse is a release candidate. The ClickHouse schema may change
 > between builds without a migration (the Phase 1 post-completion review
 > changed the schema and required a database recreate). Until a stable
 > release, back up the ClickHouse database before upgrading if your data

@@ -1,6 +1,6 @@
 # Security policy
 
-lokihouse is pre-release software; only the latest release and `main` are
+lokihouse is a release candidate; only the latest release and `main` are
 supported.
 
 ## Reporting a vulnerability

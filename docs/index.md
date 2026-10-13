@@ -2,10 +2,10 @@
 
 # lokihouse
 
-> **Work in progress.** lokihouse is under active development and not ready
-> for production use yet. Debian packages (amd64, arm64) and container images
-> are built from every release, but the ClickHouse schema may still change
-> between releases without a migration. See the
+> **Release candidate.** lokihouse is feature complete and passes the Loki
+> compatibility oracle, but has not yet been proven in production. Debian
+> packages (amd64, arm64) and container images are built from every release.
+> The ClickHouse schema may still change between releases without a migration. See the
 > [installation guide](install/index.md).
 
 lokihouse is a single Go service that speaks Grafana Loki's HTTP API (push,

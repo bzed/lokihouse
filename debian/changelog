@@ -1,3 +1,15 @@
+lokihouse (0.7.0) trixie; urgency=medium
+
+  * Status changed from work in progress to release candidate.
+  * Multi-tenant index stats, volume, detected_labels and patterns.
+  * New clickhouse.dial_timeout, read_timeout, max_open_conns and
+    max_idle_conns; /ready reports ClickHouse reachability.
+  * Processed delete requests physically remove rows; delete_requests is
+    a ReplacingMergeTree(version); line filters use the line_text index.
+  * Pushes spanning more than 60 partitions are rejected with 400.
+
+ -- Bernd Zeimetz <bernd@bzed.de>  Tue, 13 Oct 2026 14:00:00 +0200
+
 lokihouse (0.6.0) trixie; urgency=medium
 
   * Signed apt repository (trixie, trixie-snapshot; amd64, arm64)

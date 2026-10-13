@@ -19,8 +19,8 @@ AGPL-3.0-only. See the
 
 ## Status
 
-lokihouse is **work in progress**. Phases 1–4 are complete (foundation,
-SQL push-down, remaining APIs, ruler). Phase 5 (hardening: rate limits,
-multi-tenant queries, query stats, `/metrics` endpoint, packaging) is in
-progress. See the per-phase status docs in the repository for the detailed
+lokihouse is a **release candidate**. Phases 1–6 are complete (foundation,
+SQL push-down, remaining APIs, ruler, hardening, operational gaps). What is
+missing before a stable release is production experience and a schema
+migration path. See the per-phase status docs in the repository for the detailed
 exit criteria and benchmark results.

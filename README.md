@@ -9,14 +9,15 @@
   [![Go Reference](https://pkg.go.dev/badge/github.com/bzed/lokihouse.svg)](https://pkg.go.dev/github.com/bzed/lokihouse)
   [![Docs](https://img.shields.io/badge/docs-bzed.github.io%2Flokihouse-blue)](https://bzed.github.io/lokihouse/)
   [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-  [![Status: work in progress](https://img.shields.io/badge/status-work%20in%20progress-orange)](docs/roadmap.md)
+  [![Status: release candidate](https://img.shields.io/badge/status-release%20candidate-yellowgreen)](docs/roadmap.md)
 </div>
 
 ---
 
-> **Work in progress.** lokihouse is under active development and not ready
-> for production use yet. Packages and images are built from every release, but
-> the ClickHouse schema may still change between releases without a migration.
+> **Release candidate.** lokihouse is feature complete and passes the Loki
+> compatibility oracle, but has not yet been proven in production. Packages and
+> images are built from every release. Back up the ClickHouse database before
+> upgrading: the schema may still change between releases without a migration.
 
 lokihouse is a single static Go service that speaks
 [Grafana Loki](https://grafana.com/oss/loki/)'s HTTP API (push, LogQL queries,

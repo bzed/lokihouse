@@ -6,6 +6,10 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-13
+
+lokihouse is now a release candidate: feature complete, not yet proven in production.
+
 ### Added
 
 - With `query.querier.multi_tenant_queries_enabled`, `index/stats`, `index/volume`, `index/volume_range`, `detected_labels` and `patterns` accept several tenants (`a|b`), as in Loki.
