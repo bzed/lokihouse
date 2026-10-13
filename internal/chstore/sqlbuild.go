@@ -93,15 +93,9 @@ func lineFilterSQL(f *syntax.LineFilterExpr) Fragment {
 	switch f.Ty {
 	case log.LineMatchEqual:
 		if len(alts) == 1 {
-			return Fragment{"position(line, ?) > 0", []any{f.Match}}
+			return containsFragment(f.Match)
 		}
-		var sqls []string
-		var args []any
-		for _, a := range alts {
-			sqls = append(sqls, "position(line, ?) > 0")
-			args = append(args, a.Match)
-		}
-		return Fragment{"(" + strings.Join(sqls, " OR ") + ")", args}
+		return containsAny(alts)
 	case log.LineMatchNotEqual:
 		var parts []Fragment
 		for _, a := range alts {
@@ -218,13 +212,32 @@ func escapedLike(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
-// litFragment turns a literal rune run into position(line, ?) > 0, skipping runs
+// litFragment turns a literal rune run into a substring condition, skipping runs
 // shorter than 2 bytes (they are too weak to be a useful pre-filter).
 func litFragment(r []rune) Fragment {
 	if len(r) < 2 {
 		return Fragment{}
 	}
-	return Fragment{"position(line, ?) > 0", []any{string(r)}}
+	return containsFragment(string(r))
+}
+
+// containsFragment is true for lines containing s. It is LIKE '%s%' rather than
+// position(line, s) > 0, which selects the same lines, because ClickHouse can
+// answer LIKE from the line_text index and cannot answer position() from it.
+func containsFragment(s string) Fragment {
+	return Fragment{"line LIKE ?", []any{"%" + escapedLike(s) + "%"}}
+}
+
+// containsAny is true for lines containing any of the alternatives' matches.
+func containsAny(alts []*syntax.LineFilterExpr) Fragment {
+	sqls := make([]string, 0, len(alts))
+	args := make([]any, 0, len(alts))
+	for _, a := range alts {
+		f := containsFragment(a.Match)
+		sqls = append(sqls, f.SQL)
+		args = append(args, f.Args...)
+	}
+	return Fragment{"(" + strings.Join(sqls, " OR ") + ")", args}
 }
 
 // hasFoldCase reports whether any node in the regexp tree carries the FoldCase flag.
@@ -303,13 +316,7 @@ func exactLineFilterSQL(f *syntax.LineFilterExpr) (Fragment, bool) {
 	}
 	switch f.Ty {
 	case log.LineMatchEqual:
-		var sqls []string
-		var args []any
-		for _, a := range alts {
-			sqls = append(sqls, "position(line, ?) > 0")
-			args = append(args, a.Match)
-		}
-		return Fragment{"(" + strings.Join(sqls, " OR ") + ")", args}, true
+		return containsAny(alts), true
 	case log.LineMatchNotEqual:
 		var parts []Fragment
 		for _, a := range alts {
@@ -323,7 +330,8 @@ func exactLineFilterSQL(f *syntax.LineFilterExpr) (Fragment, bool) {
 		if !RegexExact(f.Match) {
 			return Fragment{}, false
 		}
-		return Fragment{"match(line, ?)", []any{f.Match}}, true
+		// The necessary literals let the text index skip granules before match() runs.
+		return and([]Fragment{regexNecessary(f.Match), {"match(line, ?)", []any{f.Match}}}), true
 	case log.LineMatchNotRegexp:
 		if len(alts) > 1 {
 			return Fragment{}, false

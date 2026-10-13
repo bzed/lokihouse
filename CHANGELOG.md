@@ -16,6 +16,7 @@ changelog (`debian/changelog`) carries the same releases.
 - Processed delete requests now physically remove the deleted rows from disk (`APPLY DELETED MASK`); before, they stayed on disk, hidden, until a merge or retention dropped their partition.
 - `GET /ready` returns 503 when ClickHouse is unreachable (it always returned 200 before).
 - A push spanning more than 60 day/retention partitions is rejected with 400 (discard reason `too_many_partitions`) instead of failing in ClickHouse with 500 forever; pushes over 8 partitions bypass the async-insert buffer, so a backfill can no longer fail other pushes that share its flush.
+- Line filters (`|=`, and the literals of `|~`) now use the `line_text` full-text index, which no query used before: ClickHouse skips the granules without a match instead of reading every line of the selected streams.
 
 ### Fixed
 
