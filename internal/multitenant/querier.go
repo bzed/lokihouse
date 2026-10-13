@@ -8,11 +8,10 @@
 // replaceMatchers, filterValuesByMatchers, sliceToSet, relabel and the
 // defaultTenantLabel/retainExistingPrefix constants); modifications: wraps
 // lokihouse's Store instead of Loki's querier.Querier; the store-chunk
-// overrides (partitionChunkRefsByTenant) and the IndexStats/Volume/Patterns/
-// Detected* methods are omitted because lokihouse has no chunks and answers
-// those endpoints for one tenant only (see docs/divergences.md); SelectLogs
-// closes the iterators it opened when a later tenant fails, as Loki's
-// SelectSamples does.
+// overrides (partitionChunkRefsByTenant) are omitted because lokihouse has no
+// chunks; SelectLogs closes the iterators it opened when a later tenant fails,
+// as Loki's SelectSamples does. index.go fans out the index and drilldown
+// endpoints (IndexStats, Volume, Patterns, DetectedLabels) the same way.
 package multitenant
 
 import (
