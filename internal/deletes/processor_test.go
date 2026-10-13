@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -281,4 +282,62 @@ func TestProcessor_ParserStageScans(t *testing.T) {
 	got := lines(t, conn, "t1")
 	sort.Strings(got)
 	require.Equal(t, []string{`level=info msg="keep me"`}, got, "only the debug line deleted")
+}
+
+// storedRows counts a tenant's rows including those only masked by a
+// lightweight DELETE (apply_deleted_mask=0 shows them).
+func storedRows(t *testing.T, conn driver.Conn, tenant string) uint64 {
+	t.Helper()
+	var n uint64
+	require.NoError(t, conn.QueryRow(context.Background(),
+		"SELECT count() FROM logs WHERE tenant = ? SETTINGS apply_deleted_mask = 0", tenant).Scan(&n))
+	return n
+}
+
+func seedSecret(t *testing.T, conn driver.Conn, store *deletes.Store) {
+	t.Helper()
+	w := &chstore.Writer{Conn: conn}
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "keep"}}},
+		{Labels: `{app="b"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "secret x"}, {Timestamp: t0.Add(time.Second), Line: "secret y"}}},
+	}, nil))
+	_, err := store.Add(context.Background(), "t1", `{app="b"}`,
+		model.TimeFromUnixNano(t0.UnixNano()), model.TimeFromUnixNano(t0.Add(time.Hour).UnixNano()))
+	require.NoError(t, err)
+}
+
+func TestProcessor_PhysicallyRemovesRows(t *testing.T) {
+	p, store, conn, _ := newProcessor(t, 0, time.Hour, t0, t0)
+	seedSecret(t, conn, store)
+	require.NoError(t, p.ProcessDue(context.Background(), t0))
+	require.Equal(t, []string{"keep"}, lines(t, conn, "t1"))
+	require.Equal(t, uint64(1), storedRows(t, conn, "t1"), "masked rows must be gone from disk")
+}
+
+// maskFailConn fails the first APPLY DELETED MASK, to check the next pass retries it.
+type maskFailConn struct {
+	driver.Conn
+	failed bool
+}
+
+func (f *maskFailConn) Exec(ctx context.Context, q string, args ...any) error {
+	if !f.failed && strings.Contains(q, "APPLY DELETED MASK") {
+		f.failed = true
+		return context.DeadlineExceeded
+	}
+	return f.Conn.Exec(ctx, q, args...)
+}
+
+func TestProcessor_RetriesDeletedMask(t *testing.T) {
+	conn, db := chtest.New(t)
+	fc := &maskFailConn{Conn: conn}
+	p, store, _ := buildProcessor(fc, db, 0, time.Hour, t0, t0)
+	seedSecret(t, conn, store)
+
+	require.Error(t, p.ProcessDue(context.Background(), t0))
+	require.Equal(t, []string{"keep"}, lines(t, conn, "t1"), "rows are deleted even when the mask step fails")
+	require.Equal(t, uint64(3), storedRows(t, conn, "t1"))
+
+	require.NoError(t, p.ProcessDue(context.Background(), t0), "no request is due, the mask is retried")
+	require.Equal(t, uint64(1), storedRows(t, conn, "t1"))
 }

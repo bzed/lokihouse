@@ -33,13 +33,19 @@ type Processor struct {
 	Logger       log.Logger
 	// Now returns the "current time" for the cancel-period check (default time.Now).
 	Now func() time.Time
+
+	// maskPending is set after a pass deleted rows and cleared once
+	// ApplyDeletedMask succeeded; only the goroutine calling ProcessDue uses it.
+	maskPending bool
 }
 
 // ProcessDue physically deletes every received request older than CancelPeriod,
 // then marks it processed. lightweight_deletes_sync=2 makes the rows invisible
 // on every replica before the call returns. Requests are fault-isolated: a
 // failing request is logged, retried on the next pass (the rows are still
-// hidden by query-time filtering) and does not stop the others.
+// hidden by query-time filtering) and does not stop the others. After a pass
+// that deleted rows it runs APPLY DELETED MASK so the rows leave the disk too;
+// a failed mask step is retried on the next pass.
 func (p *Processor) ProcessDue(ctx context.Context, now time.Time) error {
 	reqs, err := p.Store.Unprocessed(ctx)
 	if err != nil {
@@ -59,6 +65,7 @@ func (p *Processor) ProcessDue(ctx context.Context, now time.Time) error {
 			}
 			continue
 		}
+		p.maskPending = true
 		if err := p.Store.MarkProcessed(ctx, r); err != nil {
 			if p.Logger != nil {
 				level.Error(p.Logger).Log("msg", "delete request failed; will retry", "request", r.RequestID, "step", "mark processed", "err", err) //nolint:gosec // G104: go-kit logger errors are not actionable
@@ -66,6 +73,18 @@ func (p *Processor) ProcessDue(ctx context.Context, now time.Time) error {
 			if first == nil {
 				first = fmt.Errorf("delete request %s: %w", r.RequestID, err)
 			}
+		}
+	}
+	if p.maskPending {
+		if err := chstore.ApplyDeletedMask(ctx, p.Conn, p.DB, p.Topo); err != nil {
+			if p.Logger != nil {
+				level.Error(p.Logger).Log("msg", "removing deleted rows from disk failed; will retry", "err", err) //nolint:gosec // G104: go-kit logger errors are not actionable
+			}
+			if first == nil {
+				first = err
+			}
+		} else {
+			p.maskPending = false
 		}
 	}
 	return first
