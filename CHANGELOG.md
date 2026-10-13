@@ -6,6 +6,8 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-13
+
 ### Added
 
 - Signed apt repository (suites `trixie` and `trixie-snapshot`, amd64 and arm64)

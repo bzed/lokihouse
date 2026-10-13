@@ -1,3 +1,14 @@
+lokihouse (0.6.0) trixie; urgency=medium
+
+  * Signed apt repository (trixie, trixie-snapshot; amd64, arm64)
+    published with the docs.
+  * Container image ghcr.io/bzed/lokihouse (amd64, arm64), signed with
+    cosign.
+  * Pinned Loki commit bumped to bc196286.
+  * Fix delete request version ties; man page title; lintian override.
+
+ -- Bernd Zeimetz <bernd@bzed.de>  Tue, 13 Oct 2026 02:25:21 +0200
+
 lokihouse (0.5.0) trixie; urgency=medium
 
   * Phase 5: graceful shutdown, Debian packaging, docs, CI, limits,
