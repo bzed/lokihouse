@@ -10,6 +10,5 @@
   be wired into `chtest.Options` and `clickhouse.*` config (a `tls` key).
 - **podman compose example** (spec §8 Phase 5 packaging row): not in scope for
   Phase 5.
-- **Per-policy ingestion limits** (`policy_stream_mapping`), multi-tenant
-  support for the index, volume, detected and pattern endpoints: see
+- **Per-policy ingestion limits** (`policy_stream_mapping`): see
   `docs/divergences.md`.

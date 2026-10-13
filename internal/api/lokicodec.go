@@ -6,9 +6,7 @@ import (
 
 	gmux "github.com/gorilla/mux"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/loki/v3/pkg/logproto"
-	querier_limits "github.com/grafana/loki/v3/pkg/querier/limits"
 	"github.com/grafana/loki/v3/pkg/querier/queryrange"
 	"github.com/grafana/loki/v3/pkg/querier/queryrange/queryrangebase"
 )
@@ -21,34 +19,19 @@ type lokiHandler struct{ a *API }
 func (h lokiHandler) Do(ctx context.Context, req queryrangebase.Request) (queryrangebase.Response, error) {
 	switch r := req.(type) {
 	case *logproto.IndexStatsRequest:
-		res, err := h.a.Q.IndexStats(ctx, r)
+		res, err := h.a.index().IndexStats(ctx, r)
 		if err != nil {
 			return nil, err
 		}
 		return &queryrange.IndexStatsResponse{Response: res}, nil
 	case *logproto.VolumeRequest:
-		tenantID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if !h.a.Limits.VolumeEnabled(tenantID) {
-			return nil, httpgrpc.Errorf(http.StatusNotFound, "not found")
-		}
-		res, err := h.a.Q.Volume(ctx, r)
+		res, err := h.a.index().Volume(ctx, r)
 		if err != nil {
 			return nil, err
 		}
 		return &queryrange.VolumeResponse{Response: res}, nil
 	case *queryrange.DetectedLabelsRequest:
-		tenantID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		dl := r.DetectedLabelsRequest
-		if dl.Start, dl.End, err = querier_limits.ValidateQueryTimeRangeLimits(ctx, tenantID, h.a.Limits, dl.Start, dl.End); err != nil {
-			return nil, err
-		}
-		res, err := h.a.Q.DetectedLabels(ctx, &dl)
+		res, err := h.a.index().DetectedLabels(ctx, &r.DetectedLabelsRequest)
 		if err != nil {
 			return nil, err
 		}
@@ -59,7 +42,7 @@ func (h lokiHandler) Do(ctx context.Context, req queryrangebase.Request) (queryr
 	case *queryrange.LokiRequest:
 		return h.logQuery(ctx, r)
 	case *logproto.QueryPatternsRequest:
-		res, err := h.a.Patterns.Query(ctx, r)
+		res, err := h.a.index().Patterns(ctx, r)
 		if err != nil {
 			return nil, err
 		}

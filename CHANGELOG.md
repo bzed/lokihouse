@@ -8,6 +8,7 @@ changelog (`debian/changelog`) carries the same releases.
 
 ### Added
 
+- With `query.querier.multi_tenant_queries_enabled`, `index/stats`, `index/volume`, `index/volume_range`, `detected_labels` and `patterns` accept several tenants (`a|b`), as in Loki.
 - `clickhouse.dial_timeout`, `clickhouse.read_timeout`, `clickhouse.max_open_conns` and `clickhouse.max_idle_conns`. The pool now defaults to 100 connections (was clickhouse-go's 10) and the dial timeout to 5s (was 30s).
 
 ### Changed

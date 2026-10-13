@@ -31,10 +31,34 @@ import (
 // multitenant.Querier and label/series use the same multi-tenant querier.
 func newMTServer(t *testing.T, mt bool) *httptest.Server {
 	t.Helper()
+	return buildMTServer(t, mt, nil)
+}
+
+// tenantLimits serves per-tenant limit overrides to validation.Overrides.
+type tenantLimits map[string]*validation.Limits
+
+func (f tenantLimits) TenantLimits(id string) *validation.Limits  { return f[id] }
+func (f tenantLimits) AllByUserID() map[string]*validation.Limits { return f }
+
+// newMTServerWithOverrides is newMTServer(t, true) where the named tenants'
+// limits are changed by the given functions.
+func newMTServerWithOverrides(t *testing.T, per map[string]func(*validation.Limits)) *httptest.Server {
+	t.Helper()
+	return buildMTServer(t, true, per)
+}
+
+func buildMTServer(t *testing.T, mt bool, per map[string]func(*validation.Limits)) *httptest.Server {
+	t.Helper()
 	conn, _ := chtest.New(t)
 	var l validation.Limits
 	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
-	o, err := validation.NewOverrides(l, nil)
+	tl := tenantLimits{}
+	for id, mutate := range per {
+		tenant := l
+		mutate(&tenant)
+		tl[id] = &tenant
+	}
+	o, err := validation.NewOverrides(l, tl)
 	require.NoError(t, err)
 	store := &deletes.Store{Conn: conn}
 	q := &chstore.Querier{Conn: conn, Deletes: store}
@@ -58,6 +82,7 @@ func newMTServer(t *testing.T, mt bool) *httptest.Server {
 		Patterns:    &patterns.Querier{Q: q, Limits: o},
 		Deletes:     &deletes.Handler{Store: store, Limits: o, MaxInterval: time.Hour, CancelPeriod: time.Hour},
 		AuthEnabled: true,
+		MultiTenant: mt,
 	}
 	srv := httptest.NewServer(a.Router())
 	t.Cleanup(srv.Close)
@@ -152,4 +177,47 @@ func TestMultiTenant_DisabledRejects(t *testing.T) {
 	code, body := mtDo(t, http.MethodGet, srv.URL+"/loki/api/v1/query_range?"+v.Encode(), "t1|t2")
 	require.NotEqual(t, http.StatusOK, code)
 	require.Contains(t, body, "multiple org IDs present")
+}
+
+func indexGet(t *testing.T, base, path, tenant, query string, now time.Time) (int, string) {
+	t.Helper()
+	v := url.Values{"query": {query}, "start": {strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(now.Add(time.Minute).UnixNano(), 10)}}
+	return mtDo(t, http.MethodGet, base+path+"?"+v.Encode(), tenant)
+}
+
+func TestMultiTenant_IndexEndpoints(t *testing.T) {
+	srv := newMTServer(t, true)
+	now := time.Now()
+	pushOne(t, srv.URL, "t1", now, "one")
+	pushOne(t, srv.URL, "t2", now, "two")
+
+	code, body := indexGet(t, srv.URL, "/loki/api/v1/index/stats", "t1|t2", `{app="a"}`, now)
+	require.Equal(t, http.StatusOK, code, body)
+	require.Contains(t, body, `"entries":2`)
+
+	code, body = indexGet(t, srv.URL, "/loki/api/v1/index/volume", "t1|t2", `{app="a"}`, now)
+	require.Equal(t, http.StatusOK, code, body)
+	require.Contains(t, body, `"app":"a"`)
+
+	code, body = indexGet(t, srv.URL, "/loki/api/v1/detected_labels", "t1|t2", `{app="a"}`, now)
+	require.Equal(t, http.StatusOK, code, body)
+
+	code, body = indexGet(t, srv.URL, "/loki/api/v1/patterns", "t1|t2", `{app="a"}`, now)
+	require.Equal(t, http.StatusOK, code, body)
+}
+
+func TestMultiTenant_IndexDisabledRejects(t *testing.T) {
+	srv := newMTServer(t, false)
+	now := time.Now()
+	code, body := indexGet(t, srv.URL, "/loki/api/v1/index/stats", "t1|t2", `{app="a"}`, now)
+	require.NotEqual(t, http.StatusOK, code)
+	require.Contains(t, body, "multiple org IDs present")
+}
+
+func TestMultiTenant_VolumeDisabledForOneTenant(t *testing.T) {
+	srv := newMTServerWithOverrides(t, map[string]func(*validation.Limits){
+		"t2": func(l *validation.Limits) { l.VolumeEnabled = false },
+	})
+	code, _ := indexGet(t, srv.URL, "/loki/api/v1/index/volume", "t1|t2", `{app="a"}`, time.Now())
+	require.Equal(t, http.StatusNotFound, code)
 }

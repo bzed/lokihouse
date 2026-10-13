@@ -47,6 +47,9 @@ type API struct {
 	// Ready, when set, is called by GET /ready; an error answers 503
 	// (lokihouse is not ready without ClickHouse).
 	Ready func(context.Context) error
+	// MultiTenant fans the index and drilldown endpoints out per tenant
+	// (query.querier.multi_tenant_queries_enabled).
+	MultiTenant bool
 }
 
 // readyTimeout bounds the ClickHouse ping behind /ready, so a hanging server

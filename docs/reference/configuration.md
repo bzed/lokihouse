@@ -78,7 +78,7 @@ file.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `query.querier.multi_tenant_queries_enabled` | bool | `false` | When `true`, a query whose `X-Scope-OrgID` names several tenants (`a|b`) is answered by querying each tenant and labelling results with `__tenant_id__` (Loki's multi-tenant queries). Multi-tenant queries always run on the plain engine (no SQL push-down). When `false` (the default), such a request is rejected with `multiple org IDs present`. |
+| `query.querier.multi_tenant_queries_enabled` | bool | `false` | When `true`, a query whose `X-Scope-OrgID` names several tenants (`a|b`) is answered by querying each tenant and labelling results with `__tenant_id__` (Loki's multi-tenant queries). Multi-tenant queries always run on the plain engine (no SQL push-down). When `false` (the default), such a request is rejected with `multiple org IDs present`. This also applies to `index/stats`, `index/volume`, `index/volume_range`, `detected_labels` and `patterns`. |
 
 ## `compactor`
 
