@@ -37,6 +37,10 @@ tenants in the request, as in Loki.
 See [Differences from Loki](divergences.md#hardening-phase-5) for the rate-limit
 strategy difference.
 
+## Health checks
+
+`GET /ready` answers `200 ready` when lokihouse can reach ClickHouse (a ping with a 2 s deadline) and `503 ClickHouse not ready: <error>` otherwise. All lokihouse instances usually share one ClickHouse, so they become unready together; use `/ready` for load-balancer readiness, not for liveness or restarts.
+
 ## Metrics
 
 `GET /metrics` (no tenant) serves Prometheus text format from the default

@@ -1,7 +1,9 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -121,4 +123,33 @@ func onlyStatus(b string) string {
 	_ = json.Unmarshal([]byte(b), &m)
 	out, _ := json.Marshal(map[string]any{"status": m["status"]})
 	return string(out)
+}
+
+func readyServer(t *testing.T, ready func(context.Context) error) *httptest.Server {
+	srv := httptest.NewServer((&api.API{Ready: ready}).Router())
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestReady_ClickHouseDown(t *testing.T) {
+	srv := readyServer(t, func(context.Context) error { return errors.New("dial tcp: connection refused") })
+	code, body := do(t, "GET", srv.URL+"/ready", "", "")
+	require.Equal(t, http.StatusServiceUnavailable, code)
+	require.Contains(t, body, "ClickHouse not ready: dial tcp: connection refused")
+}
+
+// A hanging ClickHouse must not hang the probe: the ping gets a short deadline.
+func TestReady_ClickHouseHangs(t *testing.T) {
+	srv := readyServer(t, func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() })
+	start := time.Now()
+	code, _ := do(t, "GET", srv.URL+"/ready", "", "")
+	require.Equal(t, http.StatusServiceUnavailable, code)
+	require.Less(t, time.Since(start), 10*time.Second)
+}
+
+func TestReady_ClickHouseUp(t *testing.T) {
+	srv := readyServer(t, func(context.Context) error { return nil })
+	code, body := do(t, "GET", srv.URL+"/ready", "", "")
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, "ready\n", body)
 }

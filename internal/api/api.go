@@ -8,6 +8,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/logproto"
@@ -43,7 +44,14 @@ type API struct {
 	Deletes     *deletes.Handler
 	Tail        http.Handler
 	Rules       *rulerbase.API // Loki's ruler API; nil = ruler disabled
+	// Ready, when set, is called by GET /ready; an error answers 503
+	// (lokihouse is not ready without ClickHouse).
+	Ready func(context.Context) error
 }
+
+// readyTimeout bounds the ClickHouse ping behind /ready, so a hanging server
+// fails the probe instead of hanging it.
+const readyTimeout = 2 * time.Second
 
 // Querier executes a LogQL query. Both the plain *logql.QueryEngine and the
 // *pushdown.Engine satisfy it via the adapters below.
@@ -104,7 +112,17 @@ func (a *API) Router() http.Handler {
 	for _, m := range []string{"GET", "POST"} {
 		mux.Handle(m+" /loki/api/v1/format_query", FormatQueryHandler())
 	}
-	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ready\n")) })
+	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
+		if a.Ready != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), readyTimeout)
+			defer cancel()
+			if err := a.Ready(ctx); err != nil {
+				http.Error(w, "ClickHouse not ready: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
+		_, _ = w.Write([]byte("ready\n"))
+	})
 	mux.HandleFunc("GET /loki/api/v1/status/buildinfo", buildInfo)
 	if a.Metrics != nil {
 		mux.Handle("GET /metrics", a.Metrics)

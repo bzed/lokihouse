@@ -199,6 +199,7 @@ func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, 
 		meta = mq
 	}
 	a := &api.API{
+		Ready: conn.Ping,
 		Queries: &pushdown.Engine{
 			Mode:   pushdown.Mode(cfg.Query.Pushdown),
 			TierB:  logql.NewEngine(logql.EngineOpts{}, storeQuerier, limits, logger),
