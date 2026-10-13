@@ -112,6 +112,9 @@ jobs:
 
   deploy:
     needs: [build, apt]
+    # apt depends on deb, which is skipped in a release run, and a skipped
+    # ancestor would skip this job too.
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.apt.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       pages: write
