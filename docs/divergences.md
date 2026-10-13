@@ -5,7 +5,7 @@ reason. Entries are grouped by topic.
 
 ## Ingestion
 
-*Implemented in [phase 5](https://github.com/bzed/lokihouse/blob/main/docs/phase5-status.md); see the status file for background.*
+*Implemented in [phase 5](https://github.com/bzed/lokihouse/blob/main/docs/phase5-status.md), [phase 6](https://github.com/bzed/lokihouse/blob/main/docs/phase6-status.md); see the status file for background.*
 
 - **`ingestion_rate_strategy: global`:** Loki's `global` strategy divides the limit over the healthy distributors in the ring, so the ring as a whole enforces the limit. lokihouse has no distributor ring; `ingestion_rate_strategy` is not honoured and the limit is always enforced *per lokihouse instance* (the `local` behaviour). With several lokihouse instances behind a load balancer, each enforces the full `ingestion_rate_mb`, so the cluster total can be N times the configured limit.
 - **Per-policy rate limits:** Loki supports `policy_stream_mapping` to give a policy its own rate limit and burst. lokihouse does not support policies; only the tenant-wide `ingestion_rate_mb` / `ingestion_burst_size_mb` are enforced.
@@ -13,7 +13,7 @@ reason. Entries are grouped by topic.
 
 ## Query
 
-*Implemented in [phase 1](https://github.com/bzed/lokihouse/blob/main/docs/phase1-status.md), [phase 5](https://github.com/bzed/lokihouse/blob/main/docs/phase5-status.md); see the status file for background.*
+*Implemented in [phase 1](https://github.com/bzed/lokihouse/blob/main/docs/phase1-status.md), [phase 5](https://github.com/bzed/lokihouse/blob/main/docs/phase5-status.md), [phase 6](https://github.com/bzed/lokihouse/blob/main/docs/phase6-status.md); see the status file for background.*
 
 - **Tie order inside one stream and timestamp:** Loki keeps insertion order; lokihouse cannot. The oracle compares such groups as multisets.
 - **`/loki/api/v1/series` `match` parameter:** Loki's own docs show the single-matcher form `?match={...}`, which `loghttp.ParseSeriesQuery` reads from `r.Form["match"]` — populated only after `ParseForm`. Loki's handler relies on the net/http server (or a prior parse) to fill `r.Form`; lokihouse calls `r.ParseForm()` explicitly in its `series` handler so the `match` key is honoured. The `match[]` form works in both stores without `ParseForm` (Loki reads that key straight from the URL query), so existing clients are unaffected.
@@ -45,7 +45,7 @@ reason. Entries are grouped by topic.
 
 ## Delete requests
 
-*Implemented in [phase 3](https://github.com/bzed/lokihouse/blob/main/docs/phase3-status.md); see the status file for background.*
+*Implemented in [phase 3](https://github.com/bzed/lokihouse/blob/main/docs/phase3-status.md), [phase 6](https://github.com/bzed/lokihouse/blob/main/docs/phase6-status.md); see the status file for background.*
 
 - **Request IDs:** lokihouse uses 8 random hex characters; the format and the IDs differ from Loki.
 - **Query-time delete visibility (identical to Loki, but timing-sensitive):** both stores fetch a tenant's *pending* delete requests at query time and hide matching lines via Loki's `util/deletion` filter pipeline. Loki caches a tenant's delete list for 5 minutes from its first lookup, so a delete created after a query on that tenant is not visible for up to 5 minutes (Loki); lokihouse's store is authoritative per query (no such cache), so lokihouse can appear "fresher". The oracle works around the cache by using a fresh tenant that is never queried before the delete is created.

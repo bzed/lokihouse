@@ -92,3 +92,14 @@ told apart. Index stats, volume, `detected_labels` and `detected_metric_names`
 endpoints do not fan out and keep the single-tenant resolution (see
 `divergences.md`). Multi-tenant queries run on the plain engine, not the
 ClickHouse pushdown path.
+
+## When ClickHouse is unavailable
+
+lokihouse keeps no local buffer; ClickHouse is the only state.
+
+- **At startup** lokihouse creates its tables, and exits non-zero if ClickHouse is unreachable. The Debian unit restarts it after 5 s (`Restart=on-failure`); under Kubernetes the pod restarts with back-off.
+- **Pushes** fail with HTTP 500. Loki clients (Promtail, Alloy, the OpenTelemetry Collector) retry 5xx responses with back-off, so nothing is lost unless an outage outlasts the client's retry budget (for example Promtail's `backoff_config.max_retries`). Size the clients' retries for the longest ClickHouse maintenance window you expect.
+- **Queries, tails and the ruler** fail while ClickHouse is down. Rule evaluations are counted as failed, as in Loki.
+- **Delete processing** logs the error and retries on the next `compactor.compaction_interval`. Query-time filtering keeps pending deletes hidden.
+- **`/ready`** answers 503 (see Health checks).
+- Requests wait at most `clickhouse.dial_timeout` for a connection and `clickhouse.read_timeout` for each answer from ClickHouse.
