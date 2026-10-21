@@ -68,6 +68,12 @@ For production, prefer `clickhouse.password_file` (or systemd credentials) over 
 plain `clickhouse.password:` in the config file, so the secret is not in a world-readable
 file.
 
+The container image's built-in config maps `LOKIHOUSE_CLICKHOUSE_PASSWORD` to
+`clickhouse.password` and `LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE` to
+`clickhouse.password_file`; see
+[Container image](../install/index.md#container-image). Outside the image,
+use `${VAR}` in your config together with `-config.expand-env`.
+
 ## `query`
 
 | Key | Type | Default | Description |

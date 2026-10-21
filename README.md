@@ -75,6 +75,11 @@ then `sudo systemctl enable --now lokihouse`.
 $ podman run -d -p 3100:3100 -e LOKIHOUSE_CLICKHOUSE_ADDR=clickhouse.example.org:9000 ghcr.io/bzed/lokihouse:latest
 ```
 
+ClickHouse credentials: `-e LOKIHOUSE_CLICKHOUSE_USER=...` and either
+`-e LOKIHOUSE_CLICKHOUSE_PASSWORD=...` or, preferably, a mounted file named by
+`-e LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE=...`
+([details](https://bzed.github.io/lokihouse/install/#clickhouse-password)).
+
 **From source** (a ClickHouse server 26.9 or later and a recent Go toolchain, see `go.mod`):
 
 ```console

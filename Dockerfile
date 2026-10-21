@@ -1,5 +1,7 @@
 # Build:  podman build -t lokihouse .   (or docker build)
 # Run:    podman run -p 3100:3100 -e LOKIHOUSE_CLICKHOUSE_ADDR=host:9000 lokihouse
+#         Password: -e LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE=/run/secrets/x (mounted file)
+#         or -e LOKIHOUSE_CLICKHOUSE_PASSWORD=...
 # Multi-arch images are built by .github/workflows/docker.yml; the Go build runs
 # on the build platform and cross-compiles, so no emulation is needed.
 

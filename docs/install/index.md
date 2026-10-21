@@ -65,11 +65,43 @@ podman run -d --name lokihouse -p 3100:3100 \
 ```
 
 (`docker run` works the same.) The image is based on distroless `static`, runs
-as a non-root user and listens on `0.0.0.0:3100`. The built-in config reads
-these variables: `LOKIHOUSE_CLICKHOUSE_ADDR` (default `clickhouse:9000`),
-`LOKIHOUSE_CLICKHOUSE_DATABASE` (`lokihouse`) and `LOKIHOUSE_CLICKHOUSE_USER`
-(`default`). For anything else, mount your own file (the image runs with
-`-config.expand-env=true`):
+as a non-root user and listens on `0.0.0.0:3100`. To reach it on another host
+port, just map it (`-p 8080:3100`). To change the port inside the container,
+set `LOKIHOUSE_HTTP_LISTEN_PORT` and map that port (`-e
+LOKIHOUSE_HTTP_LISTEN_PORT=8080 -p 8080:8080`); it must be above 1023, as the
+container runs as non-root. The built-in config reads these variables:
+`LOKIHOUSE_HTTP_LISTEN_PORT` (default `3100`), `LOKIHOUSE_CLICKHOUSE_ADDR` (default `clickhouse:9000`),
+`LOKIHOUSE_CLICKHOUSE_DATABASE` (`lokihouse`), `LOKIHOUSE_CLICKHOUSE_USER`
+(`default`), `LOKIHOUSE_CLICKHOUSE_PASSWORD` and `LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE`
+(both unset: no password).
+
+### ClickHouse password
+
+The quick way is `-e LOKIHOUSE_CLICKHOUSE_PASSWORD=secret`. Environment
+variables show up in `docker inspect` and `/proc`, and the value must not
+contain a single quote, so prefer a file: mount it read-only and point
+`LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE` at it. Set only one of the two; setting
+both is a startup error.
+
+```sh
+install -m 0600 /dev/null clickhouse-password
+printf '%s' 'secret' > clickhouse-password   # a trailing newline is stripped
+
+podman run -d --name lokihouse -p 3100:3100 \
+    -e LOKIHOUSE_CLICKHOUSE_ADDR=clickhouse.example.org:9000 \
+    -e LOKIHOUSE_CLICKHOUSE_USER=lokihouse \
+    -e LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE=/run/secrets/clickhouse-password \
+    -v ./clickhouse-password:/run/secrets/clickhouse-password:ro \
+    ghcr.io/bzed/lokihouse:latest
+```
+
+The container runs as `nonroot` (uid 65532), so the file must be readable by
+that user (with rootless podman, add `:U` to the volume or `chown` the file).
+With podman or Docker secrets, use `--secret clickhouse-password` (podman) or
+a Compose/Swarm `secrets:` entry, which appear under `/run/secrets/`.
+
+For anything else, mount your own config file (the image runs with
+`-config.expand-env=true`) and set `password_file:` in it:
 
 ```sh
 podman run -d -p 3100:3100 \

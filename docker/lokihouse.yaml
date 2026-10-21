@@ -5,11 +5,15 @@
 auth_enabled: false
 server:
   http_listen_address: 0.0.0.0
-  http_listen_port: 3100
+  http_listen_port: ${LOKIHOUSE_HTTP_LISTEN_PORT:-3100}
 clickhouse:
   addr: ["${LOKIHOUSE_CLICKHOUSE_ADDR:-clickhouse:9000}"]
   database: ${LOKIHOUSE_CLICKHOUSE_DATABASE:-lokihouse}
   username: ${LOKIHOUSE_CLICKHOUSE_USER:-default}
-  # Keep the password out of environment and image: mount it as a file.
-  # password_file: /run/secrets/clickhouse-password
+  # Prefer a mounted file (LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE): environment
+  # variables are visible in `inspect`. Set at most one of the two. The
+  # password is expanded into a single-quoted YAML string, so it must not
+  # contain a single quote; use the file for such passwords.
+  password: '${LOKIHOUSE_CLICKHOUSE_PASSWORD:-}'
+  password_file: ${LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE:-}
 limits_config: {}

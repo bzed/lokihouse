@@ -6,6 +6,11 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+### Added
+
+- Container image: `LOKIHOUSE_HTTP_LISTEN_PORT` sets `server.http_listen_port`.
+- Container image: `LOKIHOUSE_CLICKHOUSE_PASSWORD` and `LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE` set `clickhouse.password` and `clickhouse.password_file`; the install guide documents how to pass the ClickHouse password to the container.
+
 ## [0.7.0] - 2026-10-13
 
 lokihouse is now a release candidate: feature complete, not yet proven in production.
