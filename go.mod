@@ -2,7 +2,7 @@ module github.com/bzed/lokihouse
 
 go 1.27.1
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 replace github.com/Azure/azure-sdk-for-go => github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 

@@ -6,7 +6,7 @@
 # on the build platform and cross-compiles, so no emulation is needed.
 
 # Keep GO_VERSION equal to the toolchain line of go.mod.
-ARG GO_VERSION=1.27.2
+ARG GO_VERSION=1.27.3
 
 FROM --platform=$BUILDPLATFORM docker.io/library/golang:${GO_VERSION}-trixie AS build
 ARG TARGETOS
