@@ -158,13 +158,20 @@ plus 10-second lookback is indistinguishable from push.
 ### Retention
 
 **What you'll notice:** `retention_period` and `retention_stream` work, with
-Loki's keys and semantics, but expiry is done by a ClickHouse table TTL: on
-UTC midnight, counted from each entry's timestamp, in whole days. The period is
-fixed when a row is pushed, so changing it affects only new data.
+Loki's keys and semantics, but expiry is done by a sweeper on ClickHouse day
+partitions: on UTC midnight, counted from each entry's timestamp, in whole
+days. The sweeper applies the current configuration to stored data as well, and
+removed rows leave the disk at the end of the sweep.
 
 **What to do:** read [Retention](reference/configuration.md#retention).
 Loki keeps data forever by default, and so does lokihouse: set
 `limits_config.retention_period` if you want expiry.
+
+**Warning:** lokihouse enables retention by default
+(`compactor.retention_enabled: true`; Loki's default is `false`). A Loki config
+with `retention_period` set but without `retention_enabled: true` keeps its data
+on Loki but expires it on lokihouse. Set `compactor.retention_enabled: false` to
+keep Loki's behaviour.
 
 ### No per-tenant overrides
 

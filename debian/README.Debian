@@ -25,3 +25,9 @@ lokihouse Debian-specific notes
 * The ruler must run on one instance only. Configure ruler_storage on
   exactly one lokihouse instance; otherwise alerts and recording-rule
   samples are duplicated.
+
+* Upgrading to 0.9 changes the ClickHouse schema. Stop every lokihouse
+  instance, run once
+    lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -schema.migrate
+  (it needs free disk space for a copy of the largest table), then start
+  the service. Without the migration the service exits 1 at start.

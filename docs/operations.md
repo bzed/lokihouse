@@ -18,7 +18,7 @@ the value of the `X-Scope-OrgID` header.
 | `increment_duplicate_timestamp` | push | Loki's duplicate-timestamp handling. |
 | `enforced_labels` | push validation | Streams missing them are rejected. |
 | `discover_service_name`, `discover_log_levels` | push | Loki's `service_name` and `detected_level` discovery. |
-| `retention_period`, `retention_stream` | push | `retention_days` written per stream; see [Retention](reference/configuration.md#retention). |
+| `retention_period`, `retention_stream` | push | applied by the retention sweeper; see [Retention](reference/configuration.md#retention). |
 | `deletion_mode` | delete API | Whether delete requests are accepted. |
 
 The size of one push is bounded by fixed limits (100 MiB compressed, 5000 MiB
@@ -66,6 +66,28 @@ DROP TABLE lokihouse.delete_requests_new;
 ```
 
 On a cluster, do the same for `delete_requests_local` with `ON CLUSTER` and `ReplicatedReplacingMergeTree(version)`, and run the `INSERT … SELECT` on one replica of each shard.
+
+## Retention
+
+Retention is applied by a sweeper that runs on every lokihouse instance every `compactor.compaction_interval` (see [Retention](reference/configuration.md#retention)). It applies the current configuration to all stored data and is idempotent, so several instances can sweep at the same time. Nothing expires while no lokihouse instance runs.
+
+The retention is not stored with each row. ClickHouse cannot change the columns of a table's partition or sorting key (`ALTER ... UPDATE` refuses them), so a stored value could never follow a configuration change.
+
+To free space at once, drop the day partitions you no longer need (database `lokihouse`; on a single server use the table names without `_local` and without `ON CLUSTER`):
+
+```sql
+ALTER TABLE lokihouse.logs_local ON CLUSTER <cluster> DROP PARTITION ID '20260801';
+ALTER TABLE lokihouse.streams_local ON CLUSTER <cluster> DROP PARTITION ID '20260801';
+ALTER TABLE lokihouse.stream_stats_hourly_local ON CLUSTER <cluster> DROP PARTITION ID '20260801';
+```
+
+To see which days are stored:
+
+```sql
+SELECT partition, sum(rows) FROM system.parts
+WHERE database = 'lokihouse' AND table = 'logs_local' AND active
+GROUP BY partition ORDER BY partition;
+```
 
 ## Metrics
 

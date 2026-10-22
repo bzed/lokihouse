@@ -17,7 +17,7 @@
 > **Release candidate.** lokihouse is feature complete and passes the Loki
 > compatibility oracle, but has not yet been proven in production. Packages and
 > images are built from every release. Back up the ClickHouse database before
-> upgrading: the schema may still change between releases without a migration.
+> upgrading; schema changes ship with a migration (`-schema.migrate`).
 
 lokihouse is a single static Go service that speaks
 [Grafana Loki](https://grafana.com/oss/loki/)'s HTTP API (push, LogQL queries,

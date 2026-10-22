@@ -303,11 +303,9 @@ sudo install -m 755 -o root -g root bin/lokihouse /usr/local/bin/lokihouse
 sudo systemctl start lokihouse
 ```
 
-> **Note:** lokihouse is a release candidate. The ClickHouse schema may change
-> between builds without a migration (the Phase 1 post-completion review
-> changed the schema and required a database recreate). Until a stable
-> release, back up the ClickHouse database before upgrading if your data
-> matters.
+> **Note:** schema changes ship with a migration (`-schema.migrate`, see
+> below). lokihouse is a release candidate: back up the ClickHouse database
+> before upgrading if your data matters.
 
 ### Uninstall
 
@@ -319,6 +317,25 @@ sudo rm /usr/local/bin/lokihouse
 # drop the ClickHouse database (irreversible):
 #   clickhouse client --query "DROP DATABASE lokihouse"
 ```
+
+## Upgrading to 0.9
+
+0.9 changes the ClickHouse schema (retention is no longer stored per row, see
+[Operations](../operations.md#retention)). A 0.9 instance refuses to start
+against a database of an older version and exits 1 with a message naming the
+migration. Migrate once:
+
+1. Stop every lokihouse instance.
+2. Run the migration:
+
+    ```sh
+    lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -schema.migrate
+    ```
+
+    It copies each table, so ClickHouse needs free disk space for a copy of the
+    largest table; the migration refuses to start with less. It can be run
+    again after a crash.
+3. Start the instances.
 
 ## ClickHouse cluster (optional)
 
