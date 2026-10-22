@@ -60,6 +60,9 @@ func MigrateV2(ctx context.Context, conn driver.Conn, db string, topo Topology, 
 			// A crash after EXCHANGE TABLES leaves the old data in <name>_migrate.
 			err = dropTable(ctx, conn, db, topo, name+migrateSuffix)
 		}
+		if err == nil {
+			err = refreshDistributed(ctx, conn, db, topo, name)
+		}
 		if err != nil {
 			return fmt.Errorf("migrate table %s: %w", name, err)
 		}
@@ -120,26 +123,53 @@ func migrateTable(ctx context.Context, conn driver.Conn, db string, topo Topolog
 
 // createMigrateTable creates <name>_migrate (and its Distributed table) with the version 2 DDL.
 func createMigrateTable(ctx context.Context, conn driver.Conn, db string, topo Topology, name string) error {
-	stmts, err := renderSchema(db, topo, migrateSuffix)
+	return createTables(ctx, conn, db, topo, migrateSuffix, name, true)
+}
+
+// refreshDistributed recreates the Distributed table of name when it still has the version 1
+// columns: a Distributed table copies the columns of its storage table when it is created,
+// so it does not follow EXCHANGE TABLES.
+func refreshDistributed(ctx context.Context, conn driver.Conn, db string, topo Topology, name string) error {
+	if topo.Cluster == "" {
+		return nil
+	}
+	var n uint64
+	err := conn.QueryRow(ctx, "SELECT count() FROM system.columns WHERE database = ? AND table = ? AND name = 'retention_days'", db, name).Scan(&n)
+	if err != nil {
+		return fmt.Errorf("look up columns of %s: %w", name, err)
+	}
+	if n == 0 {
+		return nil
+	}
+	if err := conn.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s %s SYNC", quoteIdent(db), quoteIdent(name), topo.OnCluster())); err != nil {
+		return fmt.Errorf("drop stale %s: %w", name, err)
+	}
+	return createTables(ctx, conn, db, topo, "", name, false)
+}
+
+// createTables runs the DDL of name with the given table name suffix: its storage table
+// when withLocal, and on a cluster its Distributed table.
+func createTables(ctx context.Context, conn driver.Conn, db string, topo Topology, suffix, name string, withLocal bool) error {
+	stmts, err := renderSchema(db, topo, suffix)
 	if err != nil {
 		return err
 	}
 	prefix := "CREATE TABLE IF NOT EXISTS " + quoteIdent(db) + "."
-	local, dist := topo.Local(name+migrateSuffix), name+migrateSuffix
-	n := 0
+	local, dist := topo.Local(name+suffix), name+suffix
+	n, want := 0, btoi(withLocal)+btoi(topo.Cluster != "")
 	for _, s := range stmts {
-		isLocal := strings.Contains(s, prefix+local+" ")
+		isLocal := withLocal && strings.Contains(s, prefix+local+" ")
 		isDist := topo.Cluster != "" && strings.Contains(s, prefix+dist+" ")
 		if !isLocal && !isDist {
 			continue
 		}
 		if err := conn.Exec(ctx, s); err != nil {
-			return fmt.Errorf("create %s%s: %w", name, migrateSuffix, err)
+			return fmt.Errorf("create %s%s: %w", name, suffix, err)
 		}
 		n++
 	}
-	if want := 1 + btoi(topo.Cluster != ""); n != want {
-		return fmt.Errorf("create %s%s: rendered %d statements, want %d", name, migrateSuffix, n, want)
+	if n != want {
+		return fmt.Errorf("create %s%s: rendered %d statements, want %d", name, suffix, n, want)
 	}
 	return nil
 }
