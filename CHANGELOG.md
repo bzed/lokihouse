@@ -6,6 +6,15 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+### Changed
+
+- `lokihouse.example.yaml` now shows every option with its default, and the Debian package installs it as `/etc/lokihouse/lokihouse.yaml`.
+- Debian package: built with Go 1.27.3 (0.8.0 still downloaded 1.27.2).
+
+### Documentation
+
+- New retention section (`retention_period`, `retention_stream`); corrected the limits tables (keys that do not exist, wrong defaults); documented `query.pushdown`, the `compactor` keys and that there are no per-tenant overrides (new divergence).
+
 ## [0.8.0] - 2026-10-22
 
 ### Security

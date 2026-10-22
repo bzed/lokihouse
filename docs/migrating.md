@@ -155,6 +155,25 @@ seen-set. Consequently:
 test with your actual push patterns. For most dashboards the 1-second poll
 plus 10-second lookback is indistinguishable from push.
 
+### Retention
+
+**What you'll notice:** `retention_period` and `retention_stream` work, with
+Loki's keys and semantics, but expiry is done by a ClickHouse table TTL: on
+UTC midnight, counted from each entry's timestamp, in whole days. The period is
+fixed when a row is pushed, so changing it affects only new data.
+
+**What to do:** read [Retention](reference/configuration.md#retention).
+Loki keeps data forever by default, and so does lokihouse: set
+`limits_config.retention_period` if you want expiry.
+
+### No per-tenant overrides
+
+**What you'll notice:** lokihouse does not read Loki's runtime configuration
+(`overrides:` per tenant). `limits_config` applies to every tenant.
+
+**What to do:** if tenants have different limits or retention in Loki, run one
+lokihouse instance (with its own ClickHouse database) per limit profile.
+
 ### Ruler sharding — no ring
 
 **What you'll notice:** if you run more than one lokihouse instance, alerts
@@ -196,17 +215,17 @@ or `rule_path` — because deleting those would be catastrophic.
 (e.g. `/var/lib/lokihouse/ruler-wal`) that is distinct from `rule_path` and
 the rule storage dir.
 
-### No `/metrics` endpoint (yet)
+### `/metrics` has fewer series than Loki's
 
-**What you'll notice:** any dashboards or alerts built on Loki's Prometheus
-`/metrics` endpoint will not work as-is.
+**What you'll notice:** `GET /metrics` works (unless
+`server.register_instrumentation` is `false`), but it serves lokihouse's
+HTTP, push, discard and ruler metrics and the Go runtime metrics, not
+Loki's ingester, chunk store or compactor series. Dashboards and alerts built
+on those will show no data.
 
-**Why:** lokihouse's ruler metrics are collected in a private registry and
-not exposed (the `/metrics` endpoint is Phase 5 work).
-
-**What to do:** if you have Prometheus scraping Loki's `/metrics`, plan to
-re-point it once Phase 5 lands, or build interim dashboards off
-ClickHouse's own `system.query_log` / `system.metrics` for the storage side.
+**What to do:** see [Operations → Metrics](operations.md#metrics) for the
+series that exist, and use ClickHouse's own `system.metrics` and
+`system.query_log` for the storage side.
 
 ## Cutover runbook
 
@@ -310,8 +329,10 @@ Tick these off before you call the migration done:
       (`GET /loki/api/v1/delete` shows it as processed).
 - [ ] If you use multi-tenancy (`X-Scope-OrgID`): the same tenant isolation
       holds — a query for tenant A does not return tenant B's data.
-- [ ] If you set `retention_period` per tenant: old data expires on the
-      expected UTC-day boundary (lokihouse retention is whole UTC days).
+- [ ] If you set `retention_period` or `retention_stream`: old data expires on
+      the expected UTC-day boundary (lokihouse retention is whole UTC days,
+      see [Retention](reference/configuration.md#retention)). lokihouse has no
+      per-tenant overrides: if you used them, see [Differences from Loki](reference/divergences.md).
 - [ ] Grafana dashboards render correctly against the lokihouse datasource
       (no missing panels, no "no data" where there should be data).
 - [ ] Alerting: any Loki alert rules you moved to lokihouse's ruler fire

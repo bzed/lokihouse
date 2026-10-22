@@ -42,7 +42,10 @@ The package installs `/usr/bin/lokihouse`, the man page, a hardened systemd
 unit (dynamic user, state in `/var/lib/lokihouse`) and
 `/etc/lokihouse/lokihouse.yaml`. It does **not** start the service: edit the
 config first (at least `clickhouse.addr`; see
-[the configuration reference](../reference/configuration.md)), then:
+[the configuration reference](../reference/configuration.md)). The file lists
+every option with its default, commented out; uncomment and change what you
+need, for example `limits_config.retention_period` (data is kept forever by
+default). Then:
 
 ```sh
 sudo systemctl enable --now lokihouse

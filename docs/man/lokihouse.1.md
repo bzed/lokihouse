@@ -46,7 +46,11 @@ command line.
 # FILES
 
 */etc/lokihouse/lokihouse.yaml*
-:   Configuration used by the Debian package's *lokihouse.service*.
+:   Configuration used by the Debian package's *lokihouse.service*. It lists
+    every option with its default, commented out.
+
+*/usr/share/doc/lokihouse/examples/lokihouse.example.yaml*
+:   An unmodified copy of the shipped configuration.
 
 */var/lib/lokihouse*
 :   Working directory of the service: temporary rule files and the ruler WAL.

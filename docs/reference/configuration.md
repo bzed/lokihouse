@@ -9,6 +9,22 @@ lokihouse is configured with a single YAML file, passed with
 Defaults below are the values lokihouse uses when a key is omitted, as
 defined in [`internal/config/config.go`](https://github.com/bzed/lokihouse/blob/main/internal/config/config.go).
 
+[`lokihouse.example.yaml`](https://github.com/bzed/lokihouse/blob/main/lokihouse.example.yaml)
+shows every option with its default and a short comment. The Debian package
+installs it as `/etc/lokihouse/lokihouse.yaml` (a copy stays in
+`/usr/share/doc/lokihouse/examples/`), so the file you edit lists everything
+you can set. A test loads it with every option uncommented, so it cannot drift
+from the code.
+
+The blocks are: [`server`](#server), [`auth_enabled`](#auth_enabled),
+[`clickhouse`](#clickhouse), [`query`](#query), [`compactor`](#compactor),
+[`limits_config`](#limits_config) (Loki's, including
+[retention](#retention)), [`ruler`](#ruler) and [`ruler_storage`](#ruler_storage)
+(Loki's).
+
+The command line has three flags: `-config.file` (default `lokihouse.yaml`),
+`-config.expand-env` and `-version`; see `man lokihouse`.
+
 ## `server`
 
 HTTP server settings.
@@ -78,7 +94,7 @@ use `${VAR}` in your config together with `-config.expand-env`.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `query.pushdown` | string | `on` | SQL push-down mode: `on` (push eligible queries into ClickHouse), `off` (always run Loki's engine over ClickHouse rows), or `downstream` (push down only when the client opts in). See the project's Phase 2 status doc for details. |
+| `query.pushdown` | string | `on` | SQL push-down mode. `on`: range aggregations such as `count_over_time`, `rate` and `bytes_rate` run as one SQL query in ClickHouse, which returns only the series and steps; anything else (parsers, label filters after a parser, vector aggregation) runs in Loki's engine over the rows ClickHouse returns, and a leaf that cannot be pushed down falls back to it. `off`: always run Loki's engine over ClickHouse rows. `downstream`: map queries as `on` does but run every leaf in Loki's engine; for debugging. All three return the same results; `on` is much cheaper for aggregations over many lines. Any other value is a startup error. |
 
 ### `query.querier`
 
@@ -92,9 +108,15 @@ Settings for the background delete-processing loop.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `compactor.compaction_interval` | duration | `10m` | How often the delete processor runs. |
-| `compactor.delete_request_cancel_period` | duration | `24h` | How long a delete request waits before it is processed. |
-| `compactor.delete_max_interval` | duration | `24h` | Maximum interval between delete-processor runs. |
+| `compactor.compaction_interval` | duration | `10m` | How often the delete processor runs. A failed run is logged and retried at the next interval. |
+| `compactor.delete_request_cancel_period` | duration | `24h` | How long a delete request waits before it is processed; it can be cancelled until then. |
+| `compactor.delete_max_interval` | duration | `24h` | Default and upper bound of a delete request's `max_interval` parameter (a larger value is rejected with 400). |
+
+Whether delete requests are accepted at all is set by `limits_config.deletion_mode`
+(`filter-and-delete` by default; `filter-only` hides rows at query time without
+removing them; `disabled` rejects delete requests). Retention, in contrast, is
+done by ClickHouse itself and needs no compactor setting; see
+[Retention](#retention).
 
 ## `ruler`
 
@@ -114,6 +136,10 @@ The most commonly set keys:
 | `ruler.wal` | WAL directory for the ruler. **lokihouse refuses to start** if this directory is empty or is the working directory, the rule storage directory, or `ruler.rule_path` (a safety measure; Loki would `os.RemoveAll` it). |
 | `ruler.enable_sharding` | **Rejected at startup.** lokihouse has no ruler ring; this must be `false`. |
 | `ruler.evaluation.mode` | `remote` is **rejected at startup** (no ring). Must be `local` (the default). |
+| `ruler.evaluation_interval`, `ruler.poll_interval` | How often rules are evaluated (`1m`) and re-read from storage (`1m`). |
+| `ruler.remote_write.enabled`, `ruler.remote_write.clients` | Send recording-rule samples with remote write, to one or more named clients (`clients: {prom: {url: ...}}`). |
+| `ruler.alertmanager_client`, `ruler.notification_queue_capacity`, `ruler.notification_timeout` | TLS and authentication towards Alertmanager, and the notification queue. |
+| `ruler.enabled_tenants`, `ruler.disabled_tenants` | Comma-separated tenant filters; empty means all tenants. |
 
 ## `ruler_storage`
 
@@ -123,6 +149,7 @@ The ruler only starts when this block is set. Two backends:
 | --- | --- |
 | `ruler_storage.backend` | `filesystem` (read/write rule files) or `local` (read-only rule files). |
 | `ruler_storage.filesystem.dir` | Directory holding the rule files (for `backend: filesystem`). |
+| `ruler_storage.local.directory` | Directory holding the rule files (for `backend: local`); rules are laid out as `<directory>/<tenant>/<file>`. |
 
 The full set of keys is documented in the
 [Loki ruler storage reference](https://grafana.com/docs/loki/latest/configuration/#ruler_storage).
@@ -135,14 +162,75 @@ The full set of keys is documented in the
 ## `limits_config`
 
 Loki's `validation.Limits` block. Every key Loki accepts is accepted here,
-with Loki's defaults. The full set is documented in the
-[Loki limits reference](https://grafana.com/docs/loki/latest/configuration/#limits_config).
+with Loki's defaults and Loki's validation. The full set is documented in the
+[Loki limits reference](https://grafana.com/docs/loki/latest/configure/#limits_config).
 
-Keys an operator is most likely to tune:
+**Limits apply to every tenant.** lokihouse has no per-tenant overrides
+(`runtime_config`, `-runtime-config.file`): a tenant cannot have its own
+retention or rate limit. See [Differences from Loki](https://github.com/bzed/lokihouse/blob/main/docs/divergences.md).
 
-| Key | Loki default | Description |
+lokihouse acts on the keys listed under [Retention](#retention) and in
+[Operations → Limits](../operations.md#limits). The remaining keys are accepted
+and validated, but have no effect: lokihouse has no ingesters, index gateway,
+bloom components or query frontend for them to configure.
+
+### Retention
+
+Loki's default is to keep data forever (`retention_period: 0s`). To expire
+data after a fixed time, set Loki's own retention keys; lokihouse has no
+ClickHouse-specific TTL setting.
+
+| Key | Default | Description |
 | --- | --- | --- |
-| `limits_config.max_query_series` | `0` (unlimited) | Hard cap on the number of series a query may return. lokihouse's test configs set `100000`. |
-| `limits_config.max_query_lookback` | `0` (no limit) | Maximum lookback for a query. |
-| `limits_config.volume_enabled` | `false` | Whether `index/volume` is enabled. |
-| `limits_config.max_cache_size` | `1GB` | Per-query result cache size. |
+| `limits_config.retention_period` | `0s` (forever) | How long to keep logs, for example `744h` for 31 days. |
+| `limits_config.retention_stream` | none | Per-stream retention: a list of `{selector, priority, period}`. Of the rules whose selector matches a stream the highest `priority` wins, the shorter `period` on a tie; a stream matching no rule uses `retention_period`. |
+
+```yaml
+limits_config:
+  retention_period: 744h            # 31 days for everything ...
+  retention_stream:
+    - selector: '{namespace="dev"}' # ... except dev, which is kept for a day
+      priority: 1
+      period: 24h
+    - selector: '{app="audit"}'     # and audit logs, kept for a year
+      priority: 2
+      period: 8760h
+```
+
+How it works, and what differs from Loki:
+
+- There is no retention sweeper or compactor job. At push time lokihouse stores
+  the period with each row (`retention_days`, rounded up to whole days) and
+  ClickHouse deletes expired data with a table `TTL`. The tables are
+  partitioned by UTC day and `retention_days`, and `ttl_only_drop_parts` is on,
+  so expiry drops whole parts instead of rewriting them.
+- Expiry is on UTC midnight and counted from the log line's timestamp, not from
+  the time of the push: a row stamped on UTC day D with a retention of N days
+  expires at 00:00 UTC on day D+N. It is kept for between N-1 and N days after its
+  timestamp (a 7-day retention keeps a row for 6 to 7 days), and a line that is
+  already older than that when it is pushed expires at once.
+- The period is fixed when the row is pushed. Changing `retention_period` or
+  `retention_stream` affects only data pushed afterwards; existing rows keep the
+  period they were stored with. To remove old data earlier, use a
+  [delete request](http-api.md).
+- The longest period is 65535 days; longer values are capped.
+- ClickHouse removes expired parts in the background
+  (`merge_with_ttl_timeout`, 4 hours by default), so data can be visible
+  to queries for some time after it has expired.
+- A push that spans many UTC days creates one partition per day and period,
+  and at most 60 are accepted per push (see Differences).
+
+### Other keys lokihouse acts on
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `limits_config.deletion_mode` | `filter-and-delete` | `disabled`, `filter-only` or `filter-and-delete`; see [`compactor`](#compactor). |
+| `limits_config.ingestion_rate_mb`, `ingestion_burst_size_mb` | `4`, `6` | Push rate limit, enforced per lokihouse instance. |
+| `limits_config.max_query_series` | `500` | Hard cap on the number of series a metric query may return. `0` removes the cap. |
+| `limits_config.max_query_lookback` | `0s` (no limit) | Maximum lookback for a query. |
+| `limits_config.max_query_length` | `30d1h` | Longest time range of a query. |
+| `limits_config.max_entries_limit_per_query` | `5000` | Largest accepted `limit` of a log query. |
+| `limits_config.volume_enabled` | `true` | Whether `index/volume` is enabled. |
+
+The push and query limits, and where each is enforced, are listed in
+[Operations → Limits](../operations.md#limits).
