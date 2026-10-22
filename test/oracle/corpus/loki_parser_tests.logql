@@ -133,7 +133,7 @@ range:topk(5,sum by (app)(rate({app=~".+"} |= "baz" |~ "blip" != "flip" !~ "flap
 {app=~".+"} | json response_code="response_code",api_key="request.headers[\"X-API-KEY\"]",layer7_something_specific="layer7_something_specific"
 {app=~".+"} | json | __error__!="JSONParserErr"
 {app=~".+"} | json | line_format "{{.http_request_headers_x_forwarded_for | default \"-\"}}"
-{app=~".+"} | label_format nowEpoch="{{(unixEpoch now)}}",createDateEpoch="{{unixEpoch (toDate \"2006-01-02\" .createDate)}}" | label_format dateTimeDiff="{{sub .nowEpoch .createDateEpoch}}" | dateTimeDiff>86400
+{app=~".+"} | label_format fixedEpoch="{{unixEpoch (toDate \"2006-01-02\" \"2020-01-02\")}}",zeroEpoch="{{unixEpoch (toDate \"2006-01-02\" .createDate)}}" | label_format dateTimeDiff="{{sub .fixedEpoch .zeroEpoch}}" | dateTimeDiff>86400
 {app=~".+"} | line_format "{{ __line__ | count \"XYZ\"}}"
 {app=~".+"} | logfmt --keep-empty msg="msg",err="err"
 {app=~".+"} | logfmt --strict

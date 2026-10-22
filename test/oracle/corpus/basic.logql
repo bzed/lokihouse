@@ -13,6 +13,9 @@
 {app="api"} | json lvl="level", uid="user.id" | line_format "{{.lvl}} {{.uid}}"
 {app="web"} | logfmt | duration > 100ms
 {app="web"} | logfmt | label_format s="{{.status}}-{{.method}}" | keep s
+{app="web"} | label_format e="{{unixEpoch (toDate \"2006-01-02\" \"2020-01-02\")}}" | keep e
+{app="web"} | label_format d="{{date \"2006-01-02\" (toDate \"2006-01-02T15:04:05Z\" \"2021-03-04T05:06:07Z\")}}" | keep d
+{app="web"} | label_format ms="{{unixEpochMillis (toDate \"2006-01-02\" \"2020-01-02\")}}" | keep ms
 {app="web"} | pattern "level=<lvl> method=<m> <_>" | lvl="error"
 {app="web"} | regexp "status=(?P<st>\d+)" | st="404"
 {app="api"} | trace_id != ""
