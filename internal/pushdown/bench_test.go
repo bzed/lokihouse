@@ -39,7 +39,7 @@ func BenchmarkLeaf(b *testing.B) {
 		}
 		lbls := fmt.Sprintf(`{app="app%d", env="env%d", n="%d"}`, s%5, s%3, s)
 		require.NoError(b, (&chstore.Writer{Conn: conn}).Write(context.Background(), "bench",
-			[]logproto.Stream{{Labels: lbls, Entries: es}}, nil))
+			[]logproto.Stream{{Labels: lbls, Entries: es}}))
 	}
 
 	var l validation.Limits

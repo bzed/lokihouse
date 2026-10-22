@@ -127,7 +127,7 @@ func TestProcessor_MatchesQueryTimeFilter(t *testing.T) {
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: aEntries},
 		{Labels: `{app="b"}`, Entries: bEntries},
-	}, nil))
+	}))
 
 	// Delete request {app="a"} |~ "secret [a-c]" over [base, base+3ms].
 	end := base.Add(3 * time.Millisecond)
@@ -165,7 +165,7 @@ func TestProcessor_SelectorOnly(t *testing.T) {
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "keep"}}},
 		{Labels: `{app="b"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "secret x"}, {Timestamp: base.Add(time.Second), Line: "secret y"}}},
-	}, nil))
+	}))
 
 	end := base.Add(time.Hour)
 	_, err := store.Add(context.Background(), "t1", `{app="b"}`,
@@ -188,7 +188,7 @@ func TestProcessor_RespectsCancelPeriod(t *testing.T) {
 	base := t0
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "secret x"}}},
-	}, nil))
+	}))
 	end := base.Add(time.Hour)
 	_, err := store.Add(context.Background(), "t1", `{app="a"}`,
 		model.TimeFromUnixNano(base.UnixNano()), model.TimeFromUnixNano(end.UnixNano()))
@@ -219,7 +219,7 @@ func TestProcessor_FaultIsolation(t *testing.T) {
 			{Timestamp: base.Add(time.Millisecond), Line: "secret a"},
 		}},
 		{Labels: `{app="b"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "secret b"}}},
-	}, nil))
+	}))
 	end := base.Add(time.Hour)
 	_, err := store.Add(context.Background(), "t1", `{app="a"}`,
 		model.TimeFromUnixNano(base.UnixNano()), model.TimeFromUnixNano(end.UnixNano()))
@@ -271,7 +271,7 @@ func TestProcessor_ParserStageScans(t *testing.T) {
 			{Timestamp: base, Line: `level=debug msg="go away"`},
 			{Timestamp: base.Add(time.Millisecond), Line: `level=info msg="keep me"`},
 		}},
-	}, nil))
+	}))
 	end := base.Add(time.Hour)
 	_, err := store.Add(context.Background(), "t1", `{app="a"} | logfmt | level="debug"`,
 		model.TimeFromUnixNano(base.UnixNano()), model.TimeFromUnixNano(end.UnixNano()))
@@ -300,7 +300,7 @@ func seedSecret(t *testing.T, conn driver.Conn, store *deletes.Store) {
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "keep"}}},
 		{Labels: `{app="b"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "secret x"}, {Timestamp: t0.Add(time.Second), Line: "secret y"}}},
-	}, nil))
+	}))
 	_, err := store.Add(context.Background(), "t1", `{app="b"}`,
 		model.TimeFromUnixNano(t0.UnixNano()), model.TimeFromUnixNano(t0.Add(time.Hour).UnixNano()))
 	require.NoError(t, err)

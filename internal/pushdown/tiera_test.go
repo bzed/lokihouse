@@ -52,7 +52,7 @@ func TestTierA_WindowBoundaries(t *testing.T) {
 	}
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: es},
-	}, nil))
+	}))
 	start, end := base, base.Add(2*time.Minute)
 	queries := []string{
 		`count_over_time({app="a"}[1m])`,
@@ -78,10 +78,10 @@ func TestTierA_CountsDuplicatesOnce(t *testing.T) {
 	}
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: es},
-	}, nil))
+	}))
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: es},
-	}, nil))
+	}))
 	start, end := base, base.Add(2*time.Minute)
 	q := `count_over_time({app="a"}[1m])`
 	want, got := runTierA(t, conn, q, start, end, 30*time.Second)
@@ -102,10 +102,10 @@ func TestTierA_MetadataSeries(t *testing.T) {
 	}
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: es1},
-	}, nil))
+	}))
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: es2},
-	}, nil))
+	}))
 	start, end := base, base.Add(2*time.Minute)
 	q := `count_over_time({app="a"}[1m])`
 	want, got := runTierA(t, conn, q, start, end, 30*time.Second)
@@ -124,7 +124,7 @@ func TestTierA_Filters(t *testing.T) {
 	}
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: es},
-	}, nil))
+	}))
 	start, end := base, base.Add(2*time.Minute)
 	q := `count_over_time({app="a"} |= "a" != "b" or "c" |~ "x[0-9]+" [1m])`
 	want, got := runTierA(t, conn, q, start, end, 30*time.Second)
@@ -161,7 +161,7 @@ func TestTierA_MaxSeries(t *testing.T) {
 			Entries: es,
 		})
 	}
-	require.NoError(t, w.Write(context.Background(), "t1", streams, nil))
+	require.NoError(t, w.Write(context.Background(), "t1", streams))
 	ctx := user.InjectOrgID(context.Background(), "t1")
 	start, end := base, base.Add(2*time.Minute)
 	q := `count_over_time({app="a"}[1m])`
@@ -197,7 +197,7 @@ func TestTierA_InstantQuery(t *testing.T) {
 	base := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "x"}, {Timestamp: base.Add(-30 * time.Second), Line: "yy"}}},
-	}, nil))
+	}))
 	at := base.Add(250 * time.Millisecond)
 	for _, q := range []string{
 		`count_over_time({app="a"}[1m])`,
@@ -218,7 +218,7 @@ func TestTierA_NoStreamsInRange(t *testing.T) {
 	base := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "x"}}},
-	}, nil))
+	}))
 	at := base.Add(-time.Hour)
 	for _, step := range []time.Duration{0, time.Minute} {
 		for _, q := range []string{
@@ -241,7 +241,7 @@ func TestTierA_MergesSeriesWithEqualLabels(t *testing.T) {
 		{Labels: `{app="a", level="x"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "one"}}},
 		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base.Add(time.Second), Line: "two",
 			StructuredMetadata: []logproto.LabelAdapter{{Name: "level", Value: "x"}}}}},
-	}, nil))
+	}))
 	want, got := runTierA(t, conn, `count_over_time({app="a"}[1m])`, base, base.Add(time.Minute), 15*time.Second)
 	require.Equal(t, want, got)
 }
@@ -260,7 +260,7 @@ func TestTierA_PendingDeleteFallsBack(t *testing.T) {
 	base := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "x"}, {Timestamp: base.Add(time.Second), Line: "secret"}}},
-	}, nil))
+	}))
 	var l validation.Limits
 	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
 	overrides, err := validation.NewOverrides(l, nil)
@@ -289,7 +289,7 @@ func TestTierA_TooManyBucketsFallsBackToTierB(t *testing.T) {
 	base := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: base, Line: "x"}}},
-	}, nil))
+	}))
 	var l validation.Limits
 	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
 	overrides, err := validation.NewOverrides(l, nil)

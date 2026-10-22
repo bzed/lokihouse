@@ -123,7 +123,7 @@ func TestEngine_DownstreamEqualsTierB(t *testing.T) {
 		[]logproto.Stream{
 			{Labels: `{app="a", env="dev"}`, Entries: es},
 			{Labels: `{app="a", env="prod"}`, Entries: es[:30]},
-		}, nil))
+		}))
 
 	ctx := user.InjectOrgID(context.Background(), "t1")
 	start, end := base, base.Add(2*time.Minute)

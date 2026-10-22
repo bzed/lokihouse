@@ -17,8 +17,7 @@ import (
 const maxRegistered = 1 << 20
 
 const (
-	// MaxPushPartitions bounds the (UTC day, retention_days) partitions one push
-	// may touch; wider pushes are rejected whole (split them by time range).
+	// MaxPushPartitions bounds the UTC day partitions one push may touch; wider pushes are rejected whole (split them by time range).
 	// It stays well below ClickHouse's max_partitions_per_insert_block (100).
 	MaxPushPartitions = 60
 	// AsyncMaxPartitions is the widest push that goes through the async-insert
@@ -33,11 +32,6 @@ const (
 // ErrTooManyPartitions is returned (wrapped) by Write for a push touching more
 // than MaxPushPartitions partitions; nothing is stored.
 var ErrTooManyPartitions = errors.New("too many partitions")
-
-type partitionKey struct {
-	day time.Time
-	ret uint16
-}
 
 // Writer inserts pushes into ClickHouse. Batching follows ClickHouse's advice for many
 // small concurrent inserts: every push of at most AsyncMaxPartitions partitions is one
@@ -57,35 +51,29 @@ type streamKey struct {
 }
 
 // Write inserts entries into logs and registers each stream for every UTC day it touches.
-// retentionDays returns the row TTL in days for a stream; nil or 0 keeps rows forever.
-func (w *Writer) Write(ctx context.Context, tenant string, streams []logproto.Stream, retentionDays func(labels.Labels) uint16) error {
+func (w *Writer) Write(ctx context.Context, tenant string, streams []logproto.Stream) error {
 	type prepared struct {
-		ls  labels.Labels
-		id  uint64
-		ret uint16
+		ls labels.Labels
+		id uint64
 	}
 	ps := make([]prepared, len(streams))
-	parts := map[partitionKey]struct{}{}
+	parts := map[time.Time]struct{}{}
 	for i, s := range streams {
 		ls, id, err := StreamIdentity(s.Labels)
 		if err != nil {
 			return fmt.Errorf("stream labels %q: %w", s.Labels, err)
 		}
-		var ret uint16
-		if retentionDays != nil {
-			ret = retentionDays(ls)
-		}
-		ps[i] = prepared{ls, id, ret}
+		ps[i] = prepared{ls, id}
 		for _, e := range s.Entries {
-			parts[partitionKey{e.Timestamp.UTC().Truncate(24 * time.Hour), ret}] = struct{}{}
+			parts[e.Timestamp.UTC().Truncate(24*time.Hour)] = struct{}{}
 		}
 	}
 	if len(parts) > MaxPushPartitions {
-		return fmt.Errorf("%w: push spans %d (day, retention) partitions, at most %d are accepted per push; split it by time range",
+		return fmt.Errorf("%w: push spans %d UTC days, at most %d are accepted per push; split it by time range",
 			ErrTooManyPartitions, len(parts), MaxPushPartitions)
 	}
 	ctx = clickhouse.Context(ctx, clickhouse.WithSettings(insertSettings(len(parts))))
-	logs, err := w.Conn.PrepareBatch(ctx, "INSERT INTO logs (tenant, stream_id, ts, line, structured_metadata, retention_days)")
+	logs, err := w.Conn.PrepareBatch(ctx, "INSERT INTO logs (tenant, stream_id, ts, line, structured_metadata)")
 	if err != nil {
 		return fmt.Errorf("prepare logs batch: %w", err)
 	}
@@ -95,12 +83,11 @@ func (w *Writer) Write(ctx context.Context, tenant string, streams []logproto.St
 		key  streamKey
 		lmap map[string]string
 		lstr string
-		ret  uint16
 	}
 	var fresh []newStream
 	seen := map[streamKey]struct{}{}
 	for i, s := range streams {
-		ls, id, ret := ps[i].ls, ps[i].id, ps[i].ret
+		ls, id := ps[i].ls, ps[i].id
 		var lmap map[string]string
 		for _, e := range s.Entries {
 			md := make(map[string]string, len(e.StructuredMetadata))
@@ -108,7 +95,7 @@ func (w *Writer) Write(ctx context.Context, tenant string, streams []logproto.St
 				md[kv.Name] = kv.Value
 			}
 			ts := e.Timestamp.UTC()
-			if err := logs.Append(tenant, id, ts, e.Line, md, ret); err != nil {
+			if err := logs.Append(tenant, id, ts, e.Line, md); err != nil {
 				return err
 			}
 			key := streamKey{tenant: tenant, id: id, day: ts.Truncate(24 * time.Hour)}
@@ -123,7 +110,7 @@ func (w *Writer) Write(ctx context.Context, tenant string, streams []logproto.St
 				if lmap == nil {
 					lmap = ls.Map()
 				}
-				fresh = append(fresh, newStream{key, lmap, ls.String(), ret})
+				fresh = append(fresh, newStream{key, lmap, ls.String()})
 			}
 		}
 	}
@@ -131,13 +118,13 @@ func (w *Writer) Write(ctx context.Context, tenant string, streams []logproto.St
 	// Register streams before their rows: a failed push leaves at most an empty
 	// registration, never rows no query can find. The client's retry re-sends both.
 	if len(fresh) > 0 {
-		strs, err := w.Conn.PrepareBatch(ctx, "INSERT INTO streams (tenant, day, stream_id, labels, labels_str, retention_days)")
+		strs, err := w.Conn.PrepareBatch(ctx, "INSERT INTO streams (tenant, day, stream_id, labels, labels_str)")
 		if err != nil {
 			return fmt.Errorf("prepare streams batch: %w", err)
 		}
 		defer strs.Abort() //nolint:errcheck // G104: ClickHouse batch Abort errors are not actionable
 		for _, n := range fresh {
-			if err := strs.Append(tenant, n.key.day, n.key.id, n.lmap, n.lstr, n.ret); err != nil {
+			if err := strs.Append(tenant, n.key.day, n.key.id, n.lmap, n.lstr); err != nil {
 				return err
 			}
 		}

@@ -45,7 +45,7 @@ func writeLines(t *testing.T, conn driver.Conn, tenant string, n int) {
 		es = append(es, logproto.Entry{Timestamp: time.Now().Add(-time.Minute - time.Duration(i)*time.Second), Line: "line"})
 	}
 	w := &chstore.Writer{Conn: conn}
-	require.NoError(t, w.Write(context.Background(), tenant, []logproto.Stream{{Labels: `{app="a"}`, Entries: es}}, nil))
+	require.NoError(t, w.Write(context.Background(), tenant, []logproto.Stream{{Labels: `{app="a"}`, Entries: es}}))
 }
 
 func TestEvaluator_InstantQueryAtNow(t *testing.T) {

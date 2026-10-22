@@ -17,7 +17,7 @@ import (
 var t0 = time.Now().UTC().Truncate(24 * time.Hour).Add(-12 * time.Hour)
 
 func seed(t *testing.T, w *chstore.Writer, tenant string, streams ...logproto.Stream) {
-	require.NoError(t, w.Write(context.Background(), tenant, streams, nil))
+	require.NoError(t, w.Write(context.Background(), tenant, streams))
 }
 
 func mk(t *testing.T, tenant string, n int, base time.Time, format string, lvl string) logproto.Stream {

@@ -39,7 +39,7 @@ func TestWriter_RoundTrip(t *testing.T) {
 			{Timestamp: ts, Line: "hello", StructuredMetadata: logproto.FromLabelsToLabelAdapters(labels.FromStrings("trace_id", "abc"))},
 			{Timestamp: ts.Add(2 * time.Second), Line: "next day"},
 		},
-	}}, nil)
+	}})
 	require.NoError(t, err)
 
 	var got time.Time
@@ -77,40 +77,13 @@ func TestWriter_RegistersStreamOncePerDay(t *testing.T) {
 		require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{
 			Labels:  `{app="y"}`,
 			Entries: []logproto.Entry{{Timestamp: now.Add(time.Duration(i) * time.Millisecond), Line: "x"}},
-		}}, nil))
+		}}))
 	}
 	require.Equal(t, uint64(1), streamInserts(t, conn, db), "known (tenant, stream, day) is not re-inserted")
 
 	// A new tenant with the same labels is a new registration.
-	require.NoError(t, w.Write(ctx, "t2", []logproto.Stream{{Labels: `{app="y"}`, Entries: []logproto.Entry{{Timestamp: now, Line: "x"}}}}, nil))
+	require.NoError(t, w.Write(ctx, "t2", []logproto.Stream{{Labels: `{app="y"}`, Entries: []logproto.Entry{{Timestamp: now, Line: "x"}}}}))
 	require.Equal(t, uint64(2), streamInserts(t, conn, db))
-}
-
-func TestWriter_RetentionDays(t *testing.T) {
-	conn, db := chtest.New(t)
-	ctx := context.Background()
-	w := &chstore.Writer{Conn: conn}
-	// Far older than any default: must survive because retention 0 means keep forever (Loki default).
-	old := time.Now().UTC().Add(-400 * 24 * time.Hour)
-	require.NoError(t, w.Write(ctx, "keep", []logproto.Stream{{Labels: `{app="y"}`, Entries: []logproto.Entry{{Timestamp: old, Line: "x"}}}}, nil))
-	require.NoError(t, w.Write(ctx, "short", []logproto.Stream{{Labels: `{app="y"}`, Entries: []logproto.Entry{
-		{Timestamp: old, Line: "expired"}, {Timestamp: time.Now(), Line: "fresh"},
-	}}}, func(labels.Labels) uint16 { return 2 }))
-	require.NoError(t, conn.Exec(ctx, "OPTIMIZE TABLE "+chtest.Topology().Local("logs")+" "+chtest.Topology().OnCluster()+" FINAL"))
-
-	var keep, short uint64
-	require.NoError(t, conn.QueryRow(ctx, "SELECT countIf(tenant='keep'), countIf(tenant='short') FROM logs").Scan(&keep, &short))
-	require.Equal(t, uint64(1), keep)
-	require.Equal(t, uint64(1), short, "only the row older than 2 days expires")
-	require.NoError(t, conn.QueryRow(ctx, "SELECT countIf(tenant='keep'), countIf(tenant='short') FROM streams").Scan(&keep, &short))
-	require.Equal(t, uint64(1), keep)
-	require.Equal(t, uint64(1), short, "expired stream registrations go with their rows")
-
-	// Whole-part TTL drops need one expiry instant per part, at a UTC midnight.
-	var misaligned uint64
-	require.NoError(t, conn.QueryRow(ctx, `SELECT count() FROM system.parts WHERE database = ? AND active AND rows > 0
-		AND (delete_ttl_info_min != delete_ttl_info_max OR toTimeZone(delete_ttl_info_min, 'UTC') != toStartOfDay(delete_ttl_info_min, 'UTC'))`, db).Scan(&misaligned))
-	require.Zero(t, misaligned)
 }
 
 // Loki dedups on (timestamp, line, structured metadata): background merges must keep
@@ -128,7 +101,7 @@ func TestWriter_MergeDedupKeyIncludesMetadata(t *testing.T) {
 		{Timestamp: ts, Line: "same", StructuredMetadata: md("trace_id", "b")},
 	}
 	for range 2 { // second round is an exact re-push
-		require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="y"}`, Entries: entries}}, nil))
+		require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="y"}`, Entries: entries}}))
 	}
 	topo := chtest.Topology()
 	require.NoError(t, conn.Exec(ctx, "OPTIMIZE TABLE "+topo.Local("logs")+" "+topo.OnCluster()+" FINAL"))
@@ -164,7 +137,7 @@ func TestWriter_RejectsTooManyPartitions(t *testing.T) {
 	conn, _ := chtest.New(t)
 	ctx := context.Background()
 	w := &chstore.Writer{Conn: conn}
-	err := w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="backfill"}`, Entries: dailyEntries(chstore.MaxPushPartitions + 1)}}, nil)
+	err := w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="backfill"}`, Entries: dailyEntries(chstore.MaxPushPartitions + 1)}})
 	require.True(t, errors.Is(err, chstore.ErrTooManyPartitions), "got %v", err)
 
 	var logs, streams uint64
@@ -174,21 +147,15 @@ func TestWriter_RejectsTooManyPartitions(t *testing.T) {
 	require.Zero(t, streams, "a rejected push registers no streams")
 }
 
-// Two retention periods double the partitions: 31 days x 2 > 60.
-func TestWriter_PartitionsCountRetention(t *testing.T) {
+// The partition limit counts UTC days only: 60 days are accepted, 61 are not.
+func TestWrite_TooManyDays(t *testing.T) {
 	conn, _ := chtest.New(t)
+	ctx := context.Background()
 	w := &chstore.Writer{Conn: conn}
-	ret := func(ls labels.Labels) uint16 {
-		if ls.Get("app") == "short" {
-			return 7
-		}
-		return 30
-	}
-	err := w.Write(context.Background(), "t1", []logproto.Stream{
-		{Labels: `{app="short"}`, Entries: dailyEntries(31)},
-		{Labels: `{app="long"}`, Entries: dailyEntries(31)},
-	}, ret)
+	err := w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="a"}`, Entries: dailyEntries(61)}})
 	require.ErrorIs(t, err, chstore.ErrTooManyPartitions)
+	require.ErrorContains(t, err, "push spans 61 UTC days, at most 60 are accepted per push; split it by time range")
+	require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="a"}`, Entries: dailyEntries(60)}}))
 }
 
 func TestWriter_WidePushIsSynchronous(t *testing.T) {
@@ -196,10 +163,10 @@ func TestWriter_WidePushIsSynchronous(t *testing.T) {
 	ctx := context.Background()
 	w := &chstore.Writer{Conn: conn}
 
-	require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="live"}`, Entries: dailyEntries(1)}}, nil))
+	require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="live"}`, Entries: dailyEntries(1)}}))
 	require.True(t, lastLogsInsertAsync(t, conn, db), "a narrow push uses the async-insert buffer")
 
-	require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="backfill"}`, Entries: dailyEntries(chstore.MaxPushPartitions)}}, nil))
+	require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="backfill"}`, Entries: dailyEntries(chstore.MaxPushPartitions)}}))
 	require.False(t, lastLogsInsertAsync(t, conn, db), "a wide push bypasses the shared async buffer")
 
 	var rows uint64

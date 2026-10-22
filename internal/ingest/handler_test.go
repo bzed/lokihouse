@@ -14,7 +14,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/validation"
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bzed/lokihouse/internal/chstore"
@@ -77,28 +76,6 @@ func TestPush_RejectsInvalidLabels(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-func TestPush_TenantRetention(t *testing.T) {
-	conn, _ := chtest.New(t)
-	var l validation.Limits
-	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
-	tenants := map[string]*validation.Limits{"short": {}}
-	*tenants["short"] = l
-	require.NoError(t, tenants["short"].RetentionPeriod.Set("36h"))
-	o, err := validation.NewOverrides(l, fakeTenantLimits(tenants))
-	require.NoError(t, err)
-	h := &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: o, Logger: log.NewNopLogger()}
-	body := `{"streams":[{"stream":{"app":"web"},"values":[["` + itoa(time.Now().UnixNano()) + `","x"]]}]}`
-	for _, tn := range []string{"short", "default"} {
-		rec := push(t, h, tn, body)
-		require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
-	}
-	var short, def uint16
-	require.NoError(t, conn.QueryRow(context.Background(),
-		"SELECT anyIf(retention_days, tenant='short'), anyIf(retention_days, tenant='default') FROM logs").Scan(&short, &def))
-	require.Equal(t, uint16(2), short, "36h rounds up to 2 days")
-	require.Equal(t, uint16(0), def, "Loki default retention_period 0 keeps data forever")
-}
-
 type fakeTenantLimits map[string]*validation.Limits
 
 func (f fakeTenantLimits) TenantLimits(id string) *validation.Limits  { return f[id] }
@@ -140,53 +117,6 @@ func TestPush_OTLPPath(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	// OTLP parsing might fail, but we just want to ensure the path is recognized
 	_ = rec.Code
-}
-
-func TestPush_StreamRetention(t *testing.T) {
-	conn, _ := chtest.New(t)
-	var l validation.Limits
-	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
-	l.RetentionPeriod = model.Duration(31 * 24 * time.Hour)
-	l.StreamRetention = []validation.StreamRetention{
-		{Period: model.Duration(48 * time.Hour), Priority: 1, Selector: `{app="short"}`},
-		// equal priority: the shorter period wins
-		{Period: model.Duration(72 * time.Hour), Priority: 1, Selector: `{app="short"}`},
-		// higher priority wins over a shorter period
-		{Period: model.Duration(96 * time.Hour), Priority: 2, Selector: `{app="prio"}`},
-		{Period: model.Duration(24 * time.Hour), Priority: 1, Selector: `{app="prio"}`},
-		// a selector on the label discovered at ingest
-		{Period: model.Duration(120 * time.Hour), Priority: 1, Selector: `{service_name="svc"}`},
-	}
-	require.NoError(t, l.Validate())
-	o, err := validation.NewOverrides(l, nil)
-	require.NoError(t, err)
-	h := &ingest.Handler{Writer: &chstore.Writer{Conn: conn}, Limits: o, Logger: log.NewNopLogger()}
-
-	ts := itoa(time.Now().UnixNano())
-	body := `{"streams":[` +
-		`{"stream":{"app":"short"},"values":[["` + ts + `","a"]]},` +
-		`{"stream":{"app":"prio"},"values":[["` + ts + `","b"]]},` +
-		`{"stream":{"app":"other","service_name":"svc"},"values":[["` + ts + `","c"]]},` +
-		`{"stream":{"app":"default"},"values":[["` + ts + `","d"]]}]}`
-	rec := push(t, h, "t1", body)
-	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
-
-	got := map[string]uint16{}
-	rows, err := conn.Query(context.Background(), "SELECT line, retention_days FROM logs WHERE tenant = 't1'")
-	require.NoError(t, err)
-	for rows.Next() {
-		var line string
-		var d uint16
-		require.NoError(t, rows.Scan(&line, &d))
-		got[line] = d
-	}
-	require.NoError(t, rows.Err())
-	require.Equal(t, map[string]uint16{"a": 2, "b": 4, "c": 5, "d": 31}, got)
-
-	var sd uint16
-	require.NoError(t, conn.QueryRow(context.Background(),
-		"SELECT retention_days FROM streams WHERE tenant = 't1' AND labels['app'] = 'short'").Scan(&sd))
-	require.Equal(t, uint16(2), sd, "streams rows carry the same retention as their logs")
 }
 
 func TestPush_TooManyPartitionsIs400(t *testing.T) {

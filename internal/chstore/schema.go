@@ -16,26 +16,40 @@ import (
 var schemaSQL string
 
 var (
-	schemaTmpl = template.Must(template.New("schema").Funcs(template.FuncMap{"lit": sqlString, "ttl": ttlExpr}).Parse(schemaSQL))
+	schemaTmpl = template.Must(template.New("schema").Funcs(template.FuncMap{"lit": sqlString}).Parse(schemaSQL))
 	stmtSplit  = regexp.MustCompile(`;\s*\n`)
 )
 
-// ttlExpr is the expiry of a row whose UTC day (as Date32) is day; see schema.sql.
-func ttlExpr(day string) string {
-	return "toDateTime(least(" + day + " + toIntervalDay(if(retention_days = 0, 65535, retention_days)), toDate32('2106-01-01')), 'UTC')"
-}
-
 type schemaData struct {
 	Topology
-	DB string
+	DB     string
+	Suffix string // appended to every table name; "" except while migrating (see migrate_v2.go)
 }
 
 func (d schemaData) DBName() string { return quoteIdent(d.DB) }
 
+// Table is the name of the table that physically stores name's rows.
+func (d schemaData) Table(name string) string { return d.Local(name + d.Suffix) }
+
+// Dist is the name of the Distributed table of name (only rendered on a cluster).
+func (d schemaData) Dist(name string) string { return name + d.Suffix }
+
+// Engine is Topology.Engine with the Keeper path made unique per suffix, so a
+// _migrate table never shares replication state with the table it replaces.
+func (d schemaData) Engine(base string, params ...string) string {
+	t := d.Topology
+	if t.ReplicaPath != "" {
+		t.ReplicaPath += d.Suffix
+	}
+	return t.Engine(base, params...)
+}
+
 // RenderSchema returns the DDL statements for db under topo, in execution order.
-func RenderSchema(db string, topo Topology) ([]string, error) {
+func RenderSchema(db string, topo Topology) ([]string, error) { return renderSchema(db, topo, "") }
+
+func renderSchema(db string, topo Topology, suffix string) ([]string, error) {
 	var buf bytes.Buffer
-	if err := schemaTmpl.Execute(&buf, schemaData{Topology: topo, DB: db}); err != nil {
+	if err := schemaTmpl.Execute(&buf, schemaData{Topology: topo, DB: db, Suffix: suffix}); err != nil {
 		return nil, err
 	}
 	var out []string

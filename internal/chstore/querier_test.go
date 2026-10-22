@@ -29,7 +29,7 @@ import (
 var t0 = time.Now().UTC().Truncate(24 * time.Hour).Add(-12 * time.Hour)
 
 func seed(t *testing.T, w *chstore.Writer, tenant string, streams ...logproto.Stream) {
-	require.NoError(t, w.Write(context.Background(), tenant, streams, nil))
+	require.NoError(t, w.Write(context.Background(), tenant, streams))
 }
 
 func engine(t *testing.T, q logql.Querier) *logql.QueryEngine {

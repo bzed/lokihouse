@@ -53,7 +53,7 @@ func write(t *testing.T, conn driver.Conn, entries []logproto.Entry) {
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{{
 		Labels:  `{app="t"}`,
 		Entries: entries,
-	}}, nil))
+	}}))
 }
 
 func tailReq(query string, start time.Time) *logproto.TailRequest {

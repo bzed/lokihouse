@@ -233,7 +233,7 @@ func seedPropData(t *testing.T, w *chstore.Writer) (time.Time, []string, error) 
 		}
 		streams = append(streams, logproto.Stream{Labels: `{app="` + app + `"}`, Entries: es})
 	}
-	if err := w.Write(context.Background(), "t1", streams, nil); err != nil {
+	if err := w.Write(context.Background(), "t1", streams); err != nil {
 		return time.Time{}, nil, err
 	}
 
@@ -248,7 +248,7 @@ func seedPropData(t *testing.T, w *chstore.Writer) (time.Time, []string, error) 
 			}
 			ds = append(ds, logproto.Stream{Labels: `{app="` + app + `"}`, Entries: es})
 		}
-		if err := w.Write(context.Background(), "t1", ds, nil); err != nil {
+		if err := w.Write(context.Background(), "t1", ds); err != nil {
 			return time.Time{}, nil, err
 		}
 	}

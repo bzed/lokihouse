@@ -105,5 +105,5 @@ func TestBucketCounts(t *testing.T) {
 }
 
 func seedStats(t *testing.T, w *chstore.Writer, tenant string, streams ...logproto.Stream) {
-	require.NoError(t, w.Write(context.Background(), tenant, streams, nil))
+	require.NoError(t, w.Write(context.Background(), tenant, streams))
 }

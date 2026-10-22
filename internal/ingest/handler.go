@@ -5,7 +5,6 @@ package ingest
 import (
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -14,10 +13,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/loki/v3/pkg/compactor/retention"
 	"github.com/grafana/loki/v3/pkg/loghttp/push"
 	"github.com/grafana/loki/v3/pkg/validation"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/bzed/lokihouse/internal/chstore"
 	"github.com/bzed/lokihouse/internal/ingest/distcopy"
@@ -66,7 +63,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(res.Streams) > 0 {
-		if err := h.Writer.Write(r.Context(), tenantID, res.Streams, h.retentionDays(tenantID)); err != nil {
+		if err := h.Writer.Write(r.Context(), tenantID, res.Streams); err != nil {
 			if errors.Is(err, chstore.ErrTooManyPartitions) {
 				distcopy.ReportDiscarded(r.Context(), h.Limits, tenantID, reasonTooManyPartitions, res.Streams, time.Now())
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -82,21 +79,4 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// retentionDays returns the row TTL in whole days (rounded up) for each stream:
-// Loki's compactor rule (retention_stream, highest priority wins, shorter period
-// on a tie, else the tenant retention_period). 0 keeps rows forever.
-func (h *Handler) retentionDays(tenantID string) func(labels.Labels) uint16 {
-	snap := retention.NewTenantRetentionSnapshot(h.Limits, tenantID)
-	return func(ls labels.Labels) uint16 {
-		d := (snap.RetentionPeriodFor(ls) + 24*time.Hour - 1) / (24 * time.Hour)
-		if d < 0 {
-			d = 0
-		}
-		if d > math.MaxUint16 {
-			d = math.MaxUint16
-		}
-		return uint16(d)
-	}
 }

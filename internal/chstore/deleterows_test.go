@@ -36,7 +36,7 @@ func TestScanRows_InclusiveBounds(t *testing.T) {
 			{Timestamp: base.Add(2 * time.Millisecond), Line: "l2"},
 			{Timestamp: base.Add(3 * time.Millisecond), Line: "l3"},
 		}},
-	}, nil))
+	}))
 	// Resolve the stream id.
 	streams, err := chstore.ResolveStreams(context.Background(), conn, "t1",
 		mustMatchers(t, `{app="a"}`), base.Add(-time.Second), base.Add(time.Second))
@@ -65,7 +65,7 @@ func TestDeleteRows_Exact(t *testing.T) {
 			{Timestamp: base.Add(time.Millisecond), Line: "del1"},
 			{Timestamp: base.Add(2 * time.Millisecond), Line: "del2"},
 		}},
-	}, nil))
+	}))
 	streams, _ := chstore.ResolveStreams(context.Background(), conn, "t1",
 		mustMatchers(t, `{app="a"}`), base.Add(-time.Second), base.Add(time.Second))
 	id := streams[0].ID
@@ -99,7 +99,7 @@ func TestDeleteRange_Exact(t *testing.T) {
 		{Labels: `{app="b"}`, Entries: []logproto.Entry{
 			{Timestamp: base, Line: "other"},
 		}},
-	}, nil))
+	}))
 	streams, _ := chstore.ResolveStreams(context.Background(), conn, "t1",
 		mustMatchers(t, `{app="a"}`), base.Add(-time.Second), base.Add(time.Second))
 	require.Len(t, streams, 1)
