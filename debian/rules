@@ -57,9 +57,9 @@ override_dh_install:
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	# Unit tests need a ClickHouse server (CI runs them separately); check
-	# the binary and the packages that need no database.
+	# the binary and the packages that need no database (TestRun_SchemaMigrateFlag does).
 	$(B)/lokihouse -version
-	$(GO) test -count=1 ./internal/config/ ./internal/logging/ ./cmd/lokihouse/
+	$(GO) test -count=1 -skip TestRun_SchemaMigrateFlag ./internal/config/ ./internal/logging/ ./cmd/lokihouse/
 endif
 
 override_dh_auto_install:
