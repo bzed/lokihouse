@@ -1,38 +1,173 @@
+# lokihouse example configuration: every option, with its default.
+#
+# The Debian package installs this file as /etc/lokihouse/lokihouse.yaml; the
+# uncommented lines are what the package runs with. A commented option shows
+# its default value; uncomment it to change it. Unknown keys are an error.
+#
+# Reference: man lokihouse, https://bzed.github.io/lokihouse/reference/configuration/
+#
+# The service runs with -config.expand-env, so ${VAR} and ${VAR:-default} are
+# expanded before the file is parsed. Durations take Loki's syntax (30s, 5m,
+# 1h, 7d, 1w); sizes take 256KB, 4MB, 2GB.
+
+# true: clients must send X-Scope-OrgID (Loki's default). false: one tenant,
+# the header is ignored.
 auth_enabled: false
+
 server:
-  http_listen_port: 3100
-  # http_listen_address: 0.0.0.0
-  # log_level: info                # debug | info | warn | error
-  # log_format: logfmt             # logfmt | json
+  http_listen_address: 127.0.0.1  # only local clients; 0.0.0.0 listens everywhere (default: all interfaces)
+  http_listen_port: 3100          # default 3100
+  # log_level: info               # debug | info | warn | error
+  # log_format: logfmt            # logfmt | json
   # http_server_read_timeout: 30s
-  # http_server_write_timeout: 30s # long queries need more (query_timeout is 1m)
+  # http_server_read_header_timeout: 0s   # 0: use http_server_read_timeout
+  # http_server_write_timeout: 30s        # long queries need more (query_timeout is 1m)
   # http_server_idle_timeout: 120s
-  # graceful_shutdown_timeout: 30s
+  # graceful_shutdown_timeout: 30s        # in-flight requests get this long on SIGTERM
+  # register_instrumentation: true        # serves /metrics and /debug/pprof/*; false on untrusted networks
+
 clickhouse:
-  addr: ["localhost:9000"]
-  database: lokihouse
-  username: default
-  # password_file: /run/credentials/lokihouse.service/lokihouse.clickhouse-password
-  # ClickHouse cluster (remote_servers name). Tables become Replicated*MergeTree
-  # <table>_local created ON CLUSTER, plus Distributed tables; list several nodes in addr.
-  # cluster: lokihouse
-  # replicated: true              # false = sharding without replication
-  # replica_path: /clickhouse/tables/{shard}/{database}/{table}   # default: server default_replica_path
-  # replica_name: '{replica}'
-  # settings: {insert_quorum: 2}  # any ClickHouse session setting
-limits_config: {}
-# Loki's ruler (alerting and recording rules), with Loki's own config keys.
-# It runs only when ruler_storage is set, and on one lokihouse instance only
-# (no ruler ring; see docs/divergences.md).
+  # addr: ["localhost:9000"]      # native protocol; list every node of a cluster
+  # database: lokihouse           # created on first start
+  # username: default
+  # Set at most one of password and password_file. Prefer password_file: store
+  # the password as a systemd credential
+  #   systemd-creds encrypt --name=lokihouse.clickhouse-password - \
+  #     /etc/credstore.encrypted/lokihouse.clickhouse-password
+  # and uncomment (a trailing newline in the file is stripped):
+  # password_file: ${CREDENTIALS_DIRECTORY}/lokihouse.clickhouse-password
+  # password: ""
+  # Connection pool and timeouts.
+  # dial_timeout: 5s              # connecting, and waiting for a free pooled connection
+  # read_timeout: 5m              # longest wait for a packet from ClickHouse
+  # max_open_conns: 100           # each in-flight push holds a connection until its insert is flushed
+  # max_idle_conns: 20            # at most max_open_conns
+  # Cluster: tables become Replicated*MergeTree <table>_local, created ON CLUSTER,
+  # plus Distributed tables. Leave cluster empty for a single server.
+  # cluster: ""                   # a remote_servers cluster name
+  # replicated: true              # false: sharding without replication
+  # replica_path: ""              # default: the server's default_replica_path
+  #                               # (e.g. /clickhouse/tables/{shard}/{database}/{table})
+  # replica_name: ""              # default: the server's default_replica_name (e.g. '{replica}')
+  # settings: {}                  # any ClickHouse session setting, e.g. {insert_quorum: 2}
+
+query:
+  # pushdown: on
+  #   on:         run eligible range aggregations (count_over_time, rate, bytes_rate, ...)
+  #               as SQL in ClickHouse; the rest runs in Loki's engine.
+  #   off:        always run Loki's engine over rows read from ClickHouse.
+  #   downstream: map queries like "on" but run every leaf in Loki's engine (for debugging).
+  # querier:
+  #   multi_tenant_queries_enabled: false   # X-Scope-OrgID: a|b queries several tenants
+
+# Background processing of delete requests (/loki/api/v1/delete).
+# compactor:
+#   compaction_interval: 10m              # how often delete requests are processed
+#   delete_request_cancel_period: 24h     # a delete request can be cancelled for this long
+#   delete_max_interval: 24h
+
+# Loki's limits_config. Loki's keys and defaults; the values apply to every
+# tenant (lokihouse has no per-tenant overrides, see docs/divergences.md).
+# Shown here are the keys lokihouse acts on; every other Loki key is accepted
+# but has no effect, because lokihouse has no ingesters, index gateway or
+# query frontend. Full list: https://grafana.com/docs/loki/latest/configure/#limits_config
+limits_config:
+  # Retention. Data is dropped by a ClickHouse table TTL in whole UTC days. The
+  # period is stored with each row when it is pushed: changing it affects only
+  # data pushed afterwards. 0s keeps data forever (Loki's default); the longest
+  # period is 65535 days.
+  # retention_period: 0s                  # e.g. 744h = 31 days
+  # retention_stream:                     # per stream; the highest priority wins, then the shorter period
+  #   - selector: '{namespace="dev"}'
+  #     priority: 1
+  #     period: 24h
+  # deletion_mode: filter-and-delete      # disabled | filter-only | filter-and-delete
+
+  # Ingestion (rate limits are per lokihouse instance, not per cluster).
+  # ingestion_rate_mb: 4
+  # ingestion_burst_size_mb: 6
+  # max_line_size: 256KB
+  # max_line_size_truncate: false
+  # max_label_name_length: 1024
+  # max_label_value_length: 2048
+  # max_label_names_per_series: 15
+  # reject_old_samples: true
+  # reject_old_samples_max_age: 1w
+  # creation_grace_period: 10m
+  # increment_duplicate_timestamp: false
+  # allow_structured_metadata: true
+  # max_structured_metadata_size: 64KB
+  # max_structured_metadata_entries_count: 128
+  # discover_log_levels: true
+  # enforced_labels: []                   # streams without these labels are rejected
+
+  # Queries.
+  # max_query_length: 30d1h
+  # max_query_lookback: 0s                # 0s: no limit
+  # max_query_range: 0s
+  # max_query_series: 500
+  # max_entries_limit_per_query: 5000
+  # max_streams_matchers_per_query: 1000
+  # required_labels: []                   # a stream selector must contain these labels
+  # required_number_labels: 0
+  # query_timeout: 1m
+  # volume_enabled: true                  # /loki/api/v1/index/volume*
+
+# Loki's ruler (alerting and recording rules), with Loki's own keys. It runs
+# only when ruler_storage is set, and on one lokihouse instance only (there is
+# no ruler ring, see docs/divergences.md). Uncomment this block and
+# ruler_storage together.
 # ruler:
-#   rule_path: /var/lib/lokihouse/rules-temp   # default: rules-temp (relative)
-#   alertmanager_url: http://alertmanager:9093
-#   external_url: http://grafana:3000
+#   rule_path: /var/lib/lokihouse/rules-temp    # default: rules-temp (relative to the working directory)
+#   evaluation_interval: 1m
+#   poll_interval: 1m                           # how often rules are re-read from storage
+#   alertmanager_url: http://alertmanager:9093  # default: none
+#   enable_alertmanager_discovery: false
+#   alertmanager_refresh_interval: 1m
+#   enable_alertmanager_v2: true
+#   notification_queue_capacity: 10000
+#   notification_timeout: 10s
+#   alertmanager_client:                        # TLS and auth towards Alertmanager
+#     tls_cert_path: ""
+#     tls_key_path: ""
+#     tls_ca_path: ""
+#     tls_server_name: ""
+#     tls_insecure_skip_verify: false
+#     basic_auth_username: ""
+#     basic_auth_password: ""
+#     type: Bearer
+#     credentials: ""
+#   external_url: http://grafana:3000           # used in alert annotations
+#   datasource_uid: ""
+#   for_outage_tolerance: 1h
+#   for_grace_period: 10m
+#   resend_delay: 1m
+#   flush_period: 1m
+#   enable_api: true
+#   enabled_tenants: ""                         # comma-separated; empty: all
+#   disabled_tenants: ""
+#   query_stats_enabled: false
+#   disable_rule_group_label: false
+#   evaluation:
+#     mode: local                               # "remote" is rejected: no ring, no query frontend
+#     max_jitter: 0s
+#   # Recording rules: samples are sent with remote write.
 #   remote_write:
-#     enabled: true
+#     enabled: false
+#     config_refresh_period: 10s
+#     add_org_id_header: true
 #     clients:
 #       prom: {url: http://prometheus:9090/api/v1/write}
-#   wal: {dir: /var/lib/lokihouse/ruler-wal}   # wiped at every start
+#   wal:
+#     dir: /var/lib/lokihouse/ruler-wal         # WIPED at every start; must be a directory of its own
+#     truncate_frequency: 1h
+#     min_age: 5m
+#     max_age: 4h
+#   wal_cleaner:
+#     min_age: 12h
+#   # Rejected at startup (no ruler ring): enable_sharding: true, sharding_strategy,
+#   # sharding_algo, ring, search_pending_for.
 # ruler_storage:
-#   backend: filesystem                        # local = read-only rule files
+#   backend: filesystem                         # filesystem: read/write rule files; local: read-only rule files
 #   filesystem: {dir: /var/lib/lokihouse/rules}
+#   # local: {directory: /etc/lokihouse/rules}  # for backend: local

@@ -7,9 +7,9 @@ export DH_VERBOSE = 1
 include /usr/share/dpkg/pkg-info.mk
 include /usr/share/dpkg/architecture.mk
 
-GO_VERSION := 1.27.2
-GO_SHA256_amd64 := ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5
-GO_SHA256_arm64 := 94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8
+GO_VERSION := 1.27.3
+GO_SHA256_amd64 := 65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
+GO_SHA256_arm64 := a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
 GO_SHA256 := $(GO_SHA256_$(DEB_HOST_ARCH))
 ifeq ($(GO_SHA256),)
 $(error unsupported architecture $(DEB_HOST_ARCH): add the go$(GO_VERSION) checksum to debian/rules)
@@ -47,6 +47,12 @@ override_dh_auto_build:
 	$(GO) build -buildmode=pie -ldflags "$(LDFLAGS)" -o $(B)/lokihouse ./cmd/lokihouse
 	go-md2man -in docs/man/lokihouse.1.md -out $(B)/lokihouse.1
 	$(GO) version -m $(B)/lokihouse > $(B)/MODULES.txt
+
+# The shipped configuration is the fully documented example: its active lines
+# are the package defaults, every other option is shown commented out.
+override_dh_install:
+	dh_install
+	install -D -m 0644 lokihouse.example.yaml debian/lokihouse/etc/lokihouse/lokihouse.yaml
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
