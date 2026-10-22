@@ -8,6 +8,7 @@ changelog (`debian/changelog`) carries the same releases.
 
 ### Changed
 
+- **Breaking:** after upgrading from a release with schema version 1, run `lokihouse -schema.migrate` once, with every instance stopped; it needs free disk space for a copy of the largest table. A normal start against a version 1 database exits 1 and names the command.
 - Schema version 2: `logs`, `streams` and `stream_stats_hourly` no longer carry `retention_days`, a TTL or a retention partition key; they are partitioned by UTC day only. A push is limited to 60 UTC days (was 60 day/retention partitions).
 - `lokihouse.example.yaml` now shows every option with its default, and the Debian package installs it as `/etc/lokihouse/lokihouse.yaml`.
 - Debian package: built with Go 1.27.3 (0.8.0 still downloaded 1.27.2).

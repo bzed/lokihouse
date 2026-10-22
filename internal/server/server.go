@@ -182,6 +182,25 @@ func openClickHouse(ctx context.Context, cfg *config.Config) (driver.Conn, error
 	return clickhouse.Open(cfg.CHOptions(cfg.ClickHouse.Database))
 }
 
+// migrateReadTimeout lets the table copies of MigrateSchema run for hours.
+const migrateReadTimeout = 24 * time.Hour
+
+// MigrateSchema migrates the ClickHouse schema to the current version (lokihouse
+// -schema.migrate). Every other lokihouse instance must be stopped.
+func MigrateSchema(ctx context.Context, cfg *config.Config, logger log.Logger) error {
+	opts := cfg.CHOptions("default")
+	opts.ReadTimeout = migrateReadTimeout
+	admin, err := clickhouse.Open(opts)
+	if err != nil {
+		return err
+	}
+	err = chstore.MigrateV2(ctx, admin, cfg.ClickHouse.Database, cfg.Topology(), logger)
+	if cerr := admin.Close(); err == nil && cerr != nil {
+		err = fmt.Errorf("close admin connection: %w", cerr)
+	}
+	return err
+}
+
 // newAPI builds the HTTP API over conn (moved unchanged from cmd/lokihouse).
 func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, logger log.Logger, rulerReg prometheus.Registerer) (*api.API, *deletes.Store, *chstore.Querier) {
 	store := &deletes.Store{Conn: conn}

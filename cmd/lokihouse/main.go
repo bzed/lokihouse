@@ -42,6 +42,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	path := fs.String("config.file", "lokihouse.yaml", "configuration file to load")
 	expandEnv := fs.Bool("config.expand-env", false, "expand ${VAR} and ${VAR:-default} in the configuration file")
 	showVersion := fs.Bool("version", false, "print version information and exit")
+	migrate := fs.Bool("schema.migrate", false, "migrate the ClickHouse schema to the current version and exit")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -66,6 +67,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		<-ctx.Done()
 		stop() // restore default handling: a second signal kills the process
 	}()
+	if *migrate {
+		if err := server.MigrateSchema(ctx, cfg, logger); err != nil {
+			level.Error(logger).Log("err", err) //nolint:gosec // G104: logger Log error is not actionable (as in Loki)
+			return 1
+		}
+		return 0
+	}
 	if err := server.Run(ctx, cfg, server.Options{Logger: logger}); err != nil {
 		level.Error(logger).Log("err", err) //nolint:gosec // G104: logger Log error is not actionable (as in Loki)
 		return 1

@@ -73,6 +73,11 @@ func Migrate(ctx context.Context, conn driver.Conn, db string, topo Topology) er
 			return fmt.Errorf("clickhouse cluster %q not found in system.clusters (check remote_servers)", topo.Cluster)
 		}
 	}
+	if v1, err := hasRetentionDays(ctx, conn, db, topo, "logs"); err != nil {
+		return err
+	} else if v1 {
+		return fmt.Errorf("%w (database %s)", ErrSchemaV1, db)
+	}
 	stmts, err := RenderSchema(db, topo)
 	if err != nil {
 		return err
