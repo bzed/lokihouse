@@ -1,3 +1,12 @@
+lokihouse (0.8.0) trixie; urgency=medium
+
+  * Container image: LOKIHOUSE_CLICKHOUSE_PASSWORD,
+    LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE and LOKIHOUSE_HTTP_LISTEN_PORT;
+    password handling documented.
+  * Built with Go 1.27.3 (GO-2026-6809).
+
+ -- Bernd Zeimetz <bernd@bzed.de>  Thu, 22 Oct 2026 02:12:07 +0200
+
 lokihouse (0.7.0) trixie; urgency=medium
 
   * Status changed from work in progress to release candidate.

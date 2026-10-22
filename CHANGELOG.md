@@ -6,6 +6,12 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-22
+
+### Security
+
+- Built with Go 1.27.3, which fixes GO-2026-6809 (`crypto/x509` intermediate certificate distrust).
+
 ### Added
 
 - Container image: `LOKIHOUSE_HTTP_LISTEN_PORT` sets `server.http_listen_port`.
