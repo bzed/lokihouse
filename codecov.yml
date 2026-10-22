@@ -1,0 +1,7 @@
+coverage:
+  status:
+    patch:
+      default:
+        # Informational only: code that needs a ClickHouse cluster is verified by
+        # `make test-cluster`, which CI does not run. The project check still gates.
+        informational: true
