@@ -128,7 +128,9 @@ func createMigrateTable(ctx context.Context, conn driver.Conn, db string, topo T
 	local, dist := topo.Local(name+migrateSuffix), name+migrateSuffix
 	n := 0
 	for _, s := range stmts {
-		if !strings.Contains(s, prefix+local+" ") && !(topo.Cluster != "" && strings.Contains(s, prefix+dist+" ")) {
+		isLocal := strings.Contains(s, prefix+local+" ")
+		isDist := topo.Cluster != "" && strings.Contains(s, prefix+dist+" ")
+		if !isLocal && !isDist {
 			continue
 		}
 		if err := conn.Exec(ctx, s); err != nil {

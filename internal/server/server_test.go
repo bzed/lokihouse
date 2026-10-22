@@ -355,16 +355,28 @@ compactor:
 `, enabled)
 }
 
+// rowsGone reports whether tenant t1 has no rows. It does not use the test's context:
+// require.Never may poll once more after the test has ended.
+func rowsGone(cfg *config.Config) bool {
+	conn, err := clickhouse.Open(chtest.Options(cfg.ClickHouse.Database))
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	var n uint64
+	return conn.QueryRow(context.Background(), "SELECT count() FROM logs WHERE tenant = 't1'").Scan(&n) == nil && n == 0
+}
+
 func TestRun_RetentionDisabledKeepsData(t *testing.T) {
 	cfg := testConfig(t, defaultServer, retentionYAML(false))
 	r := start(t, cfg, log.NewNopLogger())
 	require.Equal(t, http.StatusNoContent, push(t, r.addr, "t1", pushBody(time.Now().Add(-30*24*time.Hour), "old")))
-	require.Never(t, func() bool { return countRows(t, cfg, "t1") == 0 }, 500*time.Millisecond, 20*time.Millisecond)
+	require.Never(t, func() bool { return rowsGone(cfg) }, 500*time.Millisecond, 20*time.Millisecond)
 }
 
 func TestRun_RetentionEnabledExpiresData(t *testing.T) {
 	cfg := testConfig(t, defaultServer, retentionYAML(true))
 	r := start(t, cfg, log.NewNopLogger())
 	require.Equal(t, http.StatusNoContent, push(t, r.addr, "t1", pushBody(time.Now().Add(-30*24*time.Hour), "old")))
-	require.Eventually(t, func() bool { return countRows(t, cfg, "t1") == 0 }, 30*time.Second, 50*time.Millisecond)
+	require.Eventually(t, func() bool { return rowsGone(cfg) }, 30*time.Second, 50*time.Millisecond)
 }

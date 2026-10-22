@@ -76,11 +76,6 @@ func TestPush_RejectsInvalidLabels(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-type fakeTenantLimits map[string]*validation.Limits
-
-func (f fakeTenantLimits) TenantLimits(id string) *validation.Limits  { return f[id] }
-func (f fakeTenantLimits) AllByUserID() map[string]*validation.Limits { return f }
-
 func itoa(i int64) string { return strconv.FormatInt(i, 10) }
 
 func TestPush_MissingTenant(t *testing.T) {
