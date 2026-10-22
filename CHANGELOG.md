@@ -6,6 +6,8 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-23
+
 ### Added
 
 - Retention sweeper (`compactor.retention_enabled`, default `true` where Loki's is `false`): `retention_period` and `retention_stream` now apply to stored data every `compactor.compaction_interval`. New divergence: a Loki config with `retention_period` but without `retention_enabled` expires data on lokihouse.

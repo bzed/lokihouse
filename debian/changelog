@@ -1,3 +1,13 @@
+lokihouse (0.9.0) trixie; urgency=medium
+
+  * Retention sweeper (compactor.retention_enabled, default true);
+    retention_period and retention_stream now apply to stored data.
+  * Schema version 2: run lokihouse -schema.migrate once after
+    upgrading, with all instances stopped (see README.Debian).
+  * The ClickHouse-backed migrate test is skipped in the package build.
+
+ -- Bernd Zeimetz <bernd@bzed.de>  Fri, 23 Oct 2026 01:41:30 +0200
+
 lokihouse (0.8.0) trixie; urgency=medium
 
   * Container image: LOKIHOUSE_CLICKHOUSE_PASSWORD,
