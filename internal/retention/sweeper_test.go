@@ -215,3 +215,10 @@ func TestRun_StopsWithContext(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestSweep_ReportsConnectionErrors(t *testing.T) {
+	conn, db := chtest.New(t)
+	s := sweeper(conn, db, limitsWith(t, 7, rule(`{app="x"}`, 1)))
+	require.NoError(t, conn.Close())
+	require.Error(t, s.Sweep(context.Background(), now))
+}

@@ -95,3 +95,10 @@ clickhouse:
 		"SELECT count() FROM system.columns WHERE database = ? AND table = ? AND name = 'retention_days'", db, topo.Local("logs")).Scan(&n))
 	require.Zero(t, n)
 }
+
+func TestRun_SchemaMigrateError(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "lokihouse.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("clickhouse: {addr: [\"127.0.0.1:1\"], dial_timeout: 200ms}\n"), 0o600))
+	var out, errb bytes.Buffer
+	require.Equal(t, 1, run([]string{"-config.file", p, "-schema.migrate"}, &out, &errb))
+}
