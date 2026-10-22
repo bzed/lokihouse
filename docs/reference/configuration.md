@@ -104,19 +104,19 @@ use `${VAR}` in your config together with `-config.expand-env`.
 
 ## `compactor`
 
-Settings for the background delete-processing loop.
+Settings for the background delete-processing and retention loops.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `compactor.compaction_interval` | duration | `10m` | How often the delete processor runs. A failed run is logged and retried at the next interval. |
+| `compactor.compaction_interval` | duration | `10m` | How often the delete processor and the retention sweeper run. A failed run is logged and retried at the next interval. |
+| `compactor.retention_enabled` | bool | `true` | Run the retention sweeper (Loki's default is `false`). See [Retention](#retention). |
 | `compactor.delete_request_cancel_period` | duration | `24h` | How long a delete request waits before it is processed; it can be cancelled until then. |
 | `compactor.delete_max_interval` | duration | `24h` | Default and upper bound of a delete request's `max_interval` parameter (a larger value is rejected with 400). |
 
 Whether delete requests are accepted at all is set by `limits_config.deletion_mode`
 (`filter-and-delete` by default; `filter-only` hides rows at query time without
-removing them; `disabled` rejects delete requests). Retention, in contrast, is
-done by ClickHouse itself and needs no compactor setting; see
-[Retention](#retention).
+removing them; `disabled` rejects delete requests). Retention is applied
+by the sweeper; see [Retention](#retention).
 
 ## `ruler`
 
@@ -177,11 +177,13 @@ bloom components or query frontend for them to configure.
 ### Retention
 
 Loki's default is to keep data forever (`retention_period: 0s`). To expire
-data after a fixed time, set Loki's own retention keys; lokihouse has no
-ClickHouse-specific TTL setting.
+data after a fixed time, set Loki's own retention keys. Retention is on by
+default (`compactor.retention_enabled: true`, unlike Loki, where it defaults to
+`false`); `false` turns the sweeper off and nothing expires.
 
 | Key | Default | Description |
 | --- | --- | --- |
+| `compactor.retention_enabled` | `true` | Run the retention sweeper. Loki's default is `false`; `false` here keeps all data. |
 | `limits_config.retention_period` | `0s` (forever) | How long to keep logs, for example `744h` for 31 days. |
 | `limits_config.retention_stream` | none | Per-stream retention: a list of `{selector, priority, period}`. Of the rules whose selector matches a stream the highest `priority` wins, the shorter `period` on a tie; a stream matching no rule uses `retention_period`. |
 
@@ -199,26 +201,27 @@ limits_config:
 
 How it works, and what differs from Loki:
 
-- There is no retention sweeper or compactor job. At push time lokihouse stores
-  the period with each row (`retention_days`, rounded up to whole days) and
-  ClickHouse deletes expired data with a table `TTL`. The tables are
-  partitioned by UTC day and `retention_days`, and `ttl_only_drop_parts` is on,
-  so expiry drops whole parts instead of rewriting them.
+- A sweeper runs on every lokihouse instance every `compactor.compaction_interval`
+  and applies the *current* `retention_period` and `retention_stream`, so a
+  change reaches data that is already stored. Nothing is stored per row. The
+  tables are partitioned by UTC day. Nothing expires while no lokihouse
+  instance runs, as with Loki's compactor.
 - Expiry is on UTC midnight and counted from the log line's timestamp, not from
   the time of the push: a row stamped on UTC day D with a retention of N days
-  expires at 00:00 UTC on day D+N. It is kept for between N-1 and N days after its
-  timestamp (a 7-day retention keeps a row for 6 to 7 days), and a line that is
-  already older than that when it is pushed expires at once.
-- The period is fixed when the row is pushed. Changing `retention_period` or
-  `retention_stream` affects only data pushed afterwards; existing rows keep the
-  period they were stored with. To remove old data earlier, use a
-  [delete request](http-api.md).
+  is removed once D+N is today or earlier (00:00 UTC on day D+N). It is kept for
+  between N-1 and N days after its timestamp (a 7-day retention keeps a row for
+  6 to 7 days), and a line that is already older than that when it is pushed is
+  removed by the next sweep.
+- Days older than the longest configured period (`retention_period` and every
+  `retention_stream` period; none if `retention_period` is `0s`) are dropped as
+  whole day partitions. That is the only step when there are no
+  `retention_stream` rules. Streams with a shorter period get lightweight
+  deletes followed by `APPLY DELETED MASK`. Removed rows leave the disk at the
+  end of the sweep.
+- To free space at once, see the runbook in [Operations](../operations.md#retention).
 - The longest period is 65535 days; longer values are capped.
-- ClickHouse removes expired parts in the background
-  (`merge_with_ttl_timeout`, 4 hours by default), so data can be visible
-  to queries for some time after it has expired.
-- A push that spans many UTC days creates one partition per day and period,
-  and at most 60 are accepted per push (see Differences).
+- A push that spans many UTC days creates one partition per day, and at most
+  60 are accepted per push (see Differences).
 
 ### Other keys lokihouse acts on
 

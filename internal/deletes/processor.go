@@ -76,7 +76,7 @@ func (p *Processor) ProcessDue(ctx context.Context, now time.Time) error {
 		}
 	}
 	if p.maskPending {
-		if err := chstore.ApplyDeletedMask(ctx, p.Conn, p.DB, p.Topo); err != nil {
+		if err := chstore.ApplyDeletedMask(ctx, p.Conn, p.DB, p.Topo, "logs"); err != nil {
 			if p.Logger != nil {
 				level.Error(p.Logger).Log("msg", "removing deleted rows from disk failed; will retry", "err", err) //nolint:gosec // G104: go-kit logger errors are not actionable
 			}

@@ -41,6 +41,18 @@ compactor: {delete_request_cancel_period: 2h}
 	require.Equal(t, 24*time.Hour, c.Compactor.DeleteMaxInterval)    // default kept
 }
 
+func TestLoad_CompactorRetentionEnabled(t *testing.T) {
+	load := func(y string) *Config {
+		p := filepath.Join(t.TempDir(), "c.yaml")
+		require.NoError(t, os.WriteFile(p, []byte(y), 0o600))
+		c, err := Load(p, false)
+		require.NoError(t, err)
+		return c
+	}
+	require.True(t, load("auth_enabled: true\n").Compactor.RetentionEnabled, "lokihouse default is true (Loki's is false)")
+	require.False(t, load("compactor: {retention_enabled: false}\n").Compactor.RetentionEnabled)
+}
+
 func TestLoad_Cluster(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
 	require.NoError(t, os.WriteFile(p, []byte(`

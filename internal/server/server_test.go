@@ -343,3 +343,28 @@ func TestRun_NotifiesSystemd(t *testing.T) {
 	require.NoError(t, r.stop())
 	require.Equal(t, "STOPPING=1", read())
 }
+
+// retentionYAML configures a 7 day retention swept every 10ms, with old samples accepted.
+func retentionYAML(enabled bool) string {
+	return fmt.Sprintf(`limits_config:
+  retention_period: 7d
+  reject_old_samples: false
+compactor:
+  retention_enabled: %t
+  compaction_interval: 10ms
+`, enabled)
+}
+
+func TestRun_RetentionDisabledKeepsData(t *testing.T) {
+	cfg := testConfig(t, defaultServer, retentionYAML(false))
+	r := start(t, cfg, log.NewNopLogger())
+	require.Equal(t, http.StatusNoContent, push(t, r.addr, "t1", pushBody(time.Now().Add(-30*24*time.Hour), "old")))
+	require.Never(t, func() bool { return countRows(t, cfg, "t1") == 0 }, 500*time.Millisecond, 20*time.Millisecond)
+}
+
+func TestRun_RetentionEnabledExpiresData(t *testing.T) {
+	cfg := testConfig(t, defaultServer, retentionYAML(true))
+	r := start(t, cfg, log.NewNopLogger())
+	require.Equal(t, http.StatusNoContent, push(t, r.addr, "t1", pushBody(time.Now().Add(-30*24*time.Hour), "old")))
+	require.Eventually(t, func() bool { return countRows(t, cfg, "t1") == 0 }, 30*time.Second, 50*time.Millisecond)
+}

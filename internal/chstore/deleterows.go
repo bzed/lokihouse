@@ -96,13 +96,13 @@ func DeleteRange(ctx context.Context, conn driver.Conn, db string, topo Topology
 	return conn.Exec(deleteCtx(ctx), sql, tenant, ids, fromNs, throughNs)
 }
 
-// ApplyDeletedMask physically removes rows that lightweight DELETEs only
+// ApplyDeletedMask (of one of the retentionTables or logs) physically removes rows that lightweight DELETEs only
 // masked. Without it they stay on disk until a merge rewrites their part, which
 // for a day partition that no longer receives inserts may be never; Loki's
 // compactor rewrites the chunks. Only parts carrying a mask are rewritten.
 // mutations_sync=2 waits for every replica.
-func ApplyDeletedMask(ctx context.Context, conn driver.Conn, db string, topo Topology) error {
-	sql := fmt.Sprintf("ALTER TABLE %s.%s %s APPLY DELETED MASK", quoteIdent(db), topo.Local("logs"), topo.OnCluster())
+func ApplyDeletedMask(ctx context.Context, conn driver.Conn, db string, topo Topology, table string) error {
+	sql := fmt.Sprintf("ALTER TABLE %s.%s %s APPLY DELETED MASK", quoteIdent(db), quoteIdent(topo.Local(table)), topo.OnCluster())
 	ctx = clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{"mutations_sync": 2}))
 	if err := conn.Exec(ctx, sql); err != nil {
 		return fmt.Errorf("apply deleted mask: %w", err)

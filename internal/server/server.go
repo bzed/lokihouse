@@ -34,6 +34,7 @@ import (
 	"github.com/bzed/lokihouse/internal/multitenant"
 	"github.com/bzed/lokihouse/internal/patterns"
 	"github.com/bzed/lokihouse/internal/pushdown"
+	"github.com/bzed/lokihouse/internal/retention"
 	lhruler "github.com/bzed/lokihouse/internal/ruler"
 	lhtail "github.com/bzed/lokihouse/internal/tail"
 )
@@ -100,6 +101,14 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 			Logger:       logger,
 		}).Run(bg)
 	})
+	if cfg.Compactor.RetentionEnabled {
+		loops.Go(func() {
+			(&retention.Sweeper{
+				Conn: conn, DB: cfg.ClickHouse.Database, Topo: cfg.Topology(), Limits: limits,
+				Interval: cfg.Compactor.CompactionInterval, Logger: logger,
+			}).Run(bg)
+		})
+	}
 	stopLoops := func() {
 		stopBG()
 		loops.Wait()

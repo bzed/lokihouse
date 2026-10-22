@@ -60,9 +60,10 @@ query:
   # querier:
   #   multi_tenant_queries_enabled: false   # X-Scope-OrgID: a|b queries several tenants
 
-# Background processing of delete requests (/loki/api/v1/delete).
+# Background processing of delete requests (/loki/api/v1/delete) and the retention sweeper.
 # compactor:
-#   compaction_interval: 10m              # how often delete requests are processed
+#   retention_enabled: true               # Loki's default is false; applies retention_period and retention_stream to stored data
+#   compaction_interval: 10m              # how often delete requests are processed and retention is swept
 #   delete_request_cancel_period: 24h     # a delete request can be cancelled for this long
 #   delete_max_interval: 24h
 
@@ -72,10 +73,9 @@ query:
 # but has no effect, because lokihouse has no ingesters, index gateway or
 # query frontend. Full list: https://grafana.com/docs/loki/latest/configure/#limits_config
 limits_config:
-  # Retention. Data is dropped by a ClickHouse table TTL in whole UTC days. The
-  # period is stored with each row when it is pushed: changing it affects only
-  # data pushed afterwards. 0s keeps data forever (Loki's default); the longest
-  # period is 65535 days.
+  # Retention. The sweeper (compactor.retention_enabled) removes data in whole UTC
+  # days, using the values configured now, so a change also applies to stored data.
+  # 0s keeps data forever (Loki's default); the longest period is 65535 days.
   # retention_period: 0s                  # e.g. 744h = 31 days
   # retention_stream:                     # per stream; the highest priority wins, then the shorter period
   #   - selector: '{namespace="dev"}'

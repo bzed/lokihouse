@@ -67,6 +67,7 @@ type Config struct {
 		CompactionInterval        time.Duration `yaml:"compaction_interval"`          // delete processing loop
 		DeleteRequestCancelPeriod time.Duration `yaml:"delete_request_cancel_period"` // deletes run after this
 		DeleteMaxInterval         time.Duration `yaml:"delete_max_interval"`
+		RetentionEnabled          bool          `yaml:"retention_enabled"` // retention sweeper; Loki's default is false
 	} `yaml:"compactor"`
 	Ruler        lokiruler.Config  `yaml:"ruler"`         // Loki's ruler block, Loki's keys and defaults
 	RulerStorage rulestore.Config  `yaml:"ruler_storage"` // the ruler runs only when this is set
@@ -105,6 +106,7 @@ func Load(path string, expandEnv bool) (*Config, error) {
 	c.Compactor.CompactionInterval = 10 * time.Minute
 	c.Compactor.DeleteRequestCancelPeriod = 24 * time.Hour
 	c.Compactor.DeleteMaxInterval = 24 * time.Hour
+	c.Compactor.RetentionEnabled = true
 	c.Ruler, c.RulerStorage = ruler.Defaults()
 	c.LimitsConfig = defaults
 	c.Server.LogFormat = "logfmt"
