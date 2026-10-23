@@ -20,7 +20,7 @@
 - Only `=` with a non-empty value is pushed as a value condition; label names starting with `__` are never pushed.
 - Index DDL: `INDEX sm_keys mapKeys(structured_metadata) TYPE text(tokenizer = 'array') GRANULARITY 1` and `INDEX sm_vals mapValues(structured_metadata) TYPE text(tokenizer = 'array') GRANULARITY 1`.
 - Escape flag DDL (in SQL, so the literal doubles the backslashes): `line_ascii_escape Bool MATERIALIZED match(line, '\\\\u00(3[0-9]|4[1-9a-fA-F]|5[0-9aA]|6[1-9a-fA-F]|7[0-9aA])')` and `INDEX line_ascii_escape_idx line_ascii_escape TYPE minmax GRANULARITY 1`. The regex matches exactly the `\u` escapes of `0–9 A–Z a–z`; Go's `\u003c` (`<`) and `\u0026` (`&`) and non-ASCII escapes do not set it.
-- Migration is offline (all lokihouse instances stopped) and copies no data. Existing rows are not backfilled: they contain no `\u` data (owner), the flag reads as `false` for them, and the new indexes cover parts written or merged after the migration.
+- Migration is offline (all lokihouse instances stopped) and copies no data. Existing rows are not backfilled: they contain no `\u` data (owner), ClickHouse computes the materialized flag on read for old parts, so it is correct for them, and the new indexes cover parts written or merged after the migration.
 - `make check`, `make test-cluster`, `make oracle-all`, `make oracle-cluster`, `make soak` pass.
 
 ## Review Focus

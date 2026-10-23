@@ -135,7 +135,7 @@ git commit -m "fix: send stream ID sets as external data, not as SQL literals"
 | query | SQL | args |
 |---|---|---|
 | `{a="b"} \|~ "(?i)error"` | `line ILIKE ?` | `%error%` |
-| `{a="b"} \|~ "(?i)connection refused"` | `line ILIKE ? AND line ILIKE ?` | `%connection%`, `%refused%` |
+| `{a="b"} \|~ "(?i)connection refused"` | `line ILIKE ?` | `%connection%` (`refused` holds an `s`, so its run is dropped) |
 | `{a="b"} \|~ "(?i)disk"` | `` (empty) | — |
 | `{a="b"} \|~ "(?i)fehlerö"` | `` | — |
 | `{a="b"} \|~ "(?i)err"` | `` | — |
