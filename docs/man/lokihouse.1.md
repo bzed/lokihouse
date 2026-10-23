@@ -30,9 +30,11 @@ On start it creates the database and tables it needs, then listens on
 **-schema.migrate**
 :   Migrate the ClickHouse schema to the current version and exit (0 on success,
     1 on error). Needed once after upgrading from a release with schema
-    version 1 (before 0.9): stop every lokihouse instance first and make sure
-    the disks have free space for a copy of the largest table. A normal start
-    against a version 1 database exits 1 and names this option. A migration
+    version 1 (before 0.9) or 2 (before 0.11): stop every lokihouse instance
+    first. From version 1 the disks need free space for a copy of the largest
+    table; from version 2 the migration only alters *logs* (no copy, no extra
+    disk space) and does not re-index existing data. A normal start
+    against a database of an older schema version exits 1 and names this option. A migration
     that was interrupted finishes on the next run; on a current database the
     option does nothing.
     A configuration that reads the password from a systemd credential needs

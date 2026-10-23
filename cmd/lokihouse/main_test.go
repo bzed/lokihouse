@@ -70,6 +70,43 @@ func TestRun_ConfigError(t *testing.T) {
 
 func TestRun_SchemaMigrateFlag(t *testing.T) {
 	conn, db := chtest.NewV1(t)
+	p := writeConfig(t, db)
+
+	var out, errb bytes.Buffer
+	require.Equal(t, 1, run([]string{"-config.file", p}, &out, &errb), "a normal start refuses a version 1 database")
+	require.Contains(t, errb.String(), "lokihouse -schema.migrate")
+
+	errb.Reset()
+	require.Equal(t, 0, run([]string{"-config.file", p, "-schema.migrate"}, &out, &errb), errb.String())
+	var n uint64
+	require.NoError(t, conn.QueryRow(context.Background(),
+		"SELECT count() FROM system.columns WHERE database = ? AND table = ? AND name = 'retention_days'", db, chtest.Topology().Local("logs")).Scan(&n))
+	require.Zero(t, n)
+}
+
+func TestRun_SchemaMigrateFlagV2(t *testing.T) {
+	conn, db := chtest.NewV2(t)
+	p := writeConfig(t, db)
+	logsIndexes := func() uint64 {
+		var n uint64
+		require.NoError(t, conn.QueryRow(context.Background(),
+			"SELECT count() FROM system.data_skipping_indices WHERE database = ? AND table = ?", db, chtest.Topology().Local("logs")).Scan(&n))
+		return n
+	}
+
+	var out, errb bytes.Buffer
+	require.Equal(t, 1, run([]string{"-config.file", p}, &out, &errb), "a normal start refuses a version 2 database")
+	require.Contains(t, errb.String(), "lokihouse -schema.migrate")
+	require.Equal(t, uint64(1), logsIndexes(), "the refused start changed nothing")
+
+	errb.Reset()
+	require.Equal(t, 0, run([]string{"-config.file", p, "-schema.migrate"}, &out, &errb), errb.String())
+	require.Equal(t, uint64(4), logsIndexes())
+}
+
+// writeConfig writes a config file for the test ClickHouse and database db.
+func writeConfig(t *testing.T, db string) string {
+	t.Helper()
 	o := chtest.Options("default")
 	topo := chtest.Topology()
 	p := filepath.Join(t.TempDir(), "lokihouse.yaml")
@@ -83,17 +120,7 @@ clickhouse:
   replicated: %t
 `, o.Addr[0], db, o.Auth.Username, o.Auth.Password, topo.Cluster, topo.Replicated)
 	require.NoError(t, os.WriteFile(p, []byte(y), 0o600))
-
-	var out, errb bytes.Buffer
-	require.Equal(t, 1, run([]string{"-config.file", p}, &out, &errb), "a normal start refuses a version 1 database")
-	require.Contains(t, errb.String(), "lokihouse -schema.migrate")
-
-	errb.Reset()
-	require.Equal(t, 0, run([]string{"-config.file", p, "-schema.migrate"}, &out, &errb), errb.String())
-	var n uint64
-	require.NoError(t, conn.QueryRow(context.Background(),
-		"SELECT count() FROM system.columns WHERE database = ? AND table = ? AND name = 'retention_days'", db, topo.Local("logs")).Scan(&n))
-	require.Zero(t, n)
+	return p
 }
 
 func TestRun_SchemaMigrateError(t *testing.T) {

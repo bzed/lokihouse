@@ -26,10 +26,12 @@ lokihouse Debian-specific notes
   exactly one lokihouse instance; otherwise alerts and recording-rule
   samples are duplicated.
 
-* Upgrading to 0.9 changes the ClickHouse schema. Stop every lokihouse
-  instance, run once
+* Upgrading to 0.9 (schema version 2) or 0.11 (schema version 3) changes the
+  ClickHouse schema. Stop every lokihouse instance, run once
     lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -schema.migrate
-  (it needs free disk space for a copy of the largest table), then start
+  (from schema version 1 it needs free disk space for a copy of the largest
+  table; from version 2 it only alters the logs table and does not re-index
+  existing data), then start
   the service. Without the migration the service exits 1 at start.
   With the password in a systemd credential, run it as a transient unit so
   that CREDENTIALS_DIRECTORY is set:

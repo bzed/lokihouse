@@ -48,8 +48,22 @@ func (d schemaData) Engine(base string, params ...string) string {
 func RenderSchema(db string, topo Topology) ([]string, error) { return renderSchema(db, topo, "") }
 
 func renderSchema(db string, topo Topology, suffix string) ([]string, error) {
+	return renderTemplate(schemaTmpl, db, topo, suffix)
+}
+
+// RenderTemplate renders a schema template (the syntax of schema.sql) for db under
+// topo. The migration tests use it to create databases from older schema versions.
+func RenderTemplate(src, db string, topo Topology) ([]string, error) {
+	tmpl, err := template.New("schema").Funcs(template.FuncMap{"lit": sqlString}).Parse(src)
+	if err != nil {
+		return nil, err
+	}
+	return renderTemplate(tmpl, db, topo, "")
+}
+
+func renderTemplate(tmpl *template.Template, db string, topo Topology, suffix string) ([]string, error) {
 	var buf bytes.Buffer
-	if err := schemaTmpl.Execute(&buf, schemaData{Topology: topo, DB: db, Suffix: suffix}); err != nil {
+	if err := tmpl.Execute(&buf, schemaData{Topology: topo, DB: db, Suffix: suffix}); err != nil {
 		return nil, err
 	}
 	var out []string
@@ -73,10 +87,15 @@ func Migrate(ctx context.Context, conn driver.Conn, db string, topo Topology) er
 			return fmt.Errorf("clickhouse cluster %q not found in system.clusters (check remote_servers)", topo.Cluster)
 		}
 	}
-	if v1, err := hasRetentionDays(ctx, conn, db, topo, "logs"); err != nil {
+	if v1, err := hasColumn(ctx, conn, db, topo.Local("logs"), "retention_days"); err != nil {
 		return err
 	} else if v1 {
 		return fmt.Errorf("%w (database %s)", ErrSchemaV1, db)
+	}
+	if v2, err := v3Pending(ctx, conn, db, topo); err != nil {
+		return err
+	} else if v2 {
+		return fmt.Errorf("%w (database %s)", ErrSchemaV2, db)
 	}
 	stmts, err := RenderSchema(db, topo)
 	if err != nil {

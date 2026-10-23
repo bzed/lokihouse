@@ -25,17 +25,6 @@ var v2Columns = map[string]string{
 	"stream_stats_hourly": "tenant, stream_id, hour, entries, bytes, min_ts, max_ts",
 }
 
-// hasRetentionDays reports whether the storage table of name has the version 1 retention_days column.
-func hasRetentionDays(ctx context.Context, conn driver.Conn, db string, topo Topology, name string) (bool, error) {
-	var n uint64
-	err := conn.QueryRow(ctx, "SELECT count() FROM system.columns WHERE database = ? AND table = ? AND name = 'retention_days'",
-		db, topo.Local(name)).Scan(&n)
-	if err != nil {
-		return false, fmt.Errorf("look up schema version of %s: %w", name, err)
-	}
-	return n > 0, nil
-}
-
 // checkFreeSpace refuses a copy that needs more bytes than the smallest disk has free.
 func checkFreeSpace(need, free uint64) error {
 	if free < need {
@@ -44,13 +33,14 @@ func checkFreeSpace(need, free uint64) error {
 	return nil
 }
 
-// MigrateV2 migrates a schema version 1 database to version 2 (no retention_days) and
-// then creates anything missing. It copies each table into <table>_migrate, exchanges
+// MigrateV2 migrates a schema version 1 database to version 2 (no retention_days); the
+// copied tables are created with the current DDL. Call MigrateSchema to finish the job
+// (it also creates anything missing). It copies each table into <table>_migrate, exchanges
 // the two and drops the old data. It is resumable after a crash and a no-op on a version
 // 2 database. All other lokihouse instances must be stopped.
 func MigrateV2(ctx context.Context, conn driver.Conn, db string, topo Topology, logger log.Logger) error {
 	for _, name := range []string{"logs", "streams", "stream_stats_hourly"} {
-		v1, err := hasRetentionDays(ctx, conn, db, topo, name)
+		v1, err := hasColumn(ctx, conn, db, topo.Local(name), "retention_days")
 		if err != nil {
 			return err
 		}
@@ -67,7 +57,7 @@ func MigrateV2(ctx context.Context, conn driver.Conn, db string, topo Topology, 
 			return fmt.Errorf("migrate table %s: %w", name, err)
 		}
 	}
-	return Migrate(ctx, conn, db, topo)
+	return nil
 }
 
 func migrateTable(ctx context.Context, conn driver.Conn, db string, topo Topology, name string, logger log.Logger) error {

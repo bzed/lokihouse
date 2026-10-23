@@ -56,7 +56,7 @@ func TestMigrateV2_ConnectionErrors(t *testing.T) {
 	conn, db := chtest.New(t)
 	require.NoError(t, conn.Close())
 	ctx := context.Background()
-	require.Error(t, chstore.MigrateV2(ctx, conn, db, chtest.Topology(), log.NewNopLogger()))
+	require.Error(t, chstore.MigrateSchema(ctx, conn, db, chtest.Topology(), log.NewNopLogger()))
 	require.Error(t, chstore.Migrate(ctx, conn, db, chtest.Topology()))
 }
 

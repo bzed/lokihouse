@@ -304,7 +304,8 @@ sudo systemctl start lokihouse
 ```
 
 > **Note:** schema changes ship with a migration (`-schema.migrate`, see
-> below). lokihouse is a release candidate: back up the ClickHouse database
+> below; from schema version 2 it only alters `logs`: no copy, no extra disk
+> space, and existing data is not re-indexed). lokihouse is a release candidate: back up the ClickHouse database
 > before upgrading if your data matters.
 
 ### Uninstall
@@ -354,6 +355,14 @@ migration. Migrate once:
     largest table; the migration refuses to start with less. It can be run
     again after a crash.
 3. Start the instances.
+
+### Upgrading to 0.11
+
+0.11 adds schema version 3 (structured-metadata and escaped-ASCII indexes on
+`logs`). Run the same migration (stop every instance, `-schema.migrate`, start).
+From version 2 it only alters `logs`: no copy and no extra disk space. Existing
+data is not re-indexed; the new indexes cover parts written or merged after the
+migration.
 
 ## ClickHouse cluster (optional)
 

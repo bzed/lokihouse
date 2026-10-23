@@ -203,7 +203,7 @@ func MigrateSchema(ctx context.Context, cfg *config.Config, logger log.Logger) e
 	if err != nil {
 		return err
 	}
-	err = chstore.MigrateV2(ctx, admin, cfg.ClickHouse.Database, cfg.Topology(), logger)
+	err = chstore.MigrateSchema(ctx, admin, cfg.ClickHouse.Database, cfg.Topology(), logger)
 	if cerr := admin.Close(); err == nil && cerr != nil {
 		err = fmt.Errorf("close admin connection: %w", cerr)
 	}

@@ -131,12 +131,13 @@ GRANT SELECT ON system.clusters TO lokihouse;    -- checks that the cluster exis
 
 **For `lokihouse -schema.migrate`** (a one-off, see
 [Upgrading to 0.9](../install/index.md#upgrading-to-09)) use a user with the grants
-above plus `DROP TABLE` on the database and `SELECT` on `system.disks`
-(the free disk space check). A separate, temporary user is a good choice:
+above plus `DROP TABLE` on the database, `SELECT` on `system.disks`
+(the free disk space check) and, from schema version 2, `ALTER ADD COLUMN` and `ALTER ADD INDEX`. A separate, temporary user is a good choice:
 
 ```sql
 CREATE USER lokihouse_migrate IDENTIFIED BY '...';
-GRANT SELECT, INSERT, ALTER DELETE, CREATE DATABASE, CREATE TABLE, CREATE VIEW, DROP TABLE
+GRANT SELECT, INSERT, ALTER DELETE, CREATE DATABASE, CREATE TABLE, CREATE VIEW, DROP TABLE,
+  ALTER ADD COLUMN, ALTER ADD INDEX
   ON lokihouse.* TO lokihouse_migrate;
 GRANT SELECT ON system.parts TO lokihouse_migrate;
 GRANT SELECT ON system.disks TO lokihouse_migrate;

@@ -6,8 +6,13 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+### Added
+
+- Schema version 3: text indexes on structured-metadata keys and values (`sm_keys`, `sm_vals`) and the `line_ascii_escape` column.
+
 ### Changed
 
+- **Breaking:** after upgrading, run `lokihouse -schema.migrate` once with every instance stopped. From version 2 it only alters `logs` (no copy, no extra disk space); a normal start against a version 2 database exits 1 and names the command. Existing data is not re-indexed.
 - Case-insensitive line filters (`|~ "(?i)…"`, Grafana Logs Drilldown's search) use the ClickHouse text index.
 - Log and metric queries that run in lokihouse's own engine read ClickHouse in time windows of at most 250 000 rows: metric queries with parsers (`| json`, `| logfmt`) no longer sort the whole range in ClickHouse memory.
 - Metric queries (`count_over_time`, `rate`) pushed down to ClickHouse no longer read log lines unless the query needs bytes (`bytes_over_time`, `bytes_rate`).

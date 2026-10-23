@@ -85,7 +85,7 @@ func TestMigrateV2_CopiesEverything(t *testing.T) {
 	require.NotEmpty(t, logs)
 	require.NotEmpty(t, stats)
 
-	require.NoError(t, chstore.MigrateV2(ctx, conn, db, topo, log.NewNopLogger()))
+	require.NoError(t, chstore.MigrateSchema(ctx, conn, db, topo, log.NewNopLogger()))
 
 	for _, tbl := range []string{"logs", "streams", "stream_stats_hourly"} {
 		require.NotContains(t, columns(t, conn, db, topo.Local(tbl)), "retention_days", tbl)
@@ -114,9 +114,9 @@ func TestMigrateV2_Idempotent(t *testing.T) {
 	conn, db := chtest.NewV1(t)
 	topo := chtest.Topology()
 	ctx := context.Background()
-	require.NoError(t, chstore.MigrateV2(ctx, conn, db, topo, log.NewNopLogger()))
+	require.NoError(t, chstore.MigrateSchema(ctx, conn, db, topo, log.NewNopLogger()))
 	logs, streams, stats := snapshot(t, conn)
-	require.NoError(t, chstore.MigrateV2(ctx, conn, db, topo, log.NewNopLogger()))
+	require.NoError(t, chstore.MigrateSchema(ctx, conn, db, topo, log.NewNopLogger()))
 	gl, gs, gst := snapshot(t, conn)
 	require.Equal(t, logs, gl)
 	require.Equal(t, streams, gs)
@@ -139,7 +139,7 @@ func TestMigrateV2_ResumesAfterCrash(t *testing.T) {
 		"INSERT INTO %s.%s (tenant, stream_id, ts, line, structured_metadata, retention_days) SELECT tenant, stream_id, ts, line, structured_metadata, retention_days FROM %s.%s WHERE stream_id = 1",
 		db, mig, db, local)))
 
-	require.NoError(t, chstore.MigrateV2(ctx, conn, db, topo, log.NewNopLogger()))
+	require.NoError(t, chstore.MigrateSchema(ctx, conn, db, topo, log.NewNopLogger()))
 
 	gl, gs, gst := snapshot(t, conn)
 	require.Equal(t, logs, gl)
@@ -157,12 +157,12 @@ func TestMigrateV2_DropsOldDataAfterExchange(t *testing.T) {
 	topo := chtest.Topology()
 	ctx := context.Background()
 	logs, streams, stats := snapshot(t, conn)
-	require.NoError(t, chstore.MigrateV2(ctx, conn, db, topo, log.NewNopLogger()))
+	require.NoError(t, chstore.MigrateSchema(ctx, conn, db, topo, log.NewNopLogger()))
 
 	mig := topo.Local("logs_migrate")
 	require.NoError(t, conn.Exec(ctx, fmt.Sprintf("CREATE TABLE %s.%s %s AS %s.%s", db, mig, topo.OnCluster(), db, topo.Local("logs"))))
 
-	require.NoError(t, chstore.MigrateV2(ctx, conn, db, topo, log.NewNopLogger()))
+	require.NoError(t, chstore.MigrateSchema(ctx, conn, db, topo, log.NewNopLogger()))
 	requireNoMigrateTables(t, conn, db)
 	gl, gs, gst := snapshot(t, conn)
 	require.Equal(t, logs, gl)
