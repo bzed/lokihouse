@@ -35,6 +35,10 @@ On start it creates the database and tables it needs, then listens on
     against a version 1 database exits 1 and names this option. A migration
     that was interrupted finishes on the next run; on a current database the
     option does nothing.
+    A configuration that reads the password from a systemd credential needs
+    *CREDENTIALS_DIRECTORY*, which only a unit provides: run
+    *systemd-run --pty --wait --collect -p ImportCredential='lokihouse.\*'
+    /usr/bin/lokihouse -config.file ... -config.expand-env -schema.migrate*.
 
 **-version**
 :   Print version, revision, branch, build date and Go version, then exit.

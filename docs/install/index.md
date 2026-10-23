@@ -332,6 +332,20 @@ migration. Migrate once:
     lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -schema.migrate
     ```
 
+    If the ClickHouse password is a systemd credential
+    (`password_file: ${CREDENTIALS_DIRECTORY}/lokihouse.clickhouse-password`), a
+    shell has no `CREDENTIALS_DIRECTORY` and the command fails with
+    `open ${CREDENTIALS_DIRECTORY}/...: no such file or directory`. Run it as a
+    transient unit that imports the credentials, as `lokihouse.service` does:
+
+    ```sh
+    systemd-run --pty --wait --collect -p ImportCredential='lokihouse.*' \
+      /usr/bin/lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -schema.migrate
+    ```
+
+    (`-config.expand-env` is needed in both forms: it expands the
+    `${CREDENTIALS_DIRECTORY}` in the configuration.)
+
     It copies each table, so ClickHouse needs free disk space for a copy of the
     largest table; the migration refuses to start with less. It can be run
     again after a crash.

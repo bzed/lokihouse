@@ -31,3 +31,7 @@ lokihouse Debian-specific notes
     lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -schema.migrate
   (it needs free disk space for a copy of the largest table), then start
   the service. Without the migration the service exits 1 at start.
+  With the password in a systemd credential, run it as a transient unit so
+  that CREDENTIALS_DIRECTORY is set:
+    systemd-run --pty --wait --collect -p ImportCredential='lokihouse.*' \
+      /usr/bin/lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -schema.migrate
