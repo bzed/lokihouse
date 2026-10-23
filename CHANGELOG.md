@@ -9,6 +9,7 @@ changelog (`debian/changelog`) carries the same releases.
 ### Changed
 
 - Case-insensitive line filters (`|~ "(?i)…"`, Grafana Logs Drilldown's search) use the ClickHouse text index.
+- Log and metric queries that run in lokihouse's own engine read ClickHouse in time windows of at most 250 000 rows: metric queries with parsers (`| json`, `| logfmt`) no longer sort the whole range in ClickHouse memory.
 
 ### Fixed
 
