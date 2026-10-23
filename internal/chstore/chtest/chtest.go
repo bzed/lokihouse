@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -70,4 +72,30 @@ func New(t testing.TB) (driver.Conn, string) {
 		_ = admin.Close()
 	})
 	return conn, db
+}
+
+// LogsRowsRead sums read_rows of the finished initial SELECT queries on the
+// logs table in database db that started at or after since. Tests use it to
+// prove that an index skipped granules. On a cluster the initiator's row
+// carries the total over all shards.
+func LogsRowsRead(t testing.TB, conn driver.Conn, db string, since time.Time) uint64 {
+	t.Helper()
+	ctx := context.Background()
+	topo := Topology()
+	flush := "SYSTEM FLUSH LOGS query_log"
+	src := "system.query_log"
+	if topo.Cluster != "" {
+		flush = "SYSTEM FLUSH LOGS ON CLUSTER " + topo.Cluster
+		src = fmt.Sprintf("clusterAllReplicas(%s, system, query_log)", topo.Cluster)
+	}
+	if err := conn.Exec(ctx, flush); err != nil {
+		t.Fatalf("flush query_log: %v", err)
+	}
+	var n uint64
+	// The position() on query_log keeps this helper's own query out of the sum.
+	q := "SELECT sum(read_rows) FROM " + src + " WHERE type = 'QueryFinish' AND is_initial_query AND query_kind = 'Select' AND current_database = ? AND event_time_microseconds >= fromUnixTimestamp64Micro(?) AND position(query, 'FROM logs') > 0 AND position(query, 'query_log') = 0"
+	if err := conn.QueryRow(ctx, q, db, since.UnixMicro()).Scan(&n); err != nil {
+		t.Fatalf("read query_log: %v", err)
+	}
+	return n
 }

@@ -16,31 +16,29 @@ import (
 // line_text index; otherwise every granule of the selected streams is read.
 func TestLineFilterSQL_UsesTextIndex(t *testing.T) {
 	ctx := context.Background()
-	conn, _ := chtest.New(t)
+	const rows = 50000
+	conn, db := chtest.New(t)
 	logs := chtest.Topology().Local("logs")
-	require.NoError(t, conn.Exec(ctx, "INSERT INTO "+logs+" (tenant, stream_id, ts, line) VALUES ('t1', 1, ?, 'a needle here'), ('t1', 1, ?, 'nothing')",
-		time.Unix(1, 0).UTC(), time.Unix(2, 0).UTC()))
+	require.NoError(t, conn.Exec(ctx, "INSERT INTO "+logs+" (tenant, stream_id, ts, line) SELECT 't1', 1, toDateTime64(1, 9, 'UTC') + number, concat('row ', toString(number), if(number = 31337, ' needle here', '')) FROM numbers(?)", rows))
+	require.NoError(t, conn.Exec(ctx, "OPTIMIZE TABLE "+logs+" FINAL"))
 
-	explain := func(f chstore.Fragment) string {
+	count := func(f chstore.Fragment) {
 		t.Helper()
-		rows, err := conn.Query(ctx, "EXPLAIN indexes = 1 SELECT count() FROM "+logs+" WHERE tenant = 't1' AND "+f.SQL, f.Args...)
-		require.NoError(t, err)
-		defer rows.Close()
-		var plan string
-		for rows.Next() {
-			var l string
-			require.NoError(t, rows.Scan(&l))
-			plan += l + "\n"
-		}
-		require.NoError(t, rows.Err())
-		return plan
+		var n uint64
+		require.NoError(t, conn.QueryRow(ctx, "SELECT count() FROM logs WHERE tenant = 't1' AND "+f.SQL, f.Args...).Scan(&n))
+	}
+	check := func(q string, f chstore.Fragment) {
+		t.Helper()
+		since := time.Now()
+		count(f)
+		require.Less(t, chtest.LogsRowsRead(t, conn, db, since), uint64(rows/2), q)
 	}
 	for _, q := range []string{`{a="b"} |= "needle"`, `{a="b"} |~ "needle"`, `{a="b"} |~ "needle(s|d)?"`, `{a="b"} |= "needle" or "haystack"`} {
 		sel, err := syntax.ParseLogSelector(q, true)
 		require.NoError(t, err)
-		require.Contains(t, explain(chstore.LeadingLineFilterSQL(sel)), "line_text", "leading: %s", q)
+		check("leading: "+q, chstore.LeadingLineFilterSQL(sel))
 		f, ok := chstore.ExactLineFilterSQL(sel)
 		require.True(t, ok, q)
-		require.Contains(t, explain(f), "line_text", "exact: %s", q)
+		check("exact: "+q, f)
 	}
 }
