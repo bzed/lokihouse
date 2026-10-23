@@ -342,3 +342,23 @@ func lines(s logproto.Stream) []string {
 	}
 	return out
 }
+
+// A case-insensitive line filter is pushed to ClickHouse only when ILIKE and
+// Go's (?i) agree; the Kelvin sign must still match "k".
+func TestSelectLogs_FoldCaseNotLost(t *testing.T) {
+	conn, _ := chtest.New(t)
+	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: []logproto.Entry{
+		{Timestamp: t0, Line: "ERROR one"},
+		{Timestamp: t0.Add(time.Second), Line: "Error two"},
+		{Timestamp: t0.Add(2 * time.Second), Line: "DIS\u212A full"},
+		{Timestamp: t0.Add(3 * time.Second), Line: "nothing"},
+	}})
+	ng := engine(t, &chstore.Querier{Conn: conn})
+	for q, want := range map[string][]string{
+		`{app="a"} |~ "(?i)error"`: {"ERROR one", "Error two"},
+		`{app="a"} |~ "(?i)disk"`:  {"DIS\u212A full"},
+	} {
+		res := run(t, ng, q, t0, t0.Add(time.Minute), 0, logproto.FORWARD, 100)
+		require.Equal(t, want, lines(res.Data.(logqlmodel.Streams)[0]), q)
+	}
+}

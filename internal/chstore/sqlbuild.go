@@ -124,12 +124,9 @@ func regexNecessary(re string) Fragment {
 	if err != nil {
 		return Fragment{}
 	}
-	if hasFoldCase(n) {
-		return Fragment{}
-	}
 	n = unwrap(n)
 	if n.Op == regexpSyntax.OpLiteral {
-		return litFragment(n.Rune)
+		return nodeFragment(n)
 	}
 	if n.Op == regexpSyntax.OpConcat {
 		var parts []Fragment
@@ -138,7 +135,7 @@ func regexNecessary(re string) Fragment {
 			if c.Op != regexpSyntax.OpLiteral {
 				continue
 			}
-			parts = append(parts, litFragment(c.Rune))
+			parts = append(parts, nodeFragment(c))
 		}
 		return and(parts)
 	}
@@ -150,7 +147,7 @@ func regexNecessary(re string) Fragment {
 			if c.Op != regexpSyntax.OpLiteral {
 				return Fragment{}
 			}
-			p := litFragment(c.Rune)
+			p := nodeFragment(c)
 			if p.Empty() {
 				return Fragment{}
 			}
@@ -240,20 +237,53 @@ func containsAny(alts []*syntax.LineFilterExpr) Fragment {
 	return Fragment{"(" + strings.Join(sqls, " OR ") + ")", args}
 }
 
-// hasFoldCase reports whether any node in the regexp tree carries the FoldCase flag.
-func hasFoldCase(n *regexpSyntax.Regexp) bool {
-	if n == nil {
-		return false
-	}
+// nodeFragment is the necessary condition for one literal node, case-folded or not.
+func nodeFragment(n *regexpSyntax.Regexp) Fragment {
 	if n.Flags&regexpSyntax.FoldCase != 0 {
-		return true
+		return foldLiteralFragment(n.Rune)
 	}
-	for _, s := range n.Sub {
-		if hasFoldCase(s) {
-			return true
+	return litFragment(n.Rune)
+}
+
+// foldLiteralFragment turns a case-folded literal into line ILIKE conditions on
+// its maximal ASCII alphanumeric runs of at least 4 characters (shorter ones
+// cannot use the text index). Go folds k and s to U+212A and U+017F, which
+// ILIKE does not match, so runs holding k, K, s or S are dropped, and a literal
+// with any non-ASCII rune is not pushed at all.
+func foldLiteralFragment(r []rune) Fragment {
+	for _, c := range r {
+		if c >= 0x80 {
+			return Fragment{}
 		}
 	}
-	return false
+	var parts []Fragment
+	flush := func(run []rune) {
+		if len(run) < 4 {
+			return
+		}
+		for _, c := range run {
+			switch c {
+			case 'k', 'K', 's', 'S':
+				return
+			}
+		}
+		parts = append(parts, Fragment{"line ILIKE ?", []any{"%" + escapedLike(strings.ToLower(string(run))) + "%"}})
+	}
+	start := -1
+	for i, c := range r {
+		alnum := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+		switch {
+		case alnum && start < 0:
+			start = i
+		case !alnum && start >= 0:
+			flush(r[start:i])
+			start = -1
+		}
+	}
+	if start >= 0 {
+		flush(r[start:])
+	}
+	return and(parts)
 }
 
 // unwrap peels OpCapture and OpEmptyMatch wrappers off a regexp node.

@@ -6,6 +6,10 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+### Changed
+
+- Case-insensitive line filters (`|~ "(?i)…"`, Grafana Logs Drilldown's search) use the ClickHouse text index.
+
 ### Fixed
 
 - Queries whose selector matches more than about 13 000 streams no longer fail with `Max query size exceeded`.

@@ -12,8 +12,7 @@ func TestLeadingLineFilterSQL_RegexAndPattern(t *testing.T) {
 		`{a="b"} |~ "error"`:              "line LIKE ?",
 		`{a="b"} |~ "err(or)?: timeout"`:  "line LIKE ? AND line LIKE ?",
 		`{a="b"} |~ "error|warn"`:         "(line LIKE ? OR line LIKE ?)",
-		`{a="b"} |~ "(?i)error"`:          "",
-		`{a="b"} |~ "e.r"`:                "",
+				`{a="b"} |~ "e.r"`:                "",
 		`{a="b"} !~ "error"`:              "",
 		`{a="b"} |> "<_> GET <path> 200"`: "line LIKE ?",
 		`{a="b"} |> "<_>"`:                "",
@@ -22,6 +21,31 @@ func TestLeadingLineFilterSQL_RegexAndPattern(t *testing.T) {
 		sel, err := syntax.ParseLogSelector(q, true)
 		require.NoError(t, err)
 		require.Equal(t, want, LeadingLineFilterSQL(sel).SQL, q)
+	}
+}
+
+// Go's (?i) folds k and s to U+212A and U+017F, which ILIKE does not: a run with
+// k or s must not be pushed. Non-ASCII literals are not pushed either.
+func TestLeadingLineFilterSQL_FoldCase(t *testing.T) {
+	for _, c := range []struct {
+		q    string
+		sql  string
+		args []any
+	}{
+		{`{a="b"} |~ "(?i)error"`, "line ILIKE ?", []any{"%error%"}},
+		{`{a="b"} |~ "(?i)connection refused"`, "line ILIKE ?", []any{"%connection%"}},
+		{`{a="b"} |~ "(?i)connection failed"`, "line ILIKE ? AND line ILIKE ?", []any{"%connection%", "%failed%"}},
+		{`{a="b"} |~ "(?i)disk"`, "", nil},
+		{`{a="b"} |~ "(?i)fehlerö"`, "", nil},
+		{`{a="b"} |~ "(?i)err"`, "", nil},
+		{`{a="b"} |~ "(?i)(error|fatal)"`, "(line ILIKE ? OR line ILIKE ?)", []any{"%error%", "%fatal%"}},
+		{`{a="b"} |~ "(?i)(error|disk)"`, "", nil},
+	} {
+		sel, err := syntax.ParseLogSelector(c.q, true)
+		require.NoError(t, err)
+		f := LeadingLineFilterSQL(sel)
+		require.Equal(t, c.sql, f.SQL, c.q)
+		require.Equal(t, c.args, f.Args, c.q)
 	}
 }
 

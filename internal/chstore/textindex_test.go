@@ -2,6 +2,7 @@ package chstore_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,10 +34,13 @@ func TestLineFilterSQL_UsesTextIndex(t *testing.T) {
 		count(f)
 		require.Less(t, chtest.LogsRowsRead(t, conn, db, since), uint64(rows/2), q)
 	}
-	for _, q := range []string{`{a="b"} |= "needle"`, `{a="b"} |~ "needle"`, `{a="b"} |~ "needle(s|d)?"`, `{a="b"} |= "needle" or "haystack"`} {
+	for _, q := range []string{`{a="b"} |= "needle"`, `{a="b"} |~ "needle"`, `{a="b"} |~ "needle(s|d)?"`, `{a="b"} |= "needle" or "haystack"`, `{a="b"} |~ "(?i)needle"`} {
 		sel, err := syntax.ParseLogSelector(q, true)
 		require.NoError(t, err)
 		check("leading: "+q, chstore.LeadingLineFilterSQL(sel))
+		if strings.Contains(q, "(?i)") {
+			continue // case-insensitive filters are not exact, so Tier A does not use them
+		}
 		f, ok := chstore.ExactLineFilterSQL(sel)
 		require.True(t, ok, q)
 		check("exact: "+q, f)
