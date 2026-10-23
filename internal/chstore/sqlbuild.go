@@ -316,8 +316,9 @@ func unwrap(n *regexpSyntax.Regexp) *regexpSyntax.Regexp {
 // (|=, !=, with or-chains) or regex passing RegexExact (|~, !~), and label filters that
 // compare a label to a non-empty string with = (alone or combined with and/or), which
 // map to structured_metadata. labelNames lists the names of those label filters (each
-// once, in source order): the SQL is exact only if no stream carries such a label,
-// because a stream label could satisfy the filter too.
+// once, in source order; for name_extracted also name): the SQL is exact only if no
+// stream carries such a label, because a stream label could satisfy the filter too, and
+// a clash renames the metadata key to name_extracted.
 func ExactFilterSQL(expr syntax.LogSelectorExpr) (f Fragment, labelNames []string, ok bool) {
 	p, isPipeline := expr.(*syntax.PipelineExpr)
 	if !isPipeline {
@@ -377,8 +378,10 @@ func exactLabelFilterSQL(lf log.LabelFilterer, names *[]string) (Fragment, bool)
 		if m.Value == "" || strings.HasPrefix(m.Name, "__") {
 			return Fragment{}, false
 		}
-		if !slices.Contains(*names, m.Name) {
-			*names = append(*names, m.Name)
+		for _, n := range clashNames(m.Name) {
+			if !slices.Contains(*names, n) {
+				*names = append(*names, n)
+			}
 		}
 		return Fragment{SQL: "structured_metadata[?] = ?", Args: []any{m.Name, m.Value}}, true
 	}

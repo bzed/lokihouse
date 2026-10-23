@@ -31,10 +31,32 @@ func MetadataFilterSQL(expr syntax.LogSelectorExpr, streams []Stream) Fragment {
 	return and(parts)
 }
 
+// extractedSuffix is what Loki appends to a label that clashes with a stream label.
+const extractedSuffix = "_extracted"
+
+// clashNames lists the stream label names that make a filter on name unsafe to push: name
+// itself (the stream label may satisfy the filter) and, for <base>_extracted, base (a
+// structured-metadata or parsed label named base is renamed to <base>_extracted when a
+// stream carries base, so the stored key differs from the filtered name).
+func clashNames(name string) []string {
+	if base, ok := strings.CutSuffix(name, extractedSuffix); ok && base != "" {
+		return []string{name, base}
+	}
+	return []string{name}
+}
+
+func clashesWithStream(name string, streamLabels map[string]struct{}) bool {
+	for _, n := range clashNames(name) {
+		if _, ok := streamLabels[n]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func metadataMatcherSQL(m bloomv1.LabelMatcher, streamLabels map[string]struct{}) Fragment {
 	pushable := func(key string) bool {
-		_, isStream := streamLabels[key]
-		return !isStream && !strings.HasPrefix(key, "__")
+		return !clashesWithStream(key, streamLabels) && !strings.HasPrefix(key, "__")
 	}
 	switch m := m.(type) {
 	case bloomv1.KeyValueMatcher:
@@ -137,7 +159,7 @@ func parsedLabelFilterSQL(lf log.LabelFilterer, streamLabels map[string]struct{}
 	if m == nil || m.Value == "" || strings.HasPrefix(m.Name, "__") {
 		return Fragment{}
 	}
-	if _, isStream := streamLabels[m.Name]; isStream {
+	if clashesWithStream(m.Name, streamLabels) {
 		return Fragment{}
 	}
 	runs, ok := verbatimRuns(m.Value)

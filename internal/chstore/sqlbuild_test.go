@@ -112,6 +112,7 @@ func TestExactFilterSQL(t *testing.T) {
 	}{
 		{`{a="b"} |= "x" | level="warn"`, Fragment{SQL: "(line LIKE ?) AND structured_metadata[?] = ?", Args: []any{"%x%", "level", "warn"}}, []string{"level"}},
 		{`{a="b"} | level="warn" or level="info"`, Fragment{SQL: "(structured_metadata[?] = ? OR structured_metadata[?] = ?)", Args: []any{"level", "warn", "level", "info"}}, []string{"level"}},
+		{`{a="b"} | level_extracted="warn"`, Fragment{SQL: "structured_metadata[?] = ?", Args: []any{"level_extracted", "warn"}}, []string{"level_extracted", "level"}},
 		{`{a="b"} | level="warn" and code="7"`, Fragment{SQL: "(structured_metadata[?] = ? AND structured_metadata[?] = ?)", Args: []any{"level", "warn", "code", "7"}}, []string{"level", "code"}},
 	}
 	for _, tc := range withLabels {

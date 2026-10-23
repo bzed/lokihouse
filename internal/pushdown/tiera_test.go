@@ -438,6 +438,8 @@ func TestTierA_MetadataFilter(t *testing.T) {
 	for _, q := range []string{
 		`count_over_time({app=~"m|m2"} | level="warn" [1m])`,
 		`rate({app=~"m|m2"} | level="warn" or level="info" [1m])`,
+		// the clash renames the metadata key of {app="m2", level="warn"} to level_extracted
+		`count_over_time({app="m2"} | level_extracted="error" [1m])`,
 	} {
 		before := TierALeaves.Load()
 		want, got := runTierA(t, conn, q, base, base.Add(time.Minute), 15*time.Second)

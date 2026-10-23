@@ -58,6 +58,8 @@ func TestMetadataFilterSQL(t *testing.T) {
 		{"stream label of the same name", `{app="a"} | trace_id="x"`, streamsOf(`{app="a", trace_id="x"}`), "", nil},
 		{"one stream carries the label", `{app=~"a|b"} | trace_id="x"`, streamsOf(`{app="a"}`, `{app="b", trace_id="x"}`), "", nil},
 		{"reserved name", `{app="a"} | __error__="x"`, a, "", nil},
+		{"renamed on a clash with a stream label", `{app="a"} | level_extracted="x"`, streamsOf(`{app="a", level="y"}`), "", nil},
+		{"_extracted without a clash", `{app="a"} | level_extracted="x"`, a, "structured_metadata[?] = ?", []any{"level_extracted", "x"}},
 		{"or with unsupported side", `{app="a"} | trace_id="x" or level!="y"`, a, "", nil},
 		{"and with unsupported side", `{app="a"} | trace_id="x" and level!="y"`, a, "structured_metadata[?] = ?", []any{"trace_id", "x"}},
 	} {
@@ -100,6 +102,11 @@ func TestSelectLogs_MetadataFilter(t *testing.T) {
 		logproto.Stream{Labels: `{app="b", trace_id="t1"}`, Entries: []logproto.Entry{
 			{Timestamp: t0, Line: "b-1"}, {Timestamp: t0.Add(time.Second), Line: "b-2"},
 		}})
+	// A metadata key that clashes with a stream label is renamed to <key>_extracted.
+	seed(t, w, "t1", logproto.Stream{Labels: `{app="c", level="x"}`, Entries: []logproto.Entry{
+		{Timestamp: t0, Line: "c-y", StructuredMetadata: md("level", "y")},
+		{Timestamp: t0.Add(time.Second), Line: "c-z", StructuredMetadata: md("level", "z")},
+	}})
 	ng := engine(t, &chstore.Querier{Conn: conn})
 	q := func(expr string) []string {
 		return allLines(run(t, ng, expr, t0.Add(-time.Minute), t0.Add(time.Minute), 0, logproto.FORWARD, 100))
@@ -108,6 +115,7 @@ func TestSelectLogs_MetadataFilter(t *testing.T) {
 	require.Equal(t, []string{"a-t1", "a-t2", "b-1", "b-2"}, q(`{app=~"a|b"} | trace_id=~"t1|t2"`))
 	require.Equal(t, []string{"a-t1"}, q(`{app="a"} | trace_id="t1"`))
 	require.Equal(t, []string{"a-t1", "a-t2"}, q(`{app="a"} | trace_id=~".+"`))
+	require.Equal(t, []string{"c-y"}, q(`{app="c"} | level_extracted="y"`))
 }
 
 func TestMetadataFilter_UsesIndex(t *testing.T) {
@@ -166,6 +174,7 @@ func TestParsedFilterSQL(t *testing.T) {
 		{"not equal", `{app="a"} | json | level!="error"`, a, "", nil},
 		{"reserved name", `{app="a"} | json | __error__="JSONParserErr"`, a, "", nil},
 		{"stream label of the same name", `{app="a"} | json | level="error"`, streamsOf(`{app="a", level="x"}`), "", nil},
+		{"renamed on a clash with a stream label", `{app="a"} | json | level_extracted="error"`, streamsOf(`{app="a", level="x"}`), "", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := chstore.ParsedFilterSQL(parseSel(t, tc.query), tc.streams)
