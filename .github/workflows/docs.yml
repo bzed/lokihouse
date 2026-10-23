@@ -10,6 +10,8 @@
 # Needs, once: Settings > Pages > Source: "GitHub Actions", the secret
 # APT_GPG_PRIVATE_KEY (docs/development.md, "The apt repository and its key"), and
 # a deployment rule on the github-pages environment that allows main and v* tags.
+# The optional secret GOOGLE_SITE_VERIFICATION (the verification file's name) makes the
+# deploy job add that file to the site root; it is not kept in the repository.
 #
 # Site URL: https://bzed.github.io/lokihouse/
 
@@ -28,6 +30,8 @@ on:
     secrets:
       APT_GPG_PRIVATE_KEY:
         required: true
+      GOOGLE_SITE_VERIFICATION:
+        required: false
 
 permissions:
   contents: read
@@ -131,6 +135,14 @@ jobs:
         with:
           name: apt-repo
           path: site/apt
+      - name: Search console verification file
+        env:
+          GOOGLE_SITE_VERIFICATION: ${{ secrets.GOOGLE_SITE_VERIFICATION }}
+        run: |
+          [ -n "$GOOGLE_SITE_VERIFICATION" ] || exit 0
+          # the value becomes a file name: accept nothing but google<hex>.html
+          printf '%s' "$GOOGLE_SITE_VERIFICATION" | grep -Eq '^google[0-9a-f]+\.html$' || { echo "GOOGLE_SITE_VERIFICATION is not a google<hex>.html file name" >&2; exit 1; }
+          printf 'google-site-verification: %s\n' "$GOOGLE_SITE_VERIFICATION" > "site/$GOOGLE_SITE_VERIFICATION"
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

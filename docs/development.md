@@ -24,6 +24,9 @@ Release steps (maintainer):
 One-time repository settings (maintainer, not the implementer): Settings →
 Pages → Source "GitHub Actions"; the `github-pages` environment must allow
 deployments from `main` and from `v*` tags; the secret `APT_GPG_PRIVATE_KEY`;
+the optional secret `GOOGLE_SITE_VERIFICATION` (the file name Google Search Console
+gives, `google<hex>.html`; `docs.yml` writes that file to the site root, it is not in
+the repository);
 branch protection requiring `checks`, `test`, `build`, `docs`, `deb` and the
 `docker` image job.
 
