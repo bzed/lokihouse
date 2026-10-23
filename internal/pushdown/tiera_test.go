@@ -3,6 +3,7 @@ package pushdown
 import (
 	"context"
 	"flag"
+	"fmt"
 	"testing"
 	"time"
 
@@ -126,9 +127,15 @@ func TestTierA_Filters(t *testing.T) {
 		{Labels: `{app="a"}`, Entries: es},
 	}))
 	start, end := base, base.Add(2*time.Minute)
-	q := `count_over_time({app="a"} |= "a" != "b" or "c" |~ "x[0-9]+" [1m])`
-	want, got := runTierA(t, conn, q, start, end, 30*time.Second)
-	require.Equal(t, want, got, q)
+	for _, q := range []string{
+		`count_over_time({app="a"} |= "a" != "b" or "c" |~ "x[0-9]+" [1m])`,
+		`bytes_over_time({app="a"}[1m])`,
+		`bytes_rate({app="a"}[1m])`,
+		`bytes_over_time({app="a"} |= "c" [1m])`,
+	} {
+		want, got := runTierA(t, conn, q, start, end, 30*time.Second)
+		require.Equal(t, want, got, q)
+	}
 }
 
 func TestTierA_Ineligible(t *testing.T) {
@@ -306,4 +313,112 @@ func TestTierA_TooManyBucketsFallsBackToTierB(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, want.Data, got.Data)
 	require.Equal(t, before, TierALeaves.Load(), "fallback is not a Tier A execution")
+}
+
+func seedSumByData(t *testing.T, conn driver.Conn, base time.Time) {
+	t.Helper()
+	w := &chstore.Writer{Conn: conn}
+	var plain, withLevel []logproto.Entry
+	for i := 0; i < 12; i++ {
+		lvl := []string{"info", "warn"}[i%2]
+		md := []logproto.LabelAdapter{{Name: "level", Value: lvl}, {Name: "trace_id", Value: fmt.Sprintf("tr%d", i)}}
+		plain = append(plain, logproto.Entry{Timestamp: base.Add(time.Duration(i) * 3 * time.Second), Line: fmt.Sprintf("x %d", i), StructuredMetadata: md})
+		withLevel = append(withLevel, logproto.Entry{Timestamp: base.Add(time.Duration(i)*3*time.Second + time.Second), Line: fmt.Sprintf("y %d", i), StructuredMetadata: md[1:]})
+	}
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="a"}`, Entries: plain},
+		{Labels: `{app="a", level="s"}`, Entries: withLevel},
+	}))
+}
+
+var sumByQueries = []string{
+	`sum by (level) (count_over_time({app="a"}[1m]))`,
+	`sum(rate({app="a"}[1m]))`,
+	`sum by (level_extracted) (count_over_time({app="a"}[1m]))`,
+	`sum by (app, level) (bytes_over_time({app="a"} |= "x" [1m]))`,
+	`sum without (trace_id) (count_over_time({app="a"}[1m]))`,
+	`count by (level) (count_over_time({app="a"}[1m]))`,
+}
+
+func TestTierA_SumByNarrowsMetadata(t *testing.T) {
+	conn, _ := chtest.New(t)
+	base := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
+	seedSumByData(t, conn, base)
+	for _, q := range sumByQueries {
+		before := TierALeaves.Load()
+		want, got := runTierA(t, conn, q, base, base.Add(time.Minute), 15*time.Second)
+		require.NotEmpty(t, want, q)
+		requireMatrixClose(t, want, got, q)
+		require.Equal(t, before+1, TierALeaves.Load(), "one Tier A leaf: %s", q)
+	}
+
+	// The leaf returns un-summed series without the unneeded trace_id.
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	overrides, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+	a := &TierA{Conn: conn, Limits: overrides}
+	expr, err := syntax.ParseSampleExpr(sumByQueries[0])
+	require.NoError(t, err)
+	require.True(t, a.Eligible(expr))
+	p, err := logql.NewLiteralParams(sumByQueries[0], base, base.Add(time.Minute), 15*time.Second, 0, logproto.FORWARD, 0, nil, nil)
+	require.NoError(t, err)
+	res, err := a.Exec(user.InjectOrgID(context.Background(), "t1"), expr, p)
+	require.NoError(t, err)
+	m, ok := res.Data.(promql.Matrix)
+	require.True(t, ok)
+	require.NotEmpty(t, m)
+	for _, s := range m {
+		require.False(t, s.Metric.Has("trace_id"), s.Metric.String())
+	}
+}
+
+func TestTierA_SumLeafFallback(t *testing.T) {
+	conn, _ := chtest.New(t)
+	base := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
+	seedSumByData(t, conn, base)
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	overrides, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+	del := fakeDeletes{{Query: `{app="a"} |= "y 3"`, StartTime: model.TimeFromUnixNano(base.UnixNano()),
+		EndTime: model.TimeFromUnixNano(base.Add(time.Minute).UnixNano()), Status: deletionproto.StatusReceived}}
+	for name, a := range map[string]*TierA{
+		"pending delete": {Conn: conn, Limits: overrides, Deletes: del},
+		"max buckets":    {Conn: conn, Limits: overrides, MaxBuckets: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			b := logql.NewEngine(logql.EngineOpts{}, &chstore.Querier{Conn: conn, Deletes: del}, overrides, nopLogger{})
+			e := &Engine{Mode: ModeOn, TierB: b, TierA: a, Limits: overrides, Logger: nopLogger{}}
+			p, err := logql.NewLiteralParams(sumByQueries[0], base, base.Add(time.Minute), 15*time.Second, 0, logproto.FORWARD, 0, nil, nil)
+			require.NoError(t, err)
+			ctx := user.InjectOrgID(context.Background(), "t1")
+			want, err := b.Query(p).Exec(ctx)
+			require.NoError(t, err)
+			before := TierALeaves.Load()
+			got, err := e.Query(ctx, p).Exec(ctx)
+			require.NoError(t, err)
+			requireMatrixClose(t, want.Data, got.Data, name)
+			require.Equal(t, before, TierALeaves.Load())
+		})
+	}
+}
+
+// requireMatrixClose compares two matrices, allowing the last-bits float
+// differences from summing in another order (see Map).
+func requireMatrixClose(t *testing.T, want, got any, msg string) {
+	t.Helper()
+	w, ok := want.(promql.Matrix)
+	require.True(t, ok, msg)
+	g, ok := got.(promql.Matrix)
+	require.True(t, ok, msg)
+	require.Len(t, g, len(w), msg)
+	for i := range w {
+		require.Equal(t, w[i].Metric, g[i].Metric, msg)
+		require.Len(t, g[i].Floats, len(w[i].Floats), msg)
+		for j := range w[i].Floats {
+			require.Equal(t, w[i].Floats[j].T, g[i].Floats[j].T, msg)
+			require.InEpsilon(t, w[i].Floats[j].F, g[i].Floats[j].F, 1e-9, msg)
+		}
+	}
 }

@@ -88,7 +88,7 @@ func TestManyStreams_AllPathsWork(t *testing.T) {
 	})
 
 	t.Run("BucketCounts", func(t *testing.T) {
-		rows, err := chstore.BucketCounts(context.Background(), conn, "t1", ids, t0.Add(-time.Minute).UnixNano(), t0.Add(time.Minute).UnixNano(), int64(time.Minute), chstore.Fragment{})
+		rows, err := chstore.BucketCounts(context.Background(), conn, "t1", ids, t0.Add(-time.Minute).UnixNano(), t0.Add(time.Minute).UnixNano(), int64(time.Minute), chstore.Fragment{}, chstore.BucketOpts{Bytes: true, AllMD: true})
 		require.NoError(t, err)
 		var total uint64
 		for _, r := range rows {
@@ -142,7 +142,7 @@ func TestStreamSet_EmptyIsNoQuery(t *testing.T) {
 	h, err := chstore.HourlyStats(ctx, conn, "t1", nil, t0, t0.Add(time.Hour))
 	require.NoError(t, err)
 	require.Nil(t, h)
-	b, err := chstore.BucketCounts(ctx, conn, "t1", nil, 0, 1, 1, chstore.Fragment{})
+	b, err := chstore.BucketCounts(ctx, conn, "t1", nil, 0, 1, 1, chstore.Fragment{}, chstore.BucketOpts{})
 	require.NoError(t, err)
 	require.Nil(t, b)
 }

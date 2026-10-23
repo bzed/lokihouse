@@ -32,10 +32,10 @@ var TierALeaves atomic.Int64
 // runs on Tier B.
 var ErrFallback = errors.New("pushdown: leaf falls back to Tier B")
 
-// Leaf executes one range-aggregation leaf in SQL.
+// Leaf executes one leaf in SQL: a range aggregation or a sum over one (see Map).
 type Leaf interface {
-	Eligible(e *syntax.RangeAggregationExpr) bool
-	Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logql.Params) (logqlmodel.Result, error)
+	Eligible(e syntax.SampleExpr) bool
+	Exec(ctx context.Context, e syntax.SampleExpr, p logql.Params) (logqlmodel.Result, error)
 }
 
 // Engine routes a query to the plain Tier B engine or to Loki's downstream engine
@@ -78,7 +78,7 @@ func (e *Engine) Query(ctx context.Context, p logql.Params) logql.Query {
 	return down.Query(ctx, logql.ParamsWithExpressionOverride{Params: p, ExpressionOverride: mapped})
 }
 
-func (e *Engine) anyEligible(leaves []*syntax.RangeAggregationExpr) bool {
+func (e *Engine) anyEligible(leaves []syntax.SampleExpr) bool {
 	if e.TierA == nil {
 		return false
 	}
@@ -122,13 +122,11 @@ func (d *downstreamer) Downstream(ctx context.Context, queries []logql.Downstrea
 // execOne executes one downstream query: the Tier A leaf when eligible, Tier B otherwise.
 func (e *Engine) execOne(ctx context.Context, q logql.DownstreamQuery) (logqlmodel.Result, error) {
 	if e.Mode == ModeOn && e.TierA != nil {
-		if leaf, ok := q.Params.GetExpression().(*syntax.RangeAggregationExpr); ok {
-			if e.TierA.Eligible(leaf) {
-				res, err := e.TierA.Exec(ctx, leaf, q.Params)
-				if !errors.Is(err, ErrFallback) {
-					TierALeaves.Add(1)
-					return res, err
-				}
+		if leaf, ok := q.Params.GetExpression().(syntax.SampleExpr); ok && e.TierA.Eligible(leaf) {
+			res, err := e.TierA.Exec(ctx, leaf, q.Params)
+			if !errors.Is(err, ErrFallback) {
+				TierALeaves.Add(1)
+				return res, err
 			}
 		}
 	}
