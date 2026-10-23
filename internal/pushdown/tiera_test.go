@@ -126,9 +126,15 @@ func TestTierA_Filters(t *testing.T) {
 		{Labels: `{app="a"}`, Entries: es},
 	}))
 	start, end := base, base.Add(2*time.Minute)
-	q := `count_over_time({app="a"} |= "a" != "b" or "c" |~ "x[0-9]+" [1m])`
-	want, got := runTierA(t, conn, q, start, end, 30*time.Second)
-	require.Equal(t, want, got, q)
+	for _, q := range []string{
+		`count_over_time({app="a"} |= "a" != "b" or "c" |~ "x[0-9]+" [1m])`,
+		`bytes_over_time({app="a"}[1m])`,
+		`bytes_rate({app="a"}[1m])`,
+		`bytes_over_time({app="a"} |= "c" [1m])`,
+	} {
+		want, got := runTierA(t, conn, q, start, end, 30*time.Second)
+		require.Equal(t, want, got, q)
+	}
 }
 
 func TestTierA_Ineligible(t *testing.T) {

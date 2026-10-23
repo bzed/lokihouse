@@ -116,7 +116,10 @@ func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logq
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
-	rows, err := chstore.BucketCounts(ctx, a.Conn, tenantID, ids, origin, E, g, filter)
+	rows, err := chstore.BucketCounts(ctx, a.Conn, tenantID, ids, origin, E, g, filter, chstore.BucketOpts{
+		Bytes: e.Operation == syntax.OpRangeTypeBytes || e.Operation == syntax.OpRangeTypeBytesRate,
+		AllMD: true,
+	})
 	if err != nil {
 		return logqlmodel.Result{}, err
 	}
