@@ -70,7 +70,7 @@ func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req 
 	}
 	return resolved{
 		byID: byID, ids: ids, from: req.GetStart(), until: req.GetEnd(),
-		rq: rowQuery{tenant: tenantID, filter: and([]Fragment{LeadingLineFilterSQL(sel), MetadataFilterSQL(sel, streams)}), dir: dir},
+		rq: rowQuery{tenant: tenantID, filter: and([]Fragment{LeadingLineFilterSQL(sel), MetadataFilterSQL(sel, streams), ParsedFilterSQL(sel, streams)}), dir: dir},
 	}, nil
 }
 

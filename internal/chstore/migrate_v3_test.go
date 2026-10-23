@@ -87,3 +87,17 @@ func TestMigrateSchema_Idempotent(t *testing.T) {
 	require.NoError(t, chstore.MigrateSchema(ctx, conn, db, topo, log.NewNopLogger()))
 	require.NoError(t, chstore.MigrateSchema(ctx, conn, db, topo, log.NewNopLogger()))
 }
+
+// Rows stored before the migration are not back-filled, but ClickHouse computes a
+// materialized column that a part lacks when it is read: the escape flag is right for them.
+func TestMigrateSchema_OldRowsHaveTheFlag(t *testing.T) {
+	conn, db := chtest.NewV2(t)
+	topo := chtest.Topology()
+	ctx := context.Background()
+	w := &chstore.Writer{Conn: conn}
+	line := string(rune(92)) + "u0065rror"
+	require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{app="s1"}`, Entries: []logproto.Entry{{Timestamp: chtest.V2Day.Add(time.Hour), Line: line}}}}))
+
+	require.NoError(t, chstore.MigrateSchema(ctx, conn, db, topo, log.NewNopLogger()))
+	require.Equal(t, []string{line}, queryStrings(t, conn, "SELECT line FROM logs WHERE line_ascii_escape"))
+}
