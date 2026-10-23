@@ -56,6 +56,14 @@ func TestStreamMatcherSQL(t *testing.T) {
 	require.Equal(t, "labels[?] = ? AND labels[?] != ?", f.SQL)
 	require.Equal(t, []any{"app", "a", "env", "prod"}, f.Args)
 	require.Len(t, goSide, 2)
+
+	// Exact regexes are also evaluated in SQL; Go keeps re-checking all of them.
+	ms, err = syntax.ParseMatchers(`{a=~"x|y", b!~"z|w", c=~"q.*"}`, true)
+	require.NoError(t, err)
+	f, goSide = StreamMatcherSQL(ms)
+	require.Equal(t, "match(labels[?], ?) AND NOT match(labels[?], ?)", f.SQL)
+	require.Equal(t, []any{"a", "^(?:x|y)$", "b", "^(?:z|w)$"}, f.Args)
+	require.Len(t, goSide, 3)
 }
 
 func TestLeadingLineFilterSQL(t *testing.T) {

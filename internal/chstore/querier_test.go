@@ -362,3 +362,39 @@ func TestSelectLogs_FoldCaseNotLost(t *testing.T) {
 		require.Equal(t, want, lines(res.Data.(logqlmodel.Streams)[0]), q)
 	}
 }
+
+// Regex stream matchers are evaluated in ClickHouse as well as in Go; the
+// result must be what Go-only matching gives (anchoring, missing labels = "").
+func TestResolveStreams_RegexSameAsGo(t *testing.T) {
+	conn, _ := chtest.New(t)
+	all := []string{`{app="a"}`, `{app="b"}`, `{app="ab"}`, `{other="x"}`}
+	var ss []logproto.Stream
+	for _, l := range all {
+		ss = append(ss, logproto.Stream{Labels: l, Entries: []logproto.Entry{{Timestamp: t0, Line: "x"}}})
+	}
+	seed(t, &chstore.Writer{Conn: conn}, "t1", ss...)
+	for _, q := range []string{`{app=~"a|b"}`, `{other=~".*", app!~"a|b"}`, `{app=~"a|ab", other!="x"}`} {
+		ms, err := syntax.ParseMatchers(q, false)
+		require.NoError(t, err)
+		got, err := chstore.ResolveStreams(context.Background(), conn, "t1", ms, t0.Add(-time.Hour), t0.Add(time.Hour))
+		require.NoError(t, err)
+		var gotL []string
+		for _, s := range got {
+			gotL = append(gotL, s.Labels.String())
+		}
+		var want []string
+		for _, l := range all {
+			ls, err := syntax.ParseLabels(l)
+			require.NoError(t, err)
+			ok := true
+			for _, m := range ms {
+				ok = ok && m.Matches(ls.Get(m.Name))
+			}
+			if ok {
+				want = append(want, ls.String())
+			}
+		}
+		require.ElementsMatch(t, want, gotL, q)
+		require.NotEmpty(t, want, q)
+	}
+}

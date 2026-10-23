@@ -33,7 +33,8 @@ func and(parts []Fragment) Fragment {
 	return out
 }
 
-// StreamMatcherSQL turns equality matchers into SQL over streams.labels; regex matchers stay in Go.
+// StreamMatcherSQL turns equality matchers, and regex matchers that pass RegexExact, into SQL over
+// streams.labels. Regex matchers are also returned: Go re-checks them.
 func StreamMatcherSQL(ms []*labels.Matcher) (Fragment, []*labels.Matcher) {
 	var parts []Fragment
 	var goSide []*labels.Matcher
@@ -43,6 +44,17 @@ func StreamMatcherSQL(ms []*labels.Matcher) (Fragment, []*labels.Matcher) {
 			parts = append(parts, Fragment{"labels[?] = ?", []any{m.Name, m.Value}})
 		case labels.MatchNotEqual:
 			parts = append(parts, Fragment{"labels[?] != ?", []any{m.Name, m.Value}})
+		case labels.MatchRegexp, labels.MatchNotRegexp:
+			// A necessary-and-exact subset of the matcher, anchored like Prometheus; Go
+			// re-checks it. An unset label reads as "" in both engines.
+			if RegexExact(m.Value) {
+				neg := ""
+				if m.Type == labels.MatchNotRegexp {
+					neg = "NOT "
+				}
+				parts = append(parts, Fragment{neg + "match(labels[?], ?)", []any{m.Name, "^(?:" + m.Value + ")$"}})
+			}
+			goSide = append(goSide, m)
 		default:
 			goSide = append(goSide, m)
 		}
