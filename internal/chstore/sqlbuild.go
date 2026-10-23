@@ -382,23 +382,23 @@ func exactLabelFilterSQL(lf log.LabelFilterer, names *[]string) (Fragment, bool)
 		}
 		return Fragment{SQL: "structured_metadata[?] = ?", Args: []any{m.Name, m.Value}}, true
 	}
-	switch lf := lf.(type) {
-	case *log.BinaryLabelFilter:
-		l, ok := exactLabelFilterSQL(lf.Left, names)
-		if !ok {
-			return Fragment{}, false
-		}
-		r, ok := exactLabelFilterSQL(lf.Right, names)
-		if !ok {
-			return Fragment{}, false
-		}
-		op := " OR "
-		if lf.And {
-			op = " AND "
-		}
-		return Fragment{SQL: "(" + l.SQL + op + r.SQL + ")", Args: append(l.Args, r.Args...)}, true
+	bf, ok := lf.(*log.BinaryLabelFilter)
+	if !ok {
+		return Fragment{}, false
 	}
-	return Fragment{}, false
+	l, ok := exactLabelFilterSQL(bf.Left, names)
+	if !ok {
+		return Fragment{}, false
+	}
+	r, ok := exactLabelFilterSQL(bf.Right, names)
+	if !ok {
+		return Fragment{}, false
+	}
+	op := " OR "
+	if bf.And {
+		op = " AND "
+	}
+	return Fragment{SQL: "(" + l.SQL + op + r.SQL + ")", Args: append(l.Args, r.Args...)}, true
 }
 
 // exactLineFilterSQL handles one LineFilterExpr node including its Or chain.
