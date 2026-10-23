@@ -180,22 +180,22 @@ func parsedLabelFilterSQL(lf log.LabelFilterer, streamLabels map[string]struct{}
 // logfmt encoders write unchanged. ok is false for a non-ASCII value (an encoder may
 // escape any of its characters).
 func verbatimRuns(v string) (runs []string, ok bool) {
-	start := -1
-	for i := 0; i <= len(v); i++ {
-		if i < len(v) && v[i] >= 0x80 {
+	start := 0
+	flush := func(end int) {
+		if end-start >= minRunLen {
+			runs = append(runs, v[start:end])
+		}
+	}
+	for i := range len(v) {
+		if v[i] >= 0x80 {
 			return nil, false
 		}
-		if i < len(v) && isVerbatim(v[i]) {
-			if start < 0 {
-				start = i
-			}
-			continue
+		if !isVerbatim(v[i]) {
+			flush(i)
+			start = i + 1
 		}
-		if start >= 0 && i-start >= minRunLen {
-			runs = append(runs, v[start:i])
-		}
-		start = -1
 	}
+	flush(len(v))
 	return runs, true
 }
 
