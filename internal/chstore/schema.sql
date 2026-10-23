@@ -7,7 +7,12 @@ CREATE TABLE IF NOT EXISTS {{.DBName}}.{{.Table "logs"}}{{with .OnCluster}} {{.}
   line                String CODEC(ZSTD(3)),
   structured_metadata Map(LowCardinality(String), String) CODEC(ZSTD(1)),
   entry_hash          UInt64 MATERIALIZED cityHash64(line, mapSort(structured_metadata)), -- Loki dedup identity
-  INDEX line_text line TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+  INDEX line_text line TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1,
+  -- True when the line hides an ASCII letter or digit behind a \u escape (see ParsedFilterSQL).
+  line_ascii_escape   Bool MATERIALIZED match(line, '\\\\u00(3[0-9]|4[1-9a-fA-F]|5[0-9aA]|6[1-9a-fA-F]|7[0-9aA])'),
+  INDEX sm_keys mapKeys(structured_metadata) TYPE text(tokenizer = 'array') GRANULARITY 1,
+  INDEX sm_vals mapValues(structured_metadata) TYPE text(tokenizer = 'array') GRANULARITY 1,
+  INDEX line_ascii_escape_idx line_ascii_escape TYPE minmax GRANULARITY 1
 ) ENGINE = {{.Engine "ReplacingMergeTree"}}
 PARTITION BY toDate(ts)
 ORDER BY (tenant, stream_id, ts, entry_hash);
