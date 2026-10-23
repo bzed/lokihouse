@@ -70,7 +70,7 @@ func TestLineASCIIEscapeFlag(t *testing.T) {
 		`{"l":"plain"}`,
 	}
 	var entries []logproto.Entry
-	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	base := chtest.BaseDay()
 	for i, l := range lines {
 		entries = append(entries, logproto.Entry{Timestamp: base.Add(time.Duration(i) * time.Second), Line: l})
 	}

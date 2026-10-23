@@ -29,10 +29,13 @@ type v1Data struct {
 
 func (d v1Data) DBName() string { return "`" + d.DB + "`" }
 
+// BaseDay is the UTC day fixtures start on: three days ago, so rows stay inside any
+// 7 day TTL (a fixed date would let ClickHouse expire them mid-test) and the day is
+// recent enough not to hit retention or partition edge cases.
+func BaseDay() time.Time { return time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -3) }
+
 // V1Day is the first UTC day of the rows NewV1 inserts; they span three days.
-// It is relative to today so the seeded rows stay inside the 7 day retention of the
-// version 1 TTL; a fixed date would let ClickHouse expire them mid-test.
-var V1Day = time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -3)
+var V1Day = BaseDay()
 
 // NewV1 creates a fresh database with the schema version 1 tables (a
 // retention_days column, a TTL, retention partitions) and seeds it for the

@@ -19,7 +19,7 @@ import (
 )
 
 // V2Day is the UTC day of the rows NewV2 inserts.
-var V2Day = time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+var V2Day = BaseDay()
 
 // NewV2 creates a fresh database with the schema version 2 tables (no
 // structured-metadata indexes, no line_ascii_escape column) and seeds it for
