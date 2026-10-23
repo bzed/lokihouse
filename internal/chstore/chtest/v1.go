@@ -30,7 +30,9 @@ type v1Data struct {
 func (d v1Data) DBName() string { return "`" + d.DB + "`" }
 
 // V1Day is the first UTC day of the rows NewV1 inserts; they span three days.
-var V1Day = time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+// It is relative to today so the seeded rows stay inside the 7 day retention of the
+// version 1 TTL; a fixed date would let ClickHouse expire them mid-test.
+var V1Day = time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -3)
 
 // NewV1 creates a fresh database with the schema version 1 tables (a
 // retention_days column, a TTL, retention partitions) and seeds it for the
