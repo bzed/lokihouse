@@ -6,6 +6,10 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- Queries whose selector matches more than about 13 000 streams no longer fail with `Max query size exceeded`.
+
 ## [0.10.0] - 2026-10-23
 
 ### Documentation

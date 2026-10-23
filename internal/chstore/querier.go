@@ -41,23 +41,27 @@ type rowSource interface {
 func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req interface {
 	GetStart() time.Time
 	GetEnd() time.Time
-}, dir logproto.Direction) (base string, args []any, byID map[uint64]Stream, err error) {
+}, dir logproto.Direction) (rctx context.Context, base string, args []any, byID map[uint64]Stream, err error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return "", nil, nil, err
+		return ctx, "", nil, nil, err
 	}
 	streams, err := ResolveStreams(ctx, q.Conn, tenantID, sel.Matchers(), req.GetStart(), req.GetEnd())
 	if err != nil || len(streams) == 0 {
-		return "", nil, nil, err
+		return ctx, "", nil, nil, err
+	}
+	ctx, err = withStreamIDs(ctx, sortedIDs(streams))
+	if err != nil {
+		return ctx, "", nil, nil, err
 	}
 	byID = make(map[uint64]Stream, len(streams))
 	for _, s := range streams {
 		byID[s.ID] = s
 	}
-	base = "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM logs WHERE tenant = ? AND stream_id IN ? AND ts >= fromUnixTimestamp64Nano(?, 'UTC') AND ts < fromUnixTimestamp64Nano(?, 'UTC')"
+	base = "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM logs WHERE tenant = ? AND " + streamIDsIn + " AND ts >= fromUnixTimestamp64Nano(?, 'UTC') AND ts < fromUnixTimestamp64Nano(?, 'UTC')"
 	// Bounds are bound as Unix nanoseconds: clickhouse-go formats a time.Time
 	// parameter at second precision.
-	args = []any{tenantID, sortedIDs(streams), req.GetStart().UnixNano(), req.GetEnd().UnixNano()}
+	args = []any{tenantID, req.GetStart().UnixNano(), req.GetEnd().UnixNano()}
 	if lf := LeadingLineFilterSQL(sel); !lf.Empty() {
 		base += " AND " + lf.SQL
 		args = append(args, lf.Args...)
@@ -68,7 +72,7 @@ func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req 
 	}
 	// The base includes the ORDER BY (before LIMIT): a continuation predicate is
 	// appended after the WHERE clause by the keyset reader.
-	return base + " ORDER BY " + order + ", stream_id ASC, entry_hash", args, byID, nil
+	return ctx, base + " ORDER BY " + order + ", stream_id ASC, entry_hash", args, byID, nil
 }
 
 // SelectLogs executes a log query and returns an iterator over the matching entries.
@@ -92,7 +96,7 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	if pipeline, err = utildeletion.SetupPipeline(p, pipeline); err != nil {
 		return nil, err
 	}
-	base, args, byID, err := q.openRows(ctx, sel, p.QueryRequest, p.Direction)
+	ctx, base, args, byID, err := q.openRows(ctx, sel, p.QueryRequest, p.Direction)
 	if err != nil || len(byID) == 0 {
 		return iter.NoopEntryIterator, err
 	}
@@ -176,7 +180,7 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	if err != nil {
 		return nil, err
 	}
-	base, args, byID, err := q.openRows(ctx, sel, p.SampleQueryRequest, logproto.FORWARD)
+	ctx, base, args, byID, err := q.openRows(ctx, sel, p.SampleQueryRequest, logproto.FORWARD)
 	if err != nil || len(byID) == 0 {
 		return iter.NoopSampleIterator, err
 	}

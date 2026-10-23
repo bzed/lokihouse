@@ -25,15 +25,22 @@ type BucketRow struct {
 // intDiv(toUnixTimestamp64Nano(ts) - origin + g - 1, g), so bucket j holds
 // (origin + (j-1)*g, origin + j*g].
 func BucketCounts(ctx context.Context, conn driver.Conn, tenant string, ids []uint64, origin, through, g int64, filter Fragment) ([]BucketRow, error) {
-	sql := "SELECT stream_id, structured_metadata, intDiv(toUnixTimestamp64Nano(ts) - ? + ? - 1, ?) AS bucket, count() AS n, sum(length(line)) AS bytes FROM logs FINAL WHERE tenant = ? AND stream_id IN ? AND ts > fromUnixTimestamp64Nano(?, 'UTC') AND ts <= fromUnixTimestamp64Nano(?, 'UTC')"
-	args := []any{origin, g, g, tenant, ids, origin, through}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	sql := "SELECT stream_id, structured_metadata, intDiv(toUnixTimestamp64Nano(ts) - ? + ? - 1, ?) AS bucket, count() AS n, sum(length(line)) AS bytes FROM logs FINAL WHERE tenant = ? AND " + streamIDsIn + " AND ts > fromUnixTimestamp64Nano(?, 'UTC') AND ts <= fromUnixTimestamp64Nano(?, 'UTC')"
+	args := []any{origin, g, g, tenant, origin, through}
 	if !filter.Empty() {
 		sql += " AND " + filter.SQL
 		args = append(args, filter.Args...)
 	}
 	sql += " GROUP BY stream_id, structured_metadata, bucket"
 	var out []BucketRow
-	rows, err := conn.Query(WithQueryStats(ctx), sql, args...)
+	ctx, err := withStreamIDs(WithQueryStats(ctx), ids)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := conn.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}

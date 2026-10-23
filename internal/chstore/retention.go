@@ -115,8 +115,12 @@ func DaysWithRows(ctx context.Context, conn driver.Conn, tenant string, ids []ui
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	rows, err := conn.Query(ctx, "SELECT DISTINCT toDate(ts) AS d FROM logs WHERE tenant = ? AND stream_id IN ? AND toDate(ts) <= toDate(?) ORDER BY d",
-		tenant, ids, upTo.UTC().Format(dayLayout))
+	ctx, err := withStreamIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("find expired days: %w", err)
+	}
+	rows, err := conn.Query(ctx, "SELECT DISTINCT toDate(ts) AS d FROM logs WHERE tenant = ? AND "+streamIDsIn+" AND toDate(ts) <= toDate(?) ORDER BY d",
+		tenant, upTo.UTC().Format(dayLayout))
 	if err != nil {
 		return nil, fmt.Errorf("find expired days: %w", err)
 	}

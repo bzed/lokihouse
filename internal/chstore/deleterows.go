@@ -30,10 +30,14 @@ func ScanRows(ctx context.Context, conn driver.Conn, tenant string, ids []uint64
 	if len(ids) == 0 {
 		return nil
 	}
+	ctx, err := withStreamIDs(ctx, ids)
+	if err != nil {
+		return err
+	}
 	rows, err := conn.Query(ctx, `SELECT stream_id, toUnixTimestamp64Nano(ts), entry_hash, line, structured_metadata
-FROM logs WHERE tenant = ? AND stream_id IN ?
+FROM logs WHERE tenant = ? AND `+streamIDsIn+`
   AND ts >= fromUnixTimestamp64Nano(?, 'UTC') AND ts <= fromUnixTimestamp64Nano(?, 'UTC')`,
-		tenant, ids, fromNs, throughNs)
+		tenant, fromNs, throughNs)
 	if err != nil {
 		return err
 	}

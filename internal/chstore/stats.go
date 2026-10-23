@@ -22,14 +22,21 @@ type HourStat struct {
 // HourlyStats returns the hourly buckets of the given streams that can overlap
 // [from, through]. Unmerged SimpleAggregateFunction rows are merged by the GROUP BY.
 func HourlyStats(ctx context.Context, conn driver.Conn, tenant string, ids []uint64, from, through time.Time) ([]HourStat, error) {
-	const q = `SELECT stream_id, sum(entries), sum(bytes),
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	q := `SELECT stream_id, sum(entries), sum(bytes),
        toUnixTimestamp64Nano(min(min_ts)), toUnixTimestamp64Nano(max(max_ts))
 FROM stream_stats_hourly
-WHERE tenant = ? AND stream_id IN ?
+WHERE tenant = ? AND ` + streamIDsIn + `
   AND hour >= toStartOfHour(fromUnixTimestamp64Nano(?, 'UTC'))
   AND hour <= fromUnixTimestamp64Nano(?, 'UTC')
 GROUP BY stream_id, hour`
-	rows, err := conn.Query(ctx, q, tenant, ids, from.UnixNano(), through.UnixNano())
+	ctx, err := withStreamIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := conn.Query(ctx, q, tenant, from.UnixNano(), through.UnixNano())
 	if err != nil {
 		return nil, err
 	}
