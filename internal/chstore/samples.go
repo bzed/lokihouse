@@ -10,7 +10,7 @@ import (
 // sampleIter turns the ts-ordered row cursor into samples one row at a time.
 // Loki's range-vector iterators only need samples in timestamp order; they group by Labels().
 type sampleIter struct {
-	rr        *rowReader
+	rr        rowSource
 	byID      map[uint64]Stream
 	extractor log.SampleExtractor
 	ex        map[uint64]log.StreamSampleExtractor

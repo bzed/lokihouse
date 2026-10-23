@@ -18,13 +18,11 @@ func chunkSize(limit uint32) int { return max(int(limit), logChunkSize) }
 // duplicates, so the strict key comparison at a chunk boundary dedups them.
 // It has the same shape as rowReader.
 type keysetReader struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	conn   driver.Conn
-	base   string // full SELECT ... WHERE (no ORDER/LIMIT)
-	args   []any
-	dir    logproto.Direction
-	chunk  int
+	ctx   context.Context
+	conn  driver.Conn
+	rq    rowQuery
+	w     window
+	chunk int
 
 	curRow row
 	err    error
@@ -42,7 +40,7 @@ func (k *keysetReader) continuation() (string, []any) {
 		return "", nil
 	}
 	last := k.continuationKey()
-	if k.dir == logproto.BACKWARD {
+	if k.rq.dir == logproto.BACKWARD {
 		return " AND (ts < fromUnixTimestamp64Nano(?, 'UTC') OR (ts = fromUnixTimestamp64Nano(?, 'UTC') AND (stream_id, entry_hash) > (?, ?)))",
 			[]any{last[0], last[0], last[1], last[2]}
 	}
@@ -51,8 +49,9 @@ func (k *keysetReader) continuation() (string, []any) {
 
 func (k *keysetReader) openChunk() bool {
 	cont, contArgs := k.continuation()
-	args := append(append(append([]any{}, k.args...), contArgs...), k.chunk)
-	sql := k.base + " LIMIT ?"
+	sql, args := k.rq.sql(k.w)
+	args = append(append(args, contArgs...), k.chunk)
+	sql += " LIMIT ?"
 	if cont != "" {
 		// Insert the continuation into the WHERE clause, before the ORDER BY.
 		idx := strings.Index(sql, " ORDER BY ")
@@ -104,9 +103,6 @@ func (k *keysetReader) continuationKey() []any {
 func (k *keysetReader) close() error {
 	if k.rr != nil {
 		_ = k.rr.close()
-	}
-	if k.cancel != nil {
-		k.cancel()
 	}
 	return nil
 }

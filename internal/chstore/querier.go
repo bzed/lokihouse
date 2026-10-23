@@ -24,6 +24,9 @@ type Querier struct {
 	// matching lines are hidden from log and sample results, as Loki's querier
 	// does. Nil = no deletes.
 	Deletes querierdeletion.DeleteGetter
+	// WindowRows is the target number of rows per read window; 0 means
+	// defaultWindowRows.
+	WindowRows uint64
 }
 
 var _ logql.Querier = (*Querier)(nil)
@@ -37,42 +40,48 @@ type rowSource interface {
 	close() error
 }
 
-// openRows resolves streams and builds the base WHERE clause for the selector.
+// resolved is the outcome of resolving a selector: the streams, the context
+// carrying their IDs as an external table, and the row query to render per window.
+type resolved struct {
+	ctx   context.Context
+	rq    rowQuery
+	byID  map[uint64]Stream
+	ids   []uint64
+	from  time.Time
+	until time.Time
+}
+
+// openRows resolves streams and builds the row query for the selector.
 func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req interface {
 	GetStart() time.Time
 	GetEnd() time.Time
-}, dir logproto.Direction) (rctx context.Context, base string, args []any, byID map[uint64]Stream, err error) {
+}, dir logproto.Direction) (resolved, error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return ctx, "", nil, nil, err
+		return resolved{}, err
 	}
 	streams, err := ResolveStreams(ctx, q.Conn, tenantID, sel.Matchers(), req.GetStart(), req.GetEnd())
 	if err != nil || len(streams) == 0 {
-		return ctx, "", nil, nil, err
+		return resolved{}, err
 	}
-	ctx, err = withStreamIDs(ctx, sortedIDs(streams))
+	ids := sortedIDs(streams)
+	ctx, err = withStreamIDs(ctx, ids)
 	if err != nil {
-		return ctx, "", nil, nil, err
+		return resolved{}, err
 	}
-	byID = make(map[uint64]Stream, len(streams))
+	byID := make(map[uint64]Stream, len(streams))
 	for _, s := range streams {
 		byID[s.ID] = s
 	}
-	base = "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM logs WHERE tenant = ? AND " + streamIDsIn + " AND ts >= fromUnixTimestamp64Nano(?, 'UTC') AND ts < fromUnixTimestamp64Nano(?, 'UTC')"
-	// Bounds are bound as Unix nanoseconds: clickhouse-go formats a time.Time
-	// parameter at second precision.
-	args = []any{tenantID, req.GetStart().UnixNano(), req.GetEnd().UnixNano()}
-	if lf := LeadingLineFilterSQL(sel); !lf.Empty() {
-		base += " AND " + lf.SQL
-		args = append(args, lf.Args...)
-	}
-	order := "ts ASC"
-	if dir == logproto.BACKWARD {
-		order = "ts DESC"
-	}
-	// The base includes the ORDER BY (before LIMIT): a continuation predicate is
-	// appended after the WHERE clause by the keyset reader.
-	return ctx, base + " ORDER BY " + order + ", stream_id ASC, entry_hash", args, byID, nil
+	return resolved{
+		ctx: ctx, byID: byID, ids: ids, from: req.GetStart(), until: req.GetEnd(),
+		rq: rowQuery{tenant: tenantID, filter: LeadingLineFilterSQL(sel), dir: dir},
+	}, nil
+}
+
+// readWindows renders the read windows of a resolved query.
+func (q *Querier) readWindows(r resolved) ([]window, error) {
+	return q.windows(r.ctx, r.rq.tenant, r.ids, r.from, r.until, r.rq.dir)
 }
 
 // SelectLogs executes a log query and returns an iterator over the matching entries.
@@ -96,17 +105,20 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	if pipeline, err = utildeletion.SetupPipeline(p, pipeline); err != nil {
 		return nil, err
 	}
-	ctx, base, args, byID, err := q.openRows(ctx, sel, p.QueryRequest, p.Direction)
-	if err != nil || len(byID) == 0 {
+	r, err := q.openRows(ctx, sel, p.QueryRequest, p.Direction)
+	if err != nil || len(r.byID) == 0 {
 		return iter.NoopEntryIterator, err
 	}
-	k := &keysetReader{
-		ctx: ctx, conn: q.Conn, base: base, args: args,
-		dir: p.Direction, chunk: chunkSize(p.Limit),
+	ws, err := q.readWindows(r)
+	if err != nil {
+		return iter.NoopEntryIterator, err
 	}
-	// cancel the keyset reader with the request context so a cancelled query stops the read
-	k.ctx, k.cancel = context.WithCancel(ctx)
-	return &entryIter{rr: k, byID: byID, pipeline: pipeline, sp: map[uint64]log.StreamPipeline{}, stats: stats.FromContext(ctx)}, nil
+	// cancel the readers with the request context so a cancelled query stops the read
+	rctx, cancel := context.WithCancel(r.ctx)
+	wr := &windowReader{ws: ws, cancel: cancel, open: func(w window) (rowSource, error) {
+		return &keysetReader{ctx: rctx, conn: q.Conn, rq: r.rq, w: w, chunk: chunkSize(p.Limit)}, nil
+	}}
+	return &entryIter{rr: wr, byID: r.byID, pipeline: pipeline, sp: map[uint64]log.StreamPipeline{}, stats: stats.FromContext(ctx)}, nil
 }
 
 type entryIter struct {
@@ -180,14 +192,18 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	if err != nil {
 		return nil, err
 	}
-	ctx, base, args, byID, err := q.openRows(ctx, sel, p.SampleQueryRequest, logproto.FORWARD)
-	if err != nil || len(byID) == 0 {
+	r, err := q.openRows(ctx, sel, p.SampleQueryRequest, logproto.FORWARD)
+	if err != nil || len(r.byID) == 0 {
 		return iter.NoopSampleIterator, err
 	}
-	// Metric queries read everything anyway: a single unchunked cursor.
-	rr, err := openCursor(ctx, q.Conn, base, args...)
+	ws, err := q.readWindows(r)
 	if err != nil {
 		return iter.NoopSampleIterator, err
 	}
-	return &sampleIter{rr: rr, byID: byID, extractor: extractor, ex: map[uint64]log.StreamSampleExtractor{}, stats: stats.FromContext(ctx)}, nil
+	// Metric queries read everything anyway: one unchunked cursor per window.
+	wr := &windowReader{ws: ws, open: func(w window) (rowSource, error) {
+		sql, args := r.rq.sql(w)
+		return openCursor(r.ctx, q.Conn, sql, args...)
+	}}
+	return &sampleIter{rr: wr, byID: r.byID, extractor: extractor, ex: map[uint64]log.StreamSampleExtractor{}, stats: stats.FromContext(ctx)}, nil
 }

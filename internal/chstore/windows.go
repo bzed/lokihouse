@@ -1,8 +1,11 @@
 package chstore
 
 import (
+	"context"
+	"fmt"
 	"slices"
 	"sort"
+	"time"
 
 	"github.com/grafana/loki/v3/pkg/logproto"
 )
@@ -66,4 +69,98 @@ func planWindows(hours []HourStat, from, through int64, target uint64, dir logpr
 		slices.Reverse(ws)
 	}
 	return ws
+}
+
+// rowQuery renders the row SELECT of one read window.
+type rowQuery struct {
+	tenant string
+	filter Fragment
+	dir    logproto.Direction
+}
+
+// sql renders the query for w, without LIMIT. The ORDER BY comes last: the
+// keyset reader inserts its continuation predicate before it. Bounds are bound
+// as Unix nanoseconds: clickhouse-go formats a time.Time parameter at second
+// precision.
+func (q rowQuery) sql(w window) (string, []any) {
+	s := "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM logs WHERE tenant = ? AND " + streamIDsIn +
+		" AND ts >= fromUnixTimestamp64Nano(?, 'UTC') AND ts < fromUnixTimestamp64Nano(?, 'UTC')"
+	args := []any{q.tenant, w.lo, w.hi}
+	if !q.filter.Empty() {
+		s += " AND " + q.filter.SQL
+		args = append(args, q.filter.Args...)
+	}
+	order := "ts ASC"
+	if q.dir == logproto.BACKWARD {
+		order = "ts DESC"
+	}
+	return s + " ORDER BY " + order + ", stream_id ASC, entry_hash", args
+}
+
+// windows returns the read windows of [from, through): one for ranges of at
+// most an hour, otherwise planned from the hourly stream stats.
+func (q *Querier) windows(ctx context.Context, tenant string, ids []uint64, from, through time.Time, dir logproto.Direction) ([]window, error) {
+	lo, hi := from.UnixNano(), through.UnixNano()
+	if hi-lo <= hourNs {
+		return []window{{lo, hi}}, nil
+	}
+	hours, err := HourlyStats(ctx, q.Conn, tenant, ids, from, through)
+	if err != nil {
+		return nil, fmt.Errorf("plan read windows: %w", err)
+	}
+	target := q.WindowRows
+	if target == 0 {
+		target = defaultWindowRows
+	}
+	return planWindows(hours, lo, hi, target, dir), nil
+}
+
+// windowReader is a rowSource reading one window at a time, in query
+// direction. It opens a window only when the previous one is exhausted and
+// closes each before opening the next.
+type windowReader struct {
+	ws     []window
+	open   func(window) (rowSource, error)
+	cancel context.CancelFunc // optional, called on close
+	opened int
+	cursor rowSource
+	err    error
+}
+
+func (r *windowReader) next() bool {
+	for r.err == nil {
+		if r.cursor == nil {
+			if r.opened >= len(r.ws) {
+				return false
+			}
+			c, err := r.open(r.ws[r.opened])
+			r.opened++
+			if err != nil {
+				r.err = err
+				return false
+			}
+			r.cursor = c
+		}
+		if r.cursor.next() {
+			return true
+		}
+		r.err = r.cursor.errOf()
+		_ = r.cursor.close() // close error is not actionable after the window ended
+		r.cursor = nil
+	}
+	return false
+}
+
+func (r *windowReader) cur() row     { return r.cursor.cur() }
+func (r *windowReader) errOf() error { return r.err }
+
+func (r *windowReader) close() error {
+	if r.cursor != nil {
+		_ = r.cursor.close() // best effort: the caller is abandoning the read
+		r.cursor = nil
+	}
+	if r.cancel != nil {
+		r.cancel()
+	}
+	return nil
 }
