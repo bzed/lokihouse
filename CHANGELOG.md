@@ -6,6 +6,8 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-23
+
 ### Added
 
 - Schema version 3: text indexes on structured-metadata keys and values (`sm_keys`, `sm_vals`) and the `line_ascii_escape` column.

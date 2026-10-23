@@ -1,3 +1,14 @@
+lokihouse (0.11.0) trixie; urgency=medium
+
+  * Schema version 3: run lokihouse -schema.migrate once (all instances
+    stopped) after upgrading; it only adds columns and indexes to logs,
+    no data copy.
+  * Query path: stream-ID sets of any size, time-windowed reads, Tier A
+    aggregation pushdown, structured-metadata and parsed label-filter
+    pushdown (see CHANGELOG.md).
+
+ -- Bernd Zeimetz <bernd@bzed.de>  Sat, 24 Oct 2026 01:52:40 +0200
+
 lokihouse (0.10.0) trixie; urgency=medium
 
   * Documentation: running -schema.migrate with systemd credentials
