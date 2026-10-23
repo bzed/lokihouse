@@ -9,6 +9,7 @@ changelog (`debian/changelog`) carries the same releases.
 ### Documentation
 
 - `-schema.migrate` with the ClickHouse password in a systemd credential: run it with `systemd-run -p ImportCredential='lokihouse.*'` (install guide, manual page, README.Debian).
+- New "ClickHouse user and grants" section: the privileges lokihouse and `-schema.migrate` need, on a single server and on a cluster.
 
 ## [0.9.0] - 2026-10-23
 
