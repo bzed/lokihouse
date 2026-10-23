@@ -67,3 +67,9 @@ func TestPlanWindows_Invariants(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanWindows_ZeroTargetUsesDefault(t *testing.T) {
+	ws := planWindows([]HourStat{hs(0, 2*defaultWindowRows)}, 0, 2*hr, 0, logproto.FORWARD)
+	require.NotEmpty(t, ws)
+	require.Equal(t, window{0, 2 * hr}, window{ws[0].lo, ws[len(ws)-1].hi})
+}

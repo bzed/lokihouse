@@ -38,6 +38,9 @@ func planWindows(hours []HourStat, from, through int64, target uint64, dir logpr
 	}
 	sort.Slice(starts, func(i, j int) bool { return starts[i] < starts[j] })
 
+	if target == 0 {
+		target = defaultWindowRows
+	}
 	var ws []window
 	lo, acc := from, uint64(0)
 	for _, s := range starts {
@@ -108,11 +111,7 @@ func (q *Querier) windows(ctx context.Context, tenant string, ids []uint64, from
 	if err != nil {
 		return nil, fmt.Errorf("plan read windows: %w", err)
 	}
-	target := q.WindowRows
-	if target == 0 {
-		target = defaultWindowRows
-	}
-	return planWindows(hours, lo, hi, target, dir), nil
+	return planWindows(hours, lo, hi, q.WindowRows, dir), nil
 }
 
 // windowReader is a rowSource reading one window at a time, in query

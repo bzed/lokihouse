@@ -323,7 +323,7 @@ func seedSumByData(t *testing.T, conn driver.Conn, base time.Time) {
 		lvl := []string{"info", "warn"}[i%2]
 		md := []logproto.LabelAdapter{{Name: "level", Value: lvl}, {Name: "trace_id", Value: fmt.Sprintf("tr%d", i)}}
 		plain = append(plain, logproto.Entry{Timestamp: base.Add(time.Duration(i) * 3 * time.Second), Line: fmt.Sprintf("x %d", i), StructuredMetadata: md})
-		withLevel = append(withLevel, logproto.Entry{Timestamp: base.Add(time.Duration(i)*3*time.Second + time.Second), Line: fmt.Sprintf("y %d", i), StructuredMetadata: md[1:]})
+		withLevel = append(withLevel, logproto.Entry{Timestamp: base.Add(time.Duration(i)*3*time.Second + time.Second), Line: fmt.Sprintf("y %d", i), StructuredMetadata: md})
 	}
 	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
 		{Labels: `{app="a"}`, Entries: plain},
