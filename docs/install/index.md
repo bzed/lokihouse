@@ -346,6 +346,10 @@ migration. Migrate once:
     (`-config.expand-env` is needed in both forms: it expands the
     `${CREDENTIALS_DIRECTORY}` in the configuration.)
 
+    The ClickHouse user needs more rights for the migration than for normal
+    operation (`DROP TABLE`, `SELECT` on `system.disks`); see
+    [ClickHouse user and grants](../reference/configuration.md#clickhouse-user-and-grants).
+
     It copies each table, so ClickHouse needs free disk space for a copy of the
     largest table; the migration refuses to start with less. It can be run
     again after a crash.
@@ -374,3 +378,7 @@ the rows are on a majority of replicas. Full cluster setup (Keeper,
 [ClickHouse documentation](https://clickhouse.com/docs/en/enables/high-availability/overview)
 and the [configuration reference](../reference/configuration.md#clickhouse)
 for the lokihouse-side keys.
+
+On a cluster the ClickHouse user needs a few extra grants (`CLUSTER`, `REMOTE`,
+`TABLE ENGINE ON Distributed`); see
+[ClickHouse user and grants](../reference/configuration.md#clickhouse-user-and-grants).

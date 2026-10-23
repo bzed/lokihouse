@@ -90,6 +90,62 @@ The container image's built-in config maps `LOKIHOUSE_CLICKHOUSE_PASSWORD` to
 [Container image](../install/index.md#container-image). Outside the image,
 use `${VAR}` in your config together with `-config.expand-env`.
 
+### ClickHouse user and grants
+
+lokihouse does not need the `default` user. Create a dedicated user and grant it
+only what it uses (tested with ClickHouse 26.9). Replace the database name if
+`clickhouse.database` is not `lokihouse`, and use your own password:
+
+```sql
+CREATE USER lokihouse IDENTIFIED BY '...';
+
+-- Everything lokihouse reads, writes and maintains lives in its own database.
+GRANT SELECT, INSERT, ALTER DELETE,
+      CREATE DATABASE, CREATE TABLE, CREATE VIEW
+  ON lokihouse.* TO lokihouse;
+
+-- Retention reads the parts of the tables to find the days to drop.
+GRANT SELECT ON system.parts TO lokihouse;
+```
+
+| Grant | Used for |
+| --- | --- |
+| `SELECT`, `INSERT` on the database | Queries, pushes, the statistics view. |
+| `ALTER DELETE` | The delete API, the retention sweeper (lightweight `DELETE`, `DROP PARTITION`, `APPLY DELETED MASK`). |
+| `CREATE DATABASE`, `CREATE TABLE`, `CREATE VIEW` | Every start runs `CREATE ... IF NOT EXISTS` for the database, the tables and the statistics view. ClickHouse checks the grant even when the object exists, so it cannot be left out. |
+| `SELECT ON system.parts` | The retention sweeper lists the day partitions (`compactor.retention_enabled`). Not needed with `retention_enabled: false`. |
+
+The user must not be `readonly`: lokihouse sets session settings such as
+`async_insert` and writes data. `system.tables` and `system.columns` need no
+grant; ClickHouse shows a user the entries it has access to.
+
+**On a cluster** (`clickhouse.cluster` set) add, and issue the `GRANT`s
+`ON CLUSTER` (and `CREATE USER ... ON CLUSTER` unless users are replicated):
+
+```sql
+GRANT CLUSTER ON *.* TO lokihouse;               -- DDL and deletes are ON CLUSTER
+GRANT TABLE ENGINE ON Distributed TO lokihouse;  -- the Distributed tables
+GRANT REMOTE ON *.* TO lokihouse;                -- the sweeper reads system.parts of all replicas
+GRANT SELECT ON system.clusters TO lokihouse;    -- checks that the cluster exists
+```
+
+**For `lokihouse -schema.migrate`** (a one-off, see
+[Upgrading to 0.9](../install/index.md#upgrading-to-09)) use a user with the grants
+above plus `DROP TABLE` on the database and `SELECT` on `system.disks`
+(the free disk space check). A separate, temporary user is a good choice:
+
+```sql
+CREATE USER lokihouse_migrate IDENTIFIED BY '...';
+GRANT SELECT, INSERT, ALTER DELETE, CREATE DATABASE, CREATE TABLE, CREATE VIEW, DROP TABLE
+  ON lokihouse.* TO lokihouse_migrate;
+GRANT SELECT ON system.parts TO lokihouse_migrate;
+GRANT SELECT ON system.disks TO lokihouse_migrate;
+-- on a cluster also the four cluster grants above, ON CLUSTER
+```
+
+Point `clickhouse.username` / `clickhouse.password_file` of the configuration used for the
+migration at this user, then drop it with `DROP USER lokihouse_migrate`.
+
 ## `query`
 
 | Key | Type | Default | Description |
