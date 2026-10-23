@@ -8,6 +8,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 )
 
+// logChunkSize is the minimum keyset chunk size. It is package state only so tests can
+// shrink it (SetLogChunkSize in export_test.go); production code never writes it.
 var logChunkSize = 1000
 
 func chunkSize(limit uint32) int { return max(int(limit), logChunkSize) }

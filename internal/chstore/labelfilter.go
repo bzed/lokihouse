@@ -20,10 +20,7 @@ import (
 // label may satisfy the filter), nor is a name starting with "__", nor an unsupported
 // filter (a regex that is not an alternation of literals, !=, comparisons).
 func MetadataFilterSQL(expr syntax.LogSelectorExpr, streams []Stream) Fragment {
-	streamLabels := map[string]struct{}{}
-	for _, s := range streams {
-		s.Labels.Range(func(l labels.Label) { streamLabels[l.Name] = struct{}{} })
-	}
+	streamLabels := streamLabelNames(streams)
 	var parts []Fragment
 	for _, m := range bloomv1.ExtractTestableLabelMatchers(expr) {
 		parts = append(parts, metadataMatcherSQL(m, streamLabels))
@@ -110,10 +107,7 @@ func ParsedFilterSQL(expr syntax.LogSelectorExpr, streams []Stream) Fragment {
 	if !ok {
 		return Fragment{}
 	}
-	streamLabels := map[string]struct{}{}
-	for _, s := range streams {
-		s.Labels.Range(func(l labels.Label) { streamLabels[l.Name] = struct{}{} })
-	}
+	streamLabels := streamLabelNames(streams)
 	var parts []Fragment
 	parsed := false
 walk:
@@ -214,4 +208,13 @@ func isVerbatim(c byte) bool {
 		return true
 	}
 	return strings.IndexByte(" _.,:;=+*#@!?()[]{}|~^$%-", c) >= 0
+}
+
+// streamLabelNames returns the set of label names carried by any of the streams.
+func streamLabelNames(streams []Stream) map[string]struct{} {
+	names := map[string]struct{}{}
+	for _, s := range streams {
+		s.Labels.Range(func(l labels.Label) { names[l.Name] = struct{}{} })
+	}
+	return names
 }

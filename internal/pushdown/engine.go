@@ -24,7 +24,7 @@ const (
 	ModeDownstream Mode = "downstream"
 )
 
-// TierALeaves counts Tier A leaf executions (for coverage assertions).
+// TierALeaves counts successful Tier A leaf executions (for coverage assertions).
 var TierALeaves atomic.Int64
 
 // ErrFallback is returned by Leaf.Exec when a leaf that is statically eligible
@@ -124,8 +124,11 @@ func (e *Engine) execOne(ctx context.Context, q logql.DownstreamQuery) (logqlmod
 	if e.Mode == ModeOn && e.TierA != nil {
 		if leaf, ok := q.Params.GetExpression().(syntax.SampleExpr); ok && e.TierA.Eligible(leaf) {
 			res, err := e.TierA.Exec(ctx, leaf, q.Params)
-			if !errors.Is(err, ErrFallback) {
+			if err == nil {
 				TierALeaves.Add(1)
+				return res, nil
+			}
+			if !errors.Is(err, ErrFallback) {
 				return res, err
 			}
 		}
