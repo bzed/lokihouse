@@ -43,7 +43,6 @@ type rowSource interface {
 // resolved is the outcome of resolving a selector: the streams, the context
 // carrying their IDs as an external table, and the row query to render per window.
 type resolved struct {
-	ctx   context.Context
 	rq    rowQuery
 	byID  map[uint64]Stream
 	ids   []uint64
@@ -65,23 +64,19 @@ func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req 
 		return resolved{}, err
 	}
 	ids := sortedIDs(streams)
-	ctx, err = withStreamIDs(ctx, ids)
-	if err != nil {
-		return resolved{}, err
-	}
 	byID := make(map[uint64]Stream, len(streams))
 	for _, s := range streams {
 		byID[s.ID] = s
 	}
 	return resolved{
-		ctx: ctx, byID: byID, ids: ids, from: req.GetStart(), until: req.GetEnd(),
+		byID: byID, ids: ids, from: req.GetStart(), until: req.GetEnd(),
 		rq: rowQuery{tenant: tenantID, filter: LeadingLineFilterSQL(sel), dir: dir},
 	}, nil
 }
 
 // readWindows renders the read windows of a resolved query.
-func (q *Querier) readWindows(r resolved) ([]window, error) {
-	return q.windows(r.ctx, r.rq.tenant, r.ids, r.from, r.until, r.rq.dir)
+func (q *Querier) readWindows(ctx context.Context, r resolved) ([]window, error) {
+	return q.windows(ctx, r.rq.tenant, r.ids, r.from, r.until, r.rq.dir)
 }
 
 // SelectLogs executes a log query and returns an iterator over the matching entries.
@@ -109,12 +104,16 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	if err != nil || len(r.byID) == 0 {
 		return iter.NoopEntryIterator, err
 	}
-	ws, err := q.readWindows(r)
+	ws, err := q.readWindows(ctx, r)
 	if err != nil {
 		return iter.NoopEntryIterator, err
 	}
 	// cancel the readers with the request context so a cancelled query stops the read
-	rctx, cancel := context.WithCancel(r.ctx)
+	sctx, err := withStreamIDs(ctx, r.ids)
+	if err != nil {
+		return iter.NoopEntryIterator, err
+	}
+	rctx, cancel := context.WithCancel(sctx)
 	wr := &windowReader{ws: ws, cancel: cancel, open: func(w window) (rowSource, error) {
 		return &keysetReader{ctx: rctx, conn: q.Conn, rq: r.rq, w: w, chunk: chunkSize(p.Limit)}, nil
 	}}
@@ -196,14 +195,18 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	if err != nil || len(r.byID) == 0 {
 		return iter.NoopSampleIterator, err
 	}
-	ws, err := q.readWindows(r)
+	ws, err := q.readWindows(ctx, r)
+	if err != nil {
+		return iter.NoopSampleIterator, err
+	}
+	sctx, err := withStreamIDs(ctx, r.ids)
 	if err != nil {
 		return iter.NoopSampleIterator, err
 	}
 	// Metric queries read everything anyway: one unchunked cursor per window.
 	wr := &windowReader{ws: ws, open: func(w window) (rowSource, error) {
 		sql, args := r.rq.sql(w)
-		return openCursor(r.ctx, q.Conn, sql, args...)
+		return openCursor(sctx, q.Conn, sql, args...)
 	}}
 	return &sampleIter{rr: wr, byID: r.byID, extractor: extractor, ex: map[uint64]log.StreamSampleExtractor{}, stats: stats.FromContext(ctx)}, nil
 }
