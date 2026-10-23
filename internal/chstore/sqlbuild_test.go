@@ -12,7 +12,7 @@ func TestLeadingLineFilterSQL_RegexAndPattern(t *testing.T) {
 		`{a="b"} |~ "error"`:              "line LIKE ?",
 		`{a="b"} |~ "err(or)?: timeout"`:  "line LIKE ? AND line LIKE ?",
 		`{a="b"} |~ "error|warn"`:         "(line LIKE ? OR line LIKE ?)",
-				`{a="b"} |~ "e.r"`:                "",
+		`{a="b"} |~ "e.r"`:                "",
 		`{a="b"} !~ "error"`:              "",
 		`{a="b"} |> "<_> GET <path> 200"`: "line LIKE ?",
 		`{a="b"} |> "<_>"`:                "",
