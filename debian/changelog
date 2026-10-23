@@ -1,3 +1,11 @@
+lokihouse (0.10.0) trixie; urgency=medium
+
+  * Documentation: running -schema.migrate with systemd credentials
+    (systemd-run -p ImportCredential), and the ClickHouse user and
+    grants lokihouse needs.
+
+ -- Bernd Zeimetz <bernd@bzed.de>  Fri, 23 Oct 2026 03:10:40 +0200
+
 lokihouse (0.9.0) trixie; urgency=medium
 
   * Retention sweeper (compactor.retention_enabled, default true);

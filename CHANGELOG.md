@@ -6,6 +6,8 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-23
+
 ### Documentation
 
 - `-schema.migrate` with the ClickHouse password in a systemd credential: run it with `systemd-run -p ImportCredential='lokihouse.*'` (install guide, manual page, README.Debian).
