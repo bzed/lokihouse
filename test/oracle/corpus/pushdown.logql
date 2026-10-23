@@ -89,3 +89,7 @@ range:rate({app="web"} | json | unwrap latency_ms[1m])
 # Grouping by (not eligible for Tier A)
 range:count_over_time({app="web"}[5m]) by (pod)
 range:rate({app="api"}[1m]) by (env)
+
+# sum leaves aggregate in Tier A with narrowed structured metadata
+range:sum(count_over_time({app="web"}[5m]))
+instant:sum by (pod) (rate({app=~".+"}[5m]))

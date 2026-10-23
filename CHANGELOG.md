@@ -10,6 +10,7 @@ changelog (`debian/changelog`) carries the same releases.
 
 - Case-insensitive line filters (`|~ "(?i)…"`, Grafana Logs Drilldown's search) use the ClickHouse text index.
 - Metric queries (`count_over_time`, `rate`) pushed down to ClickHouse no longer read log lines unless the query needs bytes (`bytes_over_time`, `bytes_rate`).
+- `sum` and `sum by` over `count_over_time`, `rate`, `bytes_over_time` and `bytes_rate` aggregate in ClickHouse by only the needed structured-metadata keys (large gains for logs with per-line metadata such as `trace_id`).
 
 ### Fixed
 

@@ -2,8 +2,10 @@ package pushdown
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -31,9 +33,22 @@ type TierA struct {
 	Deletes querierdeletion.DeleteGetter
 }
 
-// Eligible reports whether the range-aggregation expression can be executed
-// in Tier A.
-func (a *TierA) Eligible(e *syntax.RangeAggregationExpr) bool {
+// Eligible reports whether the leaf (a range aggregation, or a sum over one)
+// can be executed in Tier A.
+func (a *TierA) Eligible(e syntax.SampleExpr) bool {
+	switch n := e.(type) {
+	case *syntax.RangeAggregationExpr:
+		return eligibleRange(n)
+	case *syntax.VectorAggregationExpr:
+		if !isSumLeaf(n) {
+			return false
+		}
+		return eligibleRange(n.Left.(*syntax.RangeAggregationExpr))
+	}
+	return false
+}
+
+func eligibleRange(e *syntax.RangeAggregationExpr) bool {
 	switch e.Operation {
 	case syntax.OpRangeTypeCount, syntax.OpRangeTypeRate,
 		syntax.OpRangeTypeBytes, syntax.OpRangeTypeBytesRate:
@@ -50,8 +65,45 @@ func (a *TierA) Eligible(e *syntax.RangeAggregationExpr) bool {
 	return ok
 }
 
-// Exec executes the range-aggregation leaf in Tier A.
-func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logql.Params) (logqlmodel.Result, error) {
+// Exec executes the leaf in Tier A. For a sum leaf it runs the inner range
+// aggregation grouped by only the structured-metadata keys the sum's grouping
+// can see and returns the matrix un-summed: the outer sum that Map keeps above
+// the leaf completes the aggregation. A Tier B fallback returns the summed
+// vector instead, which the outer sum leaves unchanged.
+func (a *TierA) Exec(ctx context.Context, leaf syntax.SampleExpr, p logql.Params) (logqlmodel.Result, error) {
+	switch n := leaf.(type) {
+	case *syntax.RangeAggregationExpr:
+		return a.execRange(ctx, n, p, true, nil)
+	case *syntax.VectorAggregationExpr:
+		inner, ok := n.Left.(*syntax.RangeAggregationExpr)
+		if ok && isSumLeaf(n) {
+			return a.execRange(ctx, inner, p, false, mdKeysFor(n.Grouping))
+		}
+	}
+	return logqlmodel.Result{}, fmt.Errorf("pushdown: unsupported Tier A leaf %T", leaf)
+}
+
+// mdKeysFor returns the structured-metadata keys a sum's grouping can see: each
+// grouping name, plus the unsuffixed name for names ending in _extracted (a
+// clash between a stream label and a metadata key spills the stream label
+// there). No grouping, or by (), needs none.
+func mdKeysFor(g *syntax.Grouping) []string {
+	keys := []string{}
+	if g == nil {
+		return keys
+	}
+	for _, name := range g.Groups {
+		keys = append(keys, name)
+		if base, ok := strings.CutSuffix(name, "_extracted"); ok && base != "" {
+			keys = append(keys, base)
+		}
+	}
+	return keys
+}
+
+// execRange evaluates a range aggregation from bucketed counts. allMD groups by
+// the whole structured-metadata map, otherwise by mdKeys only.
+func (a *TierA) execRange(ctx context.Context, e *syntax.RangeAggregationExpr, p logql.Params, allMD bool, mdKeys []string) (logqlmodel.Result, error) {
 	maxBuckets := a.MaxBuckets
 	if maxBuckets == 0 {
 		maxBuckets = 100_000
@@ -117,8 +169,9 @@ func (a *TierA) Exec(ctx context.Context, e *syntax.RangeAggregationExpr, p logq
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
 	rows, err := chstore.BucketCounts(ctx, a.Conn, tenantID, ids, origin, E, g, filter, chstore.BucketOpts{
-		Bytes: e.Operation == syntax.OpRangeTypeBytes || e.Operation == syntax.OpRangeTypeBytesRate,
-		AllMD: true,
+		Bytes:  e.Operation == syntax.OpRangeTypeBytes || e.Operation == syntax.OpRangeTypeBytesRate,
+		AllMD:  allMD,
+		MDKeys: mdKeys,
 	})
 	if err != nil {
 		return logqlmodel.Result{}, err
