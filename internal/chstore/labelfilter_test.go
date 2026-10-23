@@ -126,4 +126,3 @@ func TestMetadataFilter_UsesIndex(t *testing.T) {
 	require.Equal(t, uint64(1), n)
 	require.Less(t, chtest.LogsRowsRead(t, conn, db, since), uint64(rows/2))
 }
-

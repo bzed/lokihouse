@@ -18,6 +18,7 @@ changelog (`debian/changelog`) carries the same releases.
 - Metric queries (`count_over_time`, `rate`) pushed down to ClickHouse no longer read log lines unless the query needs bytes (`bytes_over_time`, `bytes_rate`).
 - `sum` and `sum by` over `count_over_time`, `rate`, `bytes_over_time` and `bytes_rate` aggregate in ClickHouse by only the needed structured-metadata keys (large gains for logs with per-line metadata such as `trace_id`).
 - Label filters on structured metadata before any parser (`{…} | trace_id="…"`) use the new metadata indexes.
+- `count_over_time`, `rate`, `bytes_over_time` and `bytes_rate` with structured-metadata equality filters (`| level="warn"`) run in ClickHouse.
 
 ### Fixed
 

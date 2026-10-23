@@ -88,7 +88,7 @@ func TestLeadingLineFilterSQL(t *testing.T) {
 	}
 }
 
-func TestExactLineFilterSQL(t *testing.T) {
+func TestExactFilterSQL(t *testing.T) {
 	exact := map[string]Fragment{
 		`{a="b"}`:                    {},
 		`{a="b"} |= "x" or "y"`:      {SQL: "(line LIKE ? OR line LIKE ?)", Args: []any{"%x%", "%y%"}},
@@ -100,9 +100,27 @@ func TestExactLineFilterSQL(t *testing.T) {
 	for q, want := range exact {
 		e, err := syntax.ParseLogSelector(q, true)
 		require.NoError(t, err)
-		got, ok := ExactLineFilterSQL(e)
+		got, names, ok := ExactFilterSQL(e)
 		require.True(t, ok, q)
+		require.Empty(t, names, q)
 		require.Equal(t, want, got, q)
+	}
+	withLabels := []struct {
+		query string
+		want  Fragment
+		names []string
+	}{
+		{`{a="b"} |= "x" | level="warn"`, Fragment{SQL: "(line LIKE ?) AND structured_metadata[?] = ?", Args: []any{"%x%", "level", "warn"}}, []string{"level"}},
+		{`{a="b"} | level="warn" or level="info"`, Fragment{SQL: "(structured_metadata[?] = ? OR structured_metadata[?] = ?)", Args: []any{"level", "warn", "level", "info"}}, []string{"level"}},
+		{`{a="b"} | level="warn" and code="7"`, Fragment{SQL: "(structured_metadata[?] = ? AND structured_metadata[?] = ?)", Args: []any{"level", "warn", "code", "7"}}, []string{"level", "code"}},
+	}
+	for _, tc := range withLabels {
+		e, err := syntax.ParseLogSelector(tc.query, true)
+		require.NoError(t, err)
+		got, names, ok := ExactFilterSQL(e)
+		require.True(t, ok, tc.query)
+		require.Equal(t, tc.want, got, tc.query)
+		require.Equal(t, tc.names, names, tc.query)
 	}
 	for _, q := range []string{
 		`{a="b"} | json`,
@@ -112,10 +130,18 @@ func TestExactLineFilterSQL(t *testing.T) {
 		`{a="b"} |~ "e.r"`,
 		`{a="b"} !~ "e.r"`,
 		`{a="b"} |> "<_> x"`,
+		`{a="b"} | level=~"w.*"`,
+		`{a="b"} | level!="x"`,
+		`{a="b"} | level=""`,
+		`{a="b"} | level="x" or level=~"y.*"`,
+		`{a="b"} | __error__="x"`,
+		`{a="b"} | json | level="x"`,
+		`{a="b"} | label_format level="x" | level="x"`,
+		`{a="b"} | level="x" | json`,
 	} {
 		e, err := syntax.ParseLogSelector(q, true)
 		require.NoError(t, err)
-		_, ok := ExactLineFilterSQL(e)
+		_, _, ok := ExactFilterSQL(e)
 		require.False(t, ok, q)
 	}
 }

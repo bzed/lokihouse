@@ -1,6 +1,7 @@
 package chstore
 
 import (
+	"slices"
 	"strings"
 
 	regexpSyntax "regexp/syntax"
@@ -310,38 +311,94 @@ func unwrap(n *regexpSyntax.Regexp) *regexpSyntax.Regexp {
 	return n
 }
 
-// ExactLineFilterSQL returns SQL accepting exactly the lines the pipeline's
-// filters accept, or ok=false if the pipeline has any stage other than line
-// filters that are literal (|=, !=, with or-chains) or regex passing RegexExact
-// (|~, !~).
-func ExactLineFilterSQL(expr syntax.LogSelectorExpr) (Fragment, bool) {
-	p, ok := expr.(*syntax.PipelineExpr)
-	if !ok {
-		return Fragment{}, true // no pipeline: no line filter
+// ExactFilterSQL returns SQL accepting exactly the entries the pipeline's filters accept,
+// or ok=false if the pipeline has any stage other than line filters that are literal
+// (|=, !=, with or-chains) or regex passing RegexExact (|~, !~), and label filters that
+// compare a label to a non-empty string with = (alone or combined with and/or), which
+// map to structured_metadata. labelNames lists the names of those label filters (each
+// once, in source order): the SQL is exact only if no stream carries such a label,
+// because a stream label could satisfy the filter too.
+func ExactFilterSQL(expr syntax.LogSelectorExpr) (f Fragment, labelNames []string, ok bool) {
+	p, isPipeline := expr.(*syntax.PipelineExpr)
+	if !isPipeline {
+		return Fragment{}, nil, true // no pipeline: nothing to filter
 	}
 	var parts []Fragment
 	for _, st := range p.MultiStages {
-		lf, ok := st.(*syntax.LineFilterExpr)
-		if !ok {
-			return Fragment{}, false // non-line-filter stage
-		}
-		// Walk Left to the root so parts end up in source order.
-		var chain []*syntax.LineFilterExpr
-		for cur := lf; cur != nil; cur = cur.Left {
-			chain = append(chain, cur)
-		}
-		for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
-			chain[i], chain[j] = chain[j], chain[i]
-		}
-		for _, cur := range chain {
-			f, ok := exactLineFilterSQL(cur)
+		switch st := st.(type) {
+		case *syntax.LineFilterExpr:
+			// Walk Left to the root so parts end up in source order.
+			var chain []*syntax.LineFilterExpr
+			for cur := st; cur != nil; cur = cur.Left {
+				chain = append(chain, cur)
+			}
+			slices.Reverse(chain)
+			for _, cur := range chain {
+				f, ok := exactLineFilterSQL(cur)
+				if !ok {
+					return Fragment{}, nil, false
+				}
+				parts = append(parts, f)
+			}
+		case *syntax.LabelFilterExpr:
+			f, ok := exactLabelFilterSQL(st.LabelFilterer, &labelNames)
 			if !ok {
-				return Fragment{}, false
+				return Fragment{}, nil, false
 			}
 			parts = append(parts, f)
+		default:
+			return Fragment{}, nil, false
 		}
 	}
-	return and(parts), true
+	return and(parts), labelNames, true
+}
+
+// equalLabelMatcher returns the matcher of a label filter that compares a label to a
+// string with =, or nil. The parser builds equality filters as LineFilterLabelFilter
+// (a StringLabelFilter only when the filter cannot be optimised).
+func equalLabelMatcher(lf log.LabelFilterer) *labels.Matcher {
+	switch lf := lf.(type) {
+	case *log.StringLabelFilter:
+		if lf.Type == labels.MatchEqual {
+			return lf.Matcher
+		}
+	case *log.LineFilterLabelFilter:
+		if lf.Type == labels.MatchEqual {
+			return lf.Matcher
+		}
+	}
+	return nil
+}
+
+// exactLabelFilterSQL renders an equality label filter, or a binary and/or of such,
+// over structured_metadata, appending each name to names once.
+func exactLabelFilterSQL(lf log.LabelFilterer, names *[]string) (Fragment, bool) {
+	if m := equalLabelMatcher(lf); m != nil {
+		if m.Value == "" || strings.HasPrefix(m.Name, "__") {
+			return Fragment{}, false
+		}
+		if !slices.Contains(*names, m.Name) {
+			*names = append(*names, m.Name)
+		}
+		return Fragment{SQL: "structured_metadata[?] = ?", Args: []any{m.Name, m.Value}}, true
+	}
+	switch lf := lf.(type) {
+	case *log.BinaryLabelFilter:
+		l, ok := exactLabelFilterSQL(lf.Left, names)
+		if !ok {
+			return Fragment{}, false
+		}
+		r, ok := exactLabelFilterSQL(lf.Right, names)
+		if !ok {
+			return Fragment{}, false
+		}
+		op := " OR "
+		if lf.And {
+			op = " AND "
+		}
+		return Fragment{SQL: "(" + l.SQL + op + r.SQL + ")", Args: append(l.Args, r.Args...)}, true
+	}
+	return Fragment{}, false
 }
 
 // exactLineFilterSQL handles one LineFilterExpr node including its Or chain.

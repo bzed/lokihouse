@@ -93,3 +93,6 @@ range:rate({app="api"}[1m]) by (env)
 # sum leaves aggregate in Tier A with narrowed structured metadata
 range:sum(count_over_time({app="web"}[5m]))
 instant:sum by (pod) (rate({app=~".+"}[5m]))
+
+# metadata equality filters run in Tier A (the fixture has no metadata: both sides are empty)
+range:count_over_time({app="web"} | level="error" [5m])

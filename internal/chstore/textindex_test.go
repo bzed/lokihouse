@@ -41,7 +41,7 @@ func TestLineFilterSQL_UsesTextIndex(t *testing.T) {
 		if strings.Contains(q, "(?i)") {
 			continue // case-insensitive filters are not exact, so Tier A does not use them
 		}
-		f, ok := chstore.ExactLineFilterSQL(sel)
+		f, _, ok := chstore.ExactFilterSQL(sel)
 		require.True(t, ok, q)
 		check("exact: "+q, f)
 	}

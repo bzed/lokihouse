@@ -404,6 +404,49 @@ func TestTierA_SumLeafFallback(t *testing.T) {
 	}
 }
 
+func seedMetadataFilterData(t *testing.T, conn driver.Conn, base time.Time) {
+	t.Helper()
+	var entries []logproto.Entry
+	for i := 0; i < 12; i++ {
+		lvl := []string{"info", "warn", "error"}[i%3]
+		entries = append(entries, logproto.Entry{Timestamp: base.Add(time.Duration(i) * 3 * time.Second), Line: fmt.Sprintf("x %d", i),
+			StructuredMetadata: []logproto.LabelAdapter{{Name: "level", Value: lvl}}})
+	}
+	w := &chstore.Writer{Conn: conn}
+	require.NoError(t, w.Write(context.Background(), "t1", []logproto.Stream{
+		{Labels: `{app="m"}`, Entries: entries},
+		{Labels: `{app="m2", level="warn"}`, Entries: entries},
+	}))
+}
+
+func TestTierA_MetadataFilter(t *testing.T) {
+	conn, _ := chtest.New(t)
+	base := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
+	seedMetadataFilterData(t, conn, base)
+	for _, q := range []string{
+		`count_over_time({app="m"} | level="warn" [1m])`,
+		`rate({app="m"} | level="warn" or level="info" [1m])`,
+		`bytes_over_time({app="m"} |= "x" | level="error" [1m])`,
+	} {
+		before := TierALeaves.Load()
+		want, got := runTierA(t, conn, q, base, base.Add(time.Minute), 15*time.Second)
+		require.NotEmpty(t, want, q)
+		requireMatrixClose(t, want, got, q)
+		require.Equal(t, before+1, TierALeaves.Load(), "Tier A ran: %s", q)
+	}
+	// A resolved stream labelled "level" would satisfy the filter: Tier B decides.
+	for _, q := range []string{
+		`count_over_time({app=~"m|m2"} | level="warn" [1m])`,
+		`rate({app=~"m|m2"} | level="warn" or level="info" [1m])`,
+	} {
+		before := TierALeaves.Load()
+		want, got := runTierA(t, conn, q, base, base.Add(time.Minute), 15*time.Second)
+		require.NotEmpty(t, want, q)
+		requireMatrixClose(t, want, got, q)
+		require.Equal(t, before, TierALeaves.Load(), "fell back: %s", q)
+	}
+}
+
 // requireMatrixClose compares two matrices, allowing the last-bits float
 // differences from summing in another order (see Map).
 func requireMatrixClose(t *testing.T, want, got any, msg string) {

@@ -61,7 +61,7 @@ func eligibleRange(e *syntax.RangeAggregationExpr) bool {
 	if e.Left.Unwrap != nil {
 		return false
 	}
-	_, ok := chstore.ExactLineFilterSQL(e.Left.Left)
+	_, _, ok := chstore.ExactFilterSQL(e.Left.Left)
 	return ok
 }
 
@@ -108,7 +108,7 @@ func (a *TierA) execRange(ctx context.Context, e *syntax.RangeAggregationExpr, p
 	if maxBuckets == 0 {
 		maxBuckets = 100_000
 	}
-	filter, _ := chstore.ExactLineFilterSQL(e.Left.Left)
+	filter, filterLabels, _ := chstore.ExactFilterSQL(e.Left.Left)
 
 	r := int64(e.Left.Interval)
 	o := int64(e.Left.Offset)
@@ -155,6 +155,13 @@ func (a *TierA) execRange(ctx context.Context, e *syntax.RangeAggregationExpr, p
 	streams, err := chstore.ResolveStreams(ctx, a.Conn, tenantID, sel.Matchers(), time.Unix(0, origin), time.Unix(0, E))
 	if err != nil {
 		return logqlmodel.Result{}, err
+	}
+	// A stream label named like a metadata filter could satisfy that filter as well:
+	// the SQL would no longer be exact, so Tier B decides.
+	for _, s := range streams {
+		if slices.ContainsFunc(filterLabels, s.Labels.Has) {
+			return logqlmodel.Result{}, ErrFallback
+		}
 	}
 	if len(streams) == 0 {
 		// Non-nil empty Data: Loki's step evaluator rejects a nil res.Data.
