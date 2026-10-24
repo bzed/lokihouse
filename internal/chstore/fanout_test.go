@@ -296,8 +296,15 @@ func TestSelectSamples_FanoutPoolTooSmallFallsBack(t *testing.T) {
 // large.)
 func seedPoolStreams(t *testing.T, conn driver.Conn, n int) {
 	t.Helper()
+	seedPoolStreamsRows(t, conn, n, 50000)
+}
+
+// seedPoolStreamsRows writes n streams of rows rows each, one row per
+// microsecond from t0, in 10 000-row chunks.
+func seedPoolStreamsRows(t *testing.T, conn driver.Conn, n, rows int) {
+	t.Helper()
 	w := &chstore.Writer{Conn: conn}
-	const rows, chunk = 50000, 10000
+	const chunk = 10000
 	for base := 0; base < rows; base += chunk {
 		var streams []logproto.Stream
 		for s := range n {
@@ -518,9 +525,15 @@ func runQuery(ng *logql.QueryEngine, qs string, start, end time.Time, step time.
 // by the pool-acquire timeout.)
 func TestSelectSamples_FanoutMultiLegQueriesNeverDeadlockPool(t *testing.T) {
 	conn, db := chtest.New(t)
-	seedPoolStreams(t, conn, 4)
+	// Twenty thousand rows per stream: forty blocks at the pool's max_block_size
+	// of 500, comfortably more than the streaming merge this test guards
+	// against buffered before a send stalled, so that regression still
+	// reproduces. A round moves 160 MB through the pool of four — deep enough
+	// queueing to stress it, shallow enough to drain in seconds on a slow
+	// runner, far inside the 10 s acquire timeout below.
+	seedPoolStreamsRows(t, conn, 4, 20000)
 	qs := `sum(count_over_time({app=~"s00|s01"}[1ms])) + sum(count_over_time({app=~"s02|s03"}[1ms]))`
-	start, end := t0, t0.Add(60*time.Millisecond) // all 50 000 rows of every stream
+	start, end := t0, t0.Add(60*time.Millisecond) // all 20 000 rows of every stream
 	step := time.Millisecond
 
 	// A pool of four connections, and a budget far above it: every leg of
@@ -532,7 +545,7 @@ func TestSelectSamples_FanoutMultiLegQueriesNeverDeadlockPool(t *testing.T) {
 	// (see TestSelectSamples_FanoutBudgetAbovePoolSucceeds).
 	opts := chtest.Options(db)
 	opts.MaxOpenConns, opts.MaxIdleConns = 4, 4
-	opts.DialTimeout = 5 * time.Second    // the production default: a regression fails fast
+	opts.DialTimeout = 10 * time.Second   // queueing on the pool must never time out; a regression (the streaming merge) still fails within one round
 	opts.Settings["max_block_size"] = 500 // small blocks: a long transfer
 	pool, err := clickhouse.Open(opts)
 	require.NoError(t, err)
