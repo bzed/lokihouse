@@ -82,5 +82,6 @@ func TestRenderSchema_ReplicaPathIsUniquePerSuffix(t *testing.T) {
 func TestOpenConnectionFailureIsReported(t *testing.T) {
 	c, err := clickhouse.Open(&clickhouse.Options{Addr: []string{"127.0.0.1:1"}, DialTimeout: 200 * time.Millisecond})
 	require.NoError(t, err)
+	defer c.Close()
 	require.Error(t, chstore.Migrate(context.Background(), c, "x", chstore.Topology{}))
 }

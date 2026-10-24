@@ -2,6 +2,7 @@ package chstore
 
 import (
 	"context"
+	"runtime"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -28,6 +29,10 @@ type Querier struct {
 	// WindowRows is the target number of rows per read window; 0 means
 	// defaultWindowRows.
 	WindowRows uint64
+	// Workers is the number of sample-extraction goroutines per metric query;
+	// 0 means runtime.GOMAXPROCS(0) read at query time. The effective count is
+	// capped at the number of matching streams.
+	Workers int
 }
 
 var _ logql.Querier = (*Querier)(nil)
@@ -185,9 +190,6 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 			return nil, err
 		}
 	}
-	if extractor, err = utildeletion.SetupExtractor(p, extractor); err != nil {
-		return nil, err
-	}
 	sel, err := p.LogSelector()
 	if err != nil {
 		return nil, err
@@ -195,6 +197,23 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	r, err := q.openRows(ctx, sel, p.SampleQueryRequest, logproto.FORWARD)
 	if err != nil || len(r.byID) == 0 {
 		return iter.NoopSampleIterator, err
+	}
+	// Loki's extractors are not safe for concurrent use: one per worker.
+	workers := q.Workers
+	if workers <= 0 {
+		workers = runtime.GOMAXPROCS(0)
+	}
+	workers = max(1, min(workers, len(r.byID)))
+	extractors := make([]log.SampleExtractor, workers)
+	for i := range extractors {
+		if i > 0 {
+			if extractor, err = expr.Extractor(); err != nil {
+				return nil, err
+			}
+		}
+		if extractors[i], err = utildeletion.SetupExtractor(p, extractor); err != nil {
+			return nil, err
+		}
 	}
 	ws, err := q.readWindows(ctx, r)
 	if err != nil {
@@ -204,12 +223,15 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	if err != nil {
 		return iter.NoopSampleIterator, err
 	}
+	// Cancel the read with the iterator: Close stops the producer and the ClickHouse query.
+	rctx, cancel := context.WithCancel(sctx)
 	// Metric queries read everything anyway: one unchunked cursor per window.
 	rq := r.rq
 	rq.final = true
+	// The producer closes wr when it ends; only Close cancels rctx, as workers may still be extracting.
 	wr := &windowReader{ws: ws, open: func(w window) (rowSource, error) {
 		sql, args := rq.sql(w)
-		return openCursor(sctx, q.Conn, sql, args...)
+		return openCursor(rctx, q.Conn, sql, args...)
 	}}
-	return &sampleIter{rr: wr, byID: r.byID, extractor: extractor, ex: map[uint64]log.StreamSampleExtractor{}, stats: stats.FromContext(ctx)}, nil
+	return newSampleIter(rctx, cancel, wr, r.byID, extractors, stats.FromContext(ctx)), nil
 }
