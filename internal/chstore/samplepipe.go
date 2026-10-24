@@ -16,8 +16,10 @@ const (
 	// sampleBatchRows is the number of rows the producer hands over at once.
 	sampleBatchRows = 1024
 	// sampleBatchesInFlight is the capacity of the channels between the
-	// producer, the workers and the consumer; it bounds the rows in memory to
-	// about sampleBatchesInFlight × sampleBatchRows.
+	// producer, the workers and the consumer. A batch is shared by the channels
+	// it is routed to, so the rows in memory are bounded by roughly
+	// (sampleBatchesInFlight + 3) × sampleBatchRows: the channel, one blocked in
+	// dispatch, one being built and one held by the consumer.
 	sampleBatchesInFlight = 4
 )
 
