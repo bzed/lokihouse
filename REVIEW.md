@@ -1,7 +1,178 @@
-# Review: branch `perf/part-order-stream-fanout` (HEAD `8099b8e`)
+# Review: branch `perf/part-order-stream-fanout` (HEAD `8e5572a`)
 
 Reviewer: Claude Opus 5.5 (second pair of eyes)
 Date: 2026-10-24
+
+This file holds two passes. §0 is the re-review of the fix commits
+`de5cc68..8e5572a` against the findings of the first pass. §1–§8 are the
+first pass at `8099b8e`, kept unchanged so that the finding numbers stay
+stable.
+
+## 0. Re-review of the fixes (HEAD `8e5572a`)
+
+Fix commits: `de5cc68` (F2), `a321011` (F3, F5, F7), `702ab64` (F1, F6),
+`3e33e3d` (F4, F8), `8e5572a` (soak criterion). Method: read every
+changed line, then probed the claims that can only be checked live. The
+probes were throwaway tests in a separate worktree under `/tmp`, run on
+the 2×2 test cluster, and were not committed. A copy is kept at
+`/tmp/claude-1000/-home-bzed-workspace-vibe-lokihouse/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review2_test.go`.
+
+**Verdict: not merge-ready yet, but close.** F2, F3, F4, F6, F7 and F8 are
+fixed. F1 is fixed for the case it was reported on (independent concurrent
+queries), but the reservation is against a budget, not against real
+connections, and the deadlock is still reproducible when one request holds
+several cursors at once (R1). The F5 fix works for the sample fan-out but
+has **no effect** on the single-stream log read it also claims to cover
+(R2).
+
+| Finding | Claimed fix | Status |
+|---|---|---|
+| F1 pool deadlock | all-or-nothing `TryAcquire` from a budget of `max_open_conns/2`, fallback to the global read | **Partial**: see R1 |
+| F2 keyset not prunable | `ts > X OR (ts = X AND entry_hash > h)` under `single` (`<` backward) | **Fixed**. The SQL is correct for both directions (matches `orderBy`). The regression test pins `read_rows < 400 000` (496 618 → 308 202) and the predicate shape. Residual R4 |
+| F3 window plan × streams | the fan-out reads one window, never consults `HourlyStats` | **Fixed**. `TestSelectSamples_FanoutSingleWindow`/`FanoutQueryShape` pin it; no sort to bound under read-in-order, so memory stays per-block |
+| F4 docs | `divergences.md` duplicate rule by stream count; `operations.md` fan-out paragraph | **Fixed**, except one sentence in `operations.md` that R1 falsifies ("a busy pool degrades latency, never correctness") |
+| F5 shard routing | `perStreamContext` sets `optimize_skip_unused_shards = 1` for per-stream sample reads and the single-stream log read | **Fixed for samples** (`TestSelectSamples_FanoutRoutesToOwningShard`). **Not effective for logs**: see R2 |
+| F6 package state | `Querier.FanoutMax`, `Querier.FanoutConns`; `SetSampleFanoutMax` removed | **Fixed**. Minor comment bug, R3 |
+| F7 sample hash | comment in `samplepipe.go` records the difference from Loki | **Fixed** |
+| F8 benchmark page | unreleased run under a "Pre-release measurement" heading, prose corrected | **Fixed** |
+| F9 buffering | documented in `operations.md` | **Fixed** (documented) |
+
+New dependency check: `golang.org/x/sync` moves from indirect to direct at
+v0.24.0, the version Loki's `go.mod` pins (line 135 at `bc1962860a16`), so
+AGENTS.md's dependency rule holds. `cespare/xxhash` drops to indirect.
+
+### R1 (high): the fan-out still deadlocks when a request holds several cursors
+
+`FanoutConns` is a counter, not a set of connections. A fan-out that
+reserved *n* budget units still takes its *n* connections from the shared
+pool, and it blocks in the pool's `acquire` when other users hold them.
+The commit argues that this is waiting, not deadlock, because "each running
+query holds its connection only while it streams to a consumer that drains
+it". That holds for a request with one cursor. It does not hold when the
+engine consumes several sample iterators of **one request** in lockstep:
+binary operations, and in principle the multi-tenant merge. A global leg
+then holds its connection while its consumer waits on the fan-out leg,
+which waits for the pool. Probe `TestReviewLockstepBinop`:
+
+- pool `MaxOpenConns = 4`, `dial_timeout = 3 s`, `max_block_size = 500`;
+- four 50 000-row streams with ~200-byte lines (`seedPoolStreams`);
+- 10 concurrent range queries
+  `sum(count_over_time({app=~"s00|s01"}[1ms])) + sum(count_over_time({app=~"s02|s03"}[1ms]))`
+  at a 1 ms step through Loki's engine;
+- fan-out with `FanoutConns: 2` (half the pool, as production wires it):
+  **9/10 failed with `acquire conn timeout` in one of three runs** (0/10
+  in the other two);
+- the same load with the fan-out disabled (`FanoutMax: 1`, the 0.12.0
+  shape): 0/10 in all three runs.
+
+So the fix narrows F1 a lot, but a fan-out can still deadlock the pool,
+and the `operations.md` promise of "latency, never correctness" is not
+true yet. Category: **derived** (reproduced). Confidence: high that the
+cycle exists. Its frequency in production is unknown; it needs pool
+saturation plus multi-leg queries.
+
+Fix: make the reservation a reservation of real connections. The
+simplest version gives the fan-out its **own** `clickhouse.Open` pool
+sized `FanoutConns` (taken out of `max_open_conns`, or added to it and
+documented), so a successful `TryAcquire(n)` guarantees *n* connections
+that nothing else can take. The alternative routes every ClickHouse cursor
+through one pool-wide `semaphore.Weighted(max_open_conns)` (single reads
+`Acquire(1)` with the context, the fan-out `TryAcquire(n)`); that is more
+invasive, because ingest, tail, ruler and stats share the pool. Add the
+probe as a regression test: binary op, small pool, small blocks, 10
+concurrent, looped a few times, since the failure is timing-dependent.
+
+### R2 (medium): `optimize_skip_unused_shards` does nothing for the single-stream log read
+
+`SelectLogs` wraps the context in `perStreamContext` when `single`, but it
+never sets `rq.streamID`. Its SQL therefore still filters with
+`stream_id GLOBAL IN (SELECT id FROM lh_stream_ids)` (external table),
+which the shard-pruning analysis cannot evaluate. Probe
+`TestReviewLogRouting`, on six single-stream log queries on the cluster,
+counted the remote `logs_local` reads per query in
+`clusterAllReplicas(…, system.query_log)`:
+
+| stream on the initiator's shard | remote shard queries | `Settings['optimize_skip_unused_shards']` |
+|---|---|---|
+| yes (s00, s11, s12) | **1** (expected 0 if routed) | `1` |
+| no (s01, s06, s07) | 1 | `1` |
+
+The setting arrives, but it has no effect. The commit message of
+`a321011` ("the single-stream log read too") overstates it. The CHANGELOG
+line is accurate, because it only claims the routing for the sample
+fan-out. No test covers the log path. Fix: under `single`, set `rq.streamID =
+&r.ids[0]` so that the log read renders `stream_id = ?` like the fan-out
+does. That also drops the external-table upload. Then extend
+`TestSelectSamples_FanoutRoutesToOwningShard`'s query-log assertion to a
+single-stream log query. Category: **official** (documented: the setting
+needs a sharding-key condition it can evaluate). Confidence: high
+(measured).
+
+### R3 (low): `fanoutSemaphore` comment contradicts the code
+
+`querier.go`: "a zero or negative FanoutConns disables the fan-out (the
+reservation can never succeed)". The code does `if n <= 0 { n =
+q.fanoutLimit() }`, which *enables* a 16-connection budget, as the field's
+own doc ("0 means FanoutMax") and `server.go` ("a zero budget would
+default to the fan-out limit") say. Fix the comment and drop the dead
+`max(n, 0)`.
+
+### R4 (info): keyset reads still over-read by about 6×
+
+The F2 fix prunes the granules *before* the continuation point, which was
+the defect (496 618 → 308 202 rows read for ten 5 000-row chunks). Ten
+chunks over 50 000 rows still read about 30 000 rows each, though, so
+in-order reading with `LIMIT` reads several granules past the point where
+the chunk is full. This is ClickHouse read granularity, not the predicate,
+and it is linear in the chunk count, not quadratic. Worth one experiment
+(`max_threads = 1` or `max_block_size` = the chunk `LIMIT` on keyset reads,
+measured with the same `read_rows` assertion), but it does not block the
+merge. Category: **field**; heuristic, since the effect depends on the
+part layout and the granule size.
+
+### R5 (info): the soak criterion moved from mean to median (`8e5572a`)
+
+The reason given is sound. The post-GC heap sampled while a fan-out is
+in flight includes its ~3 MB-per-stream driver buffers (F9), and a
+quarter's mean is dominated by such samples. A steady leak still raises
+the median. But this loosens a gate, and the spike it hides was
+introduced by this branch's fan-out. The commit says the pre-fix baseline
+fails the same way, and the tierb branch passed a 4-minute soak with the
+mean. That is acceptable as long as it is recorded. Consider also asserting
+the end-of-run in-use heap (the commit quotes 13.2 MiB), so an
+idle-floor leak has two independent signals.
+
+### Gate results at `8e5572a`
+
+Same environment as §2: the 2×2 cluster through ch1. These gates prove
+the branch is correct at normal load; none of them exercises R1 or R2.
+
+| Gate | Result |
+|---|---|
+| `LOKIHOUSE_TEST_CH_CLUSTER=lokihouse make check` | PASS: golangci-lint 0 issues, govulncheck clean (allowlisted `GO-2026-5115` only), total coverage **88.5 %** |
+| `go test -race -count=1 ./internal/chstore/...` (cluster) | PASS (300 s), including the new pool and fan-out tests |
+| oracle `off` / `downstream` / `on` | PASS (104.0 s / 42.4 s / 41.5 s) |
+| oracle, cluster | PASS (52.3 s) |
+| soak, `LOKIHOUSE_SOAK_DURATION=4m` (new median criterion) | PASS (242.5 s) |
+
+Not run: `make bench`, the full 10-minute soak.
+
+### Recommendations
+
+1. **R1 before merge:** back the reservation with real connections (a
+   dedicated fan-out pool is the smallest change), add the lockstep
+   binary-op regression test, and keep the `operations.md` "never
+   correctness" sentence only once that test passes.
+2. **R2:** render `stream_id = ?` on the single-stream log read and test
+   the routing; or remove `perStreamContext` from `SelectLogs`, since it
+   currently does nothing there.
+3. **R3:** fix the comment.
+4. R4/R5: optional follow-ups.
+
+---
+
+# First pass (HEAD `8099b8e`)
+
 Range: `b20bb0c` (release 0.12.0) .. `8099b8e`. Code commits:
 
 - `ccf82ba` feat: single-stream log queries read in the part's physical order
