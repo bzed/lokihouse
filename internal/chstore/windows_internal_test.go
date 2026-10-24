@@ -3,6 +3,7 @@ package chstore
 import (
 	"math/rand"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,4 +73,14 @@ func TestPlanWindows_ZeroTargetUsesDefault(t *testing.T) {
 	ws := planWindows([]HourStat{hs(0, 2*defaultWindowRows)}, 0, 2*hr, 0, logproto.FORWARD)
 	require.NotEmpty(t, ws)
 	require.Equal(t, window{0, 2 * hr}, window{ws[0].lo, ws[len(ws)-1].hi})
+}
+
+func TestRowQuery_FinalRendering(t *testing.T) {
+	sql, _ := rowQuery{tenant: "t", final: true}.sql(window{1, 2})
+	require.Contains(t, sql, "FROM logs FINAL WHERE")
+	require.True(t, strings.HasSuffix(sql, " SETTINGS do_not_merge_across_partitions_select_final = 1"), sql)
+
+	sql, _ = rowQuery{tenant: "t"}.sql(window{1, 2})
+	require.NotContains(t, sql, "FINAL")
+	require.NotContains(t, sql, "SETTINGS")
 }

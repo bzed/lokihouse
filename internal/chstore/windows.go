@@ -79,6 +79,12 @@ type rowQuery struct {
 	tenant string
 	filter Fragment
 	dir    logproto.Direction
+	// final lets ClickHouse remove duplicate rows (FINAL). Only unchunked
+	// metric reads set it: FINAL defeats top-N sorting on unmerged parts, which
+	// made a 1000-row keyset chunk 75 ms instead of 6 ms, and keysetReader
+	// inserts a predicate before ORDER BY and appends LIMIT, which a trailing
+	// SETTINGS clause would break.
+	final bool
 }
 
 // sql renders the query for w, without LIMIT. The ORDER BY comes last: the
@@ -86,7 +92,11 @@ type rowQuery struct {
 // as Unix nanoseconds: clickhouse-go formats a time.Time parameter at second
 // precision.
 func (q rowQuery) sql(w window) (string, []any) {
-	s := "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM logs WHERE tenant = ? AND " + streamIDsIn +
+	from := "logs"
+	if q.final {
+		from = "logs FINAL"
+	}
+	s := "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM " + from + " WHERE tenant = ? AND " + streamIDsIn +
 		" AND ts >= fromUnixTimestamp64Nano(?, 'UTC') AND ts < fromUnixTimestamp64Nano(?, 'UTC')"
 	args := []any{q.tenant, w.lo, w.hi}
 	if !q.filter.Empty() {
@@ -97,7 +107,12 @@ func (q rowQuery) sql(w window) (string, []any) {
 	if q.dir == logproto.BACKWARD {
 		order = "ts DESC"
 	}
-	return s + " ORDER BY " + order + ", stream_id ASC, entry_hash", args
+	s += " ORDER BY " + order + ", stream_id ASC, entry_hash"
+	if q.final {
+		// Duplicates share ts, hence the day partition, so merging per partition is exact.
+		s += " SETTINGS do_not_merge_across_partitions_select_final = 1"
+	}
+	return s, args
 }
 
 // windows returns the read windows of [from, through): one for ranges of at
