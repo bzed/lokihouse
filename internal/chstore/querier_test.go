@@ -270,6 +270,122 @@ func TestKeyset_SubSecondTimestamps(t *testing.T) {
 	}
 }
 
+// A single-stream log query reads its rows in the part's physical order; the
+// keyset chunks must still return exactly the same entries as one big chunk,
+// in both directions, duplicates counted once.
+func TestKeyset_SingleStreamChunks(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	var es []logproto.Entry
+	for i := range 40 { // 4 seconds × 10 distinct sub-second timestamps
+		es = append(es, logproto.Entry{Timestamp: t0.Add(time.Duration(i/10)*time.Second + time.Duration(i%10)*time.Millisecond), Line: fmt.Sprint("l", i)})
+	}
+	seed(t, w, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: es})
+	seed(t, w, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: es[13:14]}) // exact duplicate in a second part
+	q := &chstore.Querier{Conn: conn}
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	t.Cleanup(func() { chstore.SetLogChunkSize(1000) })
+	for _, dir := range []logproto.Direction{logproto.FORWARD, logproto.BACKWARD} {
+		collect := func() []string {
+			it, err := q.SelectLogs(ctx, logql.SelectLogParams{QueryRequest: &logproto.QueryRequest{
+				Selector: `{app="a"}`, Start: t0.Add(-time.Minute), End: t0.Add(time.Minute), Direction: dir,
+				Plan: &plan.QueryPlan{AST: syntax.MustParseExpr(`{app="a"}`)},
+			}})
+			require.NoError(t, err)
+			var got []string
+			for it.Next() {
+				got = append(got, it.At().Line)
+			}
+			require.NoError(t, it.Err())
+			require.NoError(t, it.Close())
+			return got
+		}
+		chstore.SetLogChunkSize(1000)
+		want := collect()
+		require.Len(t, want, 40, "duplicate counted once, dir=%v", dir)
+		require.Equal(t, fmt.Sprint("l", map[bool]int{true: 0, false: 39}[dir == logproto.FORWARD]), want[0], "dir=%v", dir)
+		for _, n := range []int{1, 3, 7} {
+			chstore.SetLogChunkSize(n)
+			require.Equal(t, want, collect(), "dir=%v chunk=%d", dir, n)
+		}
+	}
+}
+
+// A log query over exactly one stream reads its rows in the part's physical
+// order (the keyset continuation follows it); a multi-stream query keeps the
+// global timestamp order.
+func TestSelectLogs_SingleStreamReadsPartOrder(t *testing.T) {
+	conn, db := chtest.New(t)
+	var es []logproto.Entry
+	for i := range 30 {
+		es = append(es, logproto.Entry{Timestamp: t0.Add(time.Duration(i) * time.Second), Line: fmt.Sprint("l", i)})
+	}
+	seed(t, &chstore.Writer{Conn: conn}, "t1",
+		logproto.Stream{Labels: `{app="a"}`, Entries: es},
+		logproto.Stream{Labels: `{app="b"}`, Entries: es})
+	q := &chstore.Querier{Conn: conn}
+	ctx := user.InjectOrgID(context.Background(), "t1")
+	t.Cleanup(func() { chstore.SetLogChunkSize(1000) })
+	chstore.SetLogChunkSize(3)
+
+	readAll := func(selector string, dir logproto.Direction) {
+		it, err := q.SelectLogs(ctx, logql.SelectLogParams{QueryRequest: &logproto.QueryRequest{
+			Selector: selector, Start: t0.Add(-time.Minute), End: t0.Add(time.Minute), Direction: dir,
+			Plan: &plan.QueryPlan{AST: syntax.MustParseExpr(selector)},
+		}})
+		require.NoError(t, err)
+		for it.Next() {
+		}
+		require.NoError(t, it.Err())
+		require.NoError(t, it.Close())
+	}
+	logQueries := func(since time.Time) []string {
+		t.Helper()
+		flush, src := "SYSTEM FLUSH LOGS query_log", "system.query_log"
+		if topo := chtest.Topology(); topo.Cluster != "" {
+			flush = "SYSTEM FLUSH LOGS ON CLUSTER " + topo.Cluster
+			src = fmt.Sprintf("clusterAllReplicas(%s, system, query_log)", topo.Cluster)
+		}
+		require.NoError(t, conn.Exec(context.Background(), flush))
+		rows, err := conn.Query(context.Background(), "SELECT query FROM "+src+" WHERE type = 'QueryFinish' AND is_initial_query AND query_kind = 'Select' AND current_database = ? AND event_time_microseconds >= fromUnixTimestamp64Micro(?) AND position(query, 'FROM logs') > 0 AND position(query, 'query_log') = 0", db, since.UnixMicro())
+		require.NoError(t, err)
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var s string
+			require.NoError(t, rows.Scan(&s))
+			out = append(out, s)
+		}
+		require.NoError(t, rows.Err())
+		return out
+	}
+
+	for _, dir := range []logproto.Direction{logproto.FORWARD, logproto.BACKWARD} {
+		partOrder, globalOrder := " ORDER BY stream_id ASC, ts ASC, entry_hash ASC", " ORDER BY ts ASC, stream_id ASC, entry_hash"
+		if dir == logproto.BACKWARD {
+			partOrder, globalOrder = " ORDER BY stream_id DESC, ts DESC, entry_hash DESC", " ORDER BY ts DESC, stream_id ASC, entry_hash"
+		}
+
+		since := time.Now()
+		readAll(`{app="a"}`, dir) // one stream
+		single := logQueries(since)
+		require.NotEmpty(t, single, "no log query seen, dir=%v", dir)
+		for _, q := range single {
+			require.Contains(t, q, partOrder, "dir=%v query=%s", dir, q)
+			require.NotContains(t, q, globalOrder, "dir=%v query=%s", dir, q)
+		}
+
+		since = time.Now()
+		readAll(`{app=~"a|b"}`, dir) // two streams
+		multi := logQueries(since)
+		require.NotEmpty(t, multi, "no log query seen, dir=%v", dir)
+		for _, q := range multi {
+			require.Contains(t, q, globalOrder, "dir=%v query=%s", dir, q)
+			require.NotContains(t, q, partOrder, "dir=%v query=%s", dir, q)
+		}
+	}
+}
+
 func TestSelectSamples_StreamsInTimestampOrder(t *testing.T) {
 	conn, _ := chtest.New(t)
 	w := &chstore.Writer{Conn: conn}
@@ -421,21 +537,26 @@ func TestSelectSamples_KeepsMetadataOnlyDifference(t *testing.T) {
 }
 
 // Log reads page through keyset chunks that FINAL would make slow (and whose
-// SQL it would break); only metric reads may use FINAL.
+// SQL it would break); only the global metric read (above the fan-out limit)
+// may use FINAL — a fanned-out metric read dedups in Go instead.
 func TestSelectLogs_NeverReadsFinal(t *testing.T) {
 	conn, db := chtest.New(t)
 	var es []logproto.Entry
 	for i := range 10 {
 		es = append(es, logproto.Entry{Timestamp: t0.Add(time.Duration(i) * time.Second), Line: fmt.Sprint("l", i)})
 	}
-	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: es})
+	streams := []logproto.Stream{{Labels: `{app="a"}`, Entries: es}}
+	for s := range 17 { // above the fan-out limit: the metric query reads globally, with FINAL
+		streams = append(streams, logproto.Stream{Labels: fmt.Sprintf(`{app="b%02d"}`, s), Entries: es})
+	}
+	seed(t, &chstore.Writer{Conn: conn}, "t1", streams...)
 	ng := engine(t, &chstore.Querier{Conn: conn})
 	chstore.SetLogChunkSize(1)
 	t.Cleanup(func() { chstore.SetLogChunkSize(1000) })
 	since := time.Now()
 	run(t, ng, `{app="a"}`, t0, t0.Add(time.Minute), 0, logproto.FORWARD, 5)
 	end := t0.Add(time.Minute)
-	run(t, ng, `count_over_time({app="a"}[1m])`, end, end, 0, logproto.FORWARD, 0)
+	run(t, ng, `count_over_time({app=~"b[0-9]+"}[1m])`, end, end, 0, logproto.FORWARD, 0)
 
 	ctx := context.Background()
 	topo := chtest.Topology()

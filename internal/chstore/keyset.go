@@ -36,12 +36,21 @@ type keysetReader struct {
 }
 
 // continuation returns the keyset predicate for the next chunk, or ("", nil)
-// for the first chunk.
+// for the first chunk. The predicate follows the query's ORDER BY: the part's
+// physical key for a single stream, the global timestamp order otherwise.
 func (k *keysetReader) continuation() (string, []any) {
 	if !k.hasRow {
 		return "", nil
 	}
-	last := k.continuationKey()
+	last := k.continuationKey() // (ts, stream_id, entry_hash) at Unix nanoseconds
+	if k.rq.single {
+		if k.rq.dir == logproto.BACKWARD {
+			return " AND (stream_id, ts, entry_hash) < (?, fromUnixTimestamp64Nano(?, 'UTC'), ?)",
+				[]any{last[1], last[0], last[2]}
+		}
+		return " AND (stream_id, ts, entry_hash) > (?, fromUnixTimestamp64Nano(?, 'UTC'), ?)",
+			[]any{last[1], last[0], last[2]}
+	}
 	if k.rq.dir == logproto.BACKWARD {
 		return " AND (ts < fromUnixTimestamp64Nano(?, 'UTC') OR (ts = fromUnixTimestamp64Nano(?, 'UTC') AND (stream_id, entry_hash) > (?, ?)))",
 			[]any{last[0], last[0], last[1], last[2]}

@@ -1,6 +1,7 @@
 package chstore
 
 import (
+	"context"
 	"math/rand"
 	"slices"
 	"strings"
@@ -83,4 +84,70 @@ func TestRowQuery_FinalRendering(t *testing.T) {
 	sql, _ = rowQuery{tenant: "t"}.sql(window{1, 2})
 	require.NotContains(t, sql, "FINAL")
 	require.NotContains(t, sql, "SETTINGS")
+}
+
+// One resolved stream: the read follows the part sorting key
+// (tenant, stream_id, ts, entry_hash), so ClickHouse reads the rows in
+// physical order and stops at the chunk LIMIT instead of sorting the range.
+// Several streams keep the global timestamp order: the engine and the limit
+// need the newest rows overall, not per stream.
+func TestRowQuery_SingleStreamPartOrder(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rq   rowQuery
+		want string
+	}{
+		{"single backward", rowQuery{tenant: "t", single: true, dir: logproto.BACKWARD}, " ORDER BY stream_id DESC, ts DESC, entry_hash DESC"},
+		{"single forward", rowQuery{tenant: "t", single: true, dir: logproto.FORWARD}, " ORDER BY stream_id ASC, ts ASC, entry_hash ASC"},
+		{"multi backward", rowQuery{tenant: "t", dir: logproto.BACKWARD}, " ORDER BY ts DESC, stream_id ASC, entry_hash"},
+		{"multi forward", rowQuery{tenant: "t", dir: logproto.FORWARD}, " ORDER BY ts ASC, stream_id ASC, entry_hash"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sql, _ := tc.rq.sql(window{1, 2})
+			require.Contains(t, sql, tc.want, sql)
+		})
+	}
+}
+
+// A per-stream read (the sample fan-out) restricts one stream by ID instead of
+// the external stream set; the stream ID binds after the tenant, before the
+// window bounds and the filter.
+func TestRowQuery_PerStreamRendering(t *testing.T) {
+	id := uint64(42)
+	rq := rowQuery{tenant: "t", single: true, streamID: &id, dir: logproto.FORWARD, final: true,
+		filter: Fragment{SQL: "line LIKE ?", Args: []any{"%x%"}}}
+	sql, args := rq.sql(window{1, 2})
+	require.Contains(t, sql, "FROM logs FINAL WHERE tenant = ? AND stream_id = ? AND ts >= fromUnixTimestamp64Nano(?, 'UTC') AND ts < fromUnixTimestamp64Nano(?, 'UTC')")
+	require.Contains(t, sql, " AND line LIKE ?")
+	require.NotContains(t, sql, "lh_stream_ids")
+	require.Contains(t, sql, " ORDER BY stream_id ASC, ts ASC, entry_hash ASC")
+	require.True(t, strings.HasSuffix(sql, " SETTINGS do_not_merge_across_partitions_select_final = 1"), sql)
+	require.Equal(t, []any{"t", id, int64(1), int64(2), "%x%"}, args)
+
+	// Without a stream ID the query reads the external stream set.
+	sql, args = rowQuery{tenant: "t"}.sql(window{1, 2})
+	require.Contains(t, sql, "WHERE tenant = ? AND "+streamIDsIn)
+	require.Equal(t, []any{"t", int64(1), int64(2)}, args)
+}
+
+// Ranges of at most noStats read in one window; the hourly stats are not
+// consulted (the test would fail on the nil connection otherwise).
+func TestQuerierWindows_NoStatsRange(t *testing.T) {
+	q := &Querier{}
+	from := time.Unix(0, 0)
+	for _, tc := range []struct {
+		name          string
+		span, noStats time.Duration
+		want          []window
+	}{
+		{"within", 90 * time.Minute, 2 * time.Hour, []window{{0, (90 * time.Minute).Nanoseconds()}}},
+		{"at the threshold", 2 * time.Hour, 2 * time.Hour, []window{{0, (2 * time.Hour).Nanoseconds()}}},
+		{"one hour", time.Hour, time.Hour, []window{{0, hourNs}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws, err := q.windows(context.Background(), "t", []uint64{1}, from, from.Add(tc.span), logproto.FORWARD, tc.noStats)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, ws)
+		})
+	}
 }
