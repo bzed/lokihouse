@@ -32,7 +32,6 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.49.0
 	github.com/axiomhq/hyperloglog v0.3.0
 	github.com/buger/jsonparser v1.6.1
-	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/drone/envsubst v1.0.3
 	github.com/dustin/go-humanize v1.1.0
@@ -52,6 +51,7 @@ require (
 	go.opentelemetry.io/collector/pdata v1.68.0
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
+	golang.org/x/sync v0.24.0
 	google.golang.org/grpc v1.84.0
 )
 
@@ -111,6 +111,7 @@ require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.1 // indirect
 	github.com/c2h5oh/datasize v0.0.0-20231215233829-aa82cc1e6500 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/coder/quartz v0.3.1 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
@@ -341,7 +342,6 @@ require (
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect

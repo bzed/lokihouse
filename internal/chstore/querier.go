@@ -3,6 +3,7 @@ package chstore
 import (
 	"context"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -16,6 +17,7 @@ import (
 	querierdeletion "github.com/grafana/loki/v3/pkg/querier/deletion"
 	utildeletion "github.com/grafana/loki/v3/pkg/util/deletion"
 	"github.com/prometheus/prometheus/model/labels"
+	"golang.org/x/sync/semaphore"
 )
 
 // Querier executes LogQL queries against ClickHouse. It implements logql.Querier
@@ -33,6 +35,44 @@ type Querier struct {
 	// 0 means runtime.GOMAXPROCS(0) read at query time. The effective count is
 	// capped at the number of matching streams.
 	Workers int
+	// FanoutMax is the maximum number of streams a sample query reads in
+	// parallel, one goroutine and one ClickHouse query per stream; 0 means
+	// defaultFanoutMax (16). A query over more streams reads all of them in
+	// one query.
+	FanoutMax int
+	// FanoutConns bounds the ClickHouse connections the sample fan-out holds
+	// at once, across concurrent queries: a fanned-out query reserves one
+	// connection per stream, all or nothing, and reads all streams in one
+	// query when the reservation fails. It must not exceed the connection
+	// pool size (clickhouse.max_open_conns); 0 means FanoutMax. Production
+	// wires half the pool, so the log path, tail, ruler and stats keep
+	// headroom.
+	FanoutConns int
+
+	fanoutOnce sync.Once
+	fanoutSem  *semaphore.Weighted
+}
+
+// fanoutLimit is the maximum number of streams a sample query fans out.
+func (q *Querier) fanoutLimit() int {
+	if q.FanoutMax <= 0 {
+		return defaultFanoutMax
+	}
+	return q.FanoutMax
+}
+
+// fanoutSemaphore bounds the connections concurrent fan-outs hold. It is
+// built once from FanoutConns; a zero or negative FanoutConns disables the
+// fan-out (the reservation can never succeed).
+func (q *Querier) fanoutSemaphore() *semaphore.Weighted {
+	q.fanoutOnce.Do(func() {
+		n := q.FanoutConns
+		if n <= 0 {
+			n = q.fanoutLimit()
+		}
+		q.fanoutSem = semaphore.NewWeighted(int64(max(n, 0)))
+	})
+	return q.fanoutSem
 }
 
 var _ logql.Querier = (*Querier)(nil)
@@ -227,7 +267,20 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	// reads the whole range in one window and never consults the hourly
 	// stats; the global read keeps the statsFreeRange threshold, where
 	// windows bound the sort.
-	fanout := len(r.ids) <= sampleFanoutMax
+	fanout := len(r.ids) <= q.fanoutLimit()
+	var reserve *semaphore.Weighted
+	if fanout {
+		// Reserve one connection per stream, all or nothing. A stream holds
+		// its connection while it streams, and the merge cannot emit a row
+		// before every stream produced its head, so an unbounded fan-out
+		// deadlocks the pool under concurrent queries. When the reservation
+		// fails, read all streams in one query instead.
+		reserve = q.fanoutSemaphore()
+		if !reserve.TryAcquire(int64(len(r.ids))) {
+			reserve = nil
+			fanout = false
+		}
+	}
 	var ws []window
 	if fanout {
 		ws = []window{{r.from.UnixNano(), r.until.UnixNano()}}
@@ -248,7 +301,7 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 		// several times more granules of unmerged parts.
 		// Cancel the read with the iterator: Close stops the producers and the ClickHouse queries.
 		rctx, cancel := context.WithCancel(ctx)
-		return newSampleIter(rctx, cancel, newStreamReader(rctx, q.Conn, rq, r.ids, ws), r.byID, extractors, stats.FromContext(ctx)), nil
+		return newSampleIter(rctx, cancel, newStreamReader(rctx, q.Conn, rq, r.ids, ws, reserve, int64(len(r.ids))), r.byID, extractors, stats.FromContext(ctx)), nil
 	}
 	rq.final = true
 	sctx, err := withStreamIDs(ctx, r.ids)

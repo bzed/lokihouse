@@ -44,6 +44,20 @@ multiply the goroutine count while `GOMAXPROCS` (Go follows the cgroup CPU quota
 bounds the CPU they use together. Set the `GOMAXPROCS` environment variable to
 limit it.
 
+A metric query on at most 16 streams *fans out*: one goroutine and one
+ClickHouse query per stream, merged in Go. Such a query therefore adds up to 16
+goroutines and holds up to 16 connections from the ClickHouse pool, and buffers
+roughly 48 MiB of driver blocks (about 3 MiB per stream against roughly 3 MiB for
+a single-query read). The connection reservation is all-or-nothing and capped at
+half of `clickhouse.max_open_conns`; when it cannot be taken in full the query
+falls back to one query over all streams (the behaviour above 16 streams), so a
+busy pool degrades latency, never correctness. On a cluster each per-stream query
+is routed to the shard owning the stream (`optimize_skip_unused_shards`), so a
+fanned-out query costs one shard query per stream, not one per shard per stream.
+Size `clickhouse.max_open_conns` (default `100`) and ClickHouse
+`max_concurrent_queries` with this multiplier in mind: dashboards and ruler
+evaluations can run many fanned-out queries at once.
+
 `limits_config` is the same for every tenant; there are no per-tenant
 overrides. Where a request names several tenants (multi-tenant queries), the
 smallest positive value is used, as in Loki.

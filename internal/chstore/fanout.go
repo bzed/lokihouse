@@ -6,12 +6,12 @@ import (
 	"sync/atomic"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"golang.org/x/sync/semaphore"
 )
 
-// sampleFanoutMax is the maximum number of streams a sample query reads in
-// parallel, one goroutine per stream. It is package state only so tests can
-// tune it (SetSampleFanoutMax in export_test.go); production code never writes it.
-var sampleFanoutMax = 16
+// defaultFanoutMax is the default of Querier.FanoutMax: the maximum number of
+// streams a sample query reads in parallel, one goroutine per stream.
+const defaultFanoutMax = 16
 
 // rowBatch is a run of rows of one stream in (ts, entry_hash) order, or the
 // terminal error of the stream.
@@ -49,6 +49,12 @@ type streamReader struct {
 	wg     sync.WaitGroup
 	opened atomic.Int64 // windows opened across the streams, for tests
 
+	// reserve and weight are the connection reservation the fan-out holds
+	// while it reads; close returns it.
+	reserve     *semaphore.Weighted
+	weight      int64
+	releaseOnce sync.Once
+
 	curRow row
 	err    error
 }
@@ -56,11 +62,12 @@ type streamReader struct {
 // newStreamReader starts one goroutine per stream reading rq over ws. rq must
 // be a forward sample query without FINAL: the part-order read returns each
 // stream's duplicates adjacent, and the row reader's dedup removes them (see
-// Querier.SelectSamples).
-func newStreamReader(ctx context.Context, conn driver.Conn, rq rowQuery, ids []uint64, ws []window) *streamReader {
+// Querier.SelectSamples). reserve is the connection reservation for the
+// streams (one per stream), released by close.
+func newStreamReader(ctx context.Context, conn driver.Conn, rq rowQuery, ids []uint64, ws []window, reserve *semaphore.Weighted, weight int64) *streamReader {
 	ctx = perStreamContext(ctx)
 	ctx, cancel := context.WithCancel(ctx)
-	sr := &streamReader{ctx: ctx, cancel: cancel}
+	sr := &streamReader{ctx: ctx, cancel: cancel, reserve: reserve, weight: weight}
 	for _, id := range ids {
 		h := &streamHead{id: id, ch: make(chan rowBatch, 1)}
 		sr.heads = append(sr.heads, h)
@@ -200,10 +207,15 @@ func (sr *streamReader) errOf() error { return sr.err }
 // openedWindows reports how many windows the streams opened, for tests.
 func (sr *streamReader) openedWindows() int { return int(sr.opened.Load()) }
 
-// close cancels the read and waits for the stream goroutines. It is safe to
-// call more than once.
+// close cancels the read, waits for the stream goroutines and returns the
+// connection reservation. It is safe to call more than once.
 func (sr *streamReader) close() error {
 	sr.cancel()
 	sr.wg.Wait()
+	sr.releaseOnce.Do(func() {
+		if sr.reserve != nil {
+			sr.reserve.Release(sr.weight)
+		}
+	})
 	return nil
 }

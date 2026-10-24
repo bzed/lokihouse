@@ -213,7 +213,13 @@ func MigrateSchema(ctx context.Context, cfg *config.Config, logger log.Logger) e
 // newAPI builds the HTTP API over conn (moved unchanged from cmd/lokihouse).
 func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, logger log.Logger, rulerReg prometheus.Registerer) (*api.API, *deletes.Store, *chstore.Querier) {
 	store := &deletes.Store{Conn: conn}
-	q := &chstore.Querier{Conn: conn, Deletes: store}
+	// The sample fan-out reserves one pool connection per stream, all or
+	// nothing, and falls back to one query when the reservation fails; the
+	// budget is half the pool (at least one), so the log path, tail, ruler
+	// and stats keep headroom and the budget can never exceed the pool —
+	// with max_open_conns = 1 a zero budget would default to the fan-out
+	// limit and deadlock the pool.
+	q := &chstore.Querier{Conn: conn, Deletes: store, FanoutConns: max(cfg.ClickHouse.MaxOpenConns/2, 1)}
 	// When multi-tenant queries are enabled, log/metric queries fan out per
 	// tenant through the multi-tenant querier; Tier A (SQL) is single-tenant
 	// and is bypassed for multi-tenant requests (pushdown engine guard).
