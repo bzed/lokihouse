@@ -48,6 +48,24 @@ lifting.
 - **One binary.** Static (`CGO_ENABLED=0`), no runtime dependencies besides a
   ClickHouse server.
 
+## Speed
+
+Query latency against Loki on identical data and queries (200 000 lines, 50
+streams, one node each, p50, lokihouse 0.12.0; every answer is compared with
+Loki's before it counts):
+
+| query | Loki | lokihouse |
+|---|---:|---:|
+| `count_over_time` | 71 ms | **12 ms** |
+| `topk` | 34 ms | **12 ms** |
+| `bytes_over_time` | 33 ms | **14 ms** |
+| `logfmt` filter | 56 ms | **27 ms** |
+| `rate` with regex | 18 ms | **13 ms** |
+| `unwrap` + `quantile_over_time` | 69 ms | 72 ms |
+| plain log filter | 6 ms | 9 ms |
+
+Method, environment and caveats: [`docs/benchmark.md`](docs/benchmark.md).
+
 ## Install
 
 **Debian 13 "trixie"** (amd64, arm64), from the signed apt repository:
