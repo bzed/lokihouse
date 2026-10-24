@@ -104,7 +104,8 @@ func TestStreamSet_PrunesByPrimaryKey(t *testing.T) {
 	const streams, perStream = 50, 20000
 	ctx := context.Background()
 	conn, db := chtest.New(t)
-	logs := chtest.Topology().Local("logs")
+	topo := chtest.Topology()
+	logs := topo.Local("logs")
 	var ss []logproto.Stream
 	for i := 0; i < streams; i++ {
 		ss = append(ss, logproto.Stream{Labels: fmt.Sprintf(`{app="p", n="%d"}`, i), Entries: []logproto.Entry{{Timestamp: t0, Line: "seed"}}})
@@ -113,10 +114,13 @@ func TestStreamSet_PrunesByPrimaryKey(t *testing.T) {
 	for i := 0; i < streams; i++ {
 		_, id, err := chstore.StreamIdentity(fmt.Sprintf(`{app="p", n="%d"}`, i))
 		require.NoError(t, err)
-		require.NoError(t, conn.Exec(ctx, "INSERT INTO "+logs+" (tenant, stream_id, ts, line) SELECT 't1', ?, fromUnixTimestamp64Nano(toInt64(?) + toInt64(number) * 1000), 'row' FROM numbers(?)",
+		// The insert goes through the Distributed table, as every write does,
+		// so the rows land on the shard owning the stream, where the routed
+		// single-stream read finds them.
+		require.NoError(t, conn.Exec(ctx, "INSERT INTO logs (tenant, stream_id, ts, line) SELECT 't1', ?, fromUnixTimestamp64Nano(toInt64(?) + toInt64(number) * 1000), 'row' FROM numbers(?)",
 			id, t0.UnixNano()+1000, perStream))
 	}
-	require.NoError(t, conn.Exec(ctx, "OPTIMIZE TABLE "+logs+" FINAL"))
+	require.NoError(t, conn.Exec(ctx, "OPTIMIZE TABLE "+logs+" "+topo.OnCluster()+" FINAL"))
 
 	q := &chstore.Querier{Conn: conn}
 	uctx := user.InjectOrgID(ctx, "t1")
