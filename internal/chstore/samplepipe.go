@@ -192,7 +192,11 @@ func (it *sampleIter) work(w int, ex log.SampleExtractor) {
 				kept++
 				// The sample hash is the row's entry hash, the table's dedup
 				// identity: decoded with the row for free, and it identifies
-				// exact repeats, which is what a merge dedup needs.
+				// exact repeats, which is what a merge dedup needs. It is not
+				// Loki's definition (a hash of the extracted sample labels and
+				// the line), which differs when a query drops the metadata:
+				// nothing consumes the hash for merging today, but a future
+				// path that merges sample iterators must know.
 				b.out[i] = sampleOut{ok: true, value: s.Value, lbls: s.Labels.String(), hash: r.entryHash}
 			}
 			if it.stats != nil && kept > 0 {

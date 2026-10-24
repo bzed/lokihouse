@@ -7,12 +7,26 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/grafana/loki/v3/pkg/logproto"
 )
 
 // defaultWindowRows is the row target of one read window: about 85 MiB of sort
 // state at the measured 340 B per row.
 const defaultWindowRows = 250_000
+
+// statsFreeRange is the range a global read covers in one window without
+// consulting the hourly stats: below it the stats round trip costs more than
+// it saves.
+const statsFreeRange = time.Hour
+
+// perStreamContext routes a query that reads exactly one stream to the shard
+// owning it: the Distributed table shards by cityHash64(tenant, stream_id),
+// and with the default optimize_skip_unused_shards = 0 the query still goes
+// to every shard, where the others read nothing.
+func perStreamContext(ctx context.Context) context.Context {
+	return clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{"optimize_skip_unused_shards": 1}))
+}
 
 const hourNs = int64(3600) * 1_000_000_000
 

@@ -80,10 +80,11 @@ func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req 
 	}, nil
 }
 
-// readWindows renders the read windows of a resolved query. Ranges of at most
-// noStats read in one window, without the hourly-stats round trip.
-func (q *Querier) readWindows(ctx context.Context, r resolved, noStats time.Duration) ([]window, error) {
-	return q.windows(ctx, r.rq.tenant, r.ids, r.from, r.until, r.rq.dir, noStats)
+// readWindows renders the read windows of a resolved global read. Ranges of
+// at most statsFreeRange read in one window, without the hourly-stats round
+// trip.
+func (q *Querier) readWindows(ctx context.Context, r resolved) ([]window, error) {
+	return q.windows(ctx, r.rq.tenant, r.ids, r.from, r.until, r.rq.dir, statsFreeRange)
 }
 
 // SelectLogs executes a log query and returns an iterator over the matching entries.
@@ -113,7 +114,10 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	}
 	// One stream: read its rows in the part's physical order (rowQuery.single).
 	r.rq.single = len(r.ids) == 1
-	ws, err := q.readWindows(ctx, r, time.Hour)
+	if r.rq.single {
+		ctx = perStreamContext(ctx)
+	}
+	ws, err := q.readWindows(ctx, r)
 	if err != nil {
 		return iter.NoopEntryIterator, err
 	}
@@ -218,18 +222,21 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 			return nil, err
 		}
 	}
-	// A fanned-out read (one goroutine per stream, in the part's physical
-	// order) needs no window to bound a sort, so it skips the hourly-stats
-	// round trip for ranges of at most two hours; the global read keeps the
-	// one-hour threshold.
+	// A fanned-out read (one goroutine and one ClickHouse query per stream,
+	// in the part's physical order) needs no window to bound a sort, so it
+	// reads the whole range in one window and never consults the hourly
+	// stats; the global read keeps the statsFreeRange threshold, where
+	// windows bound the sort.
 	fanout := len(r.ids) <= sampleFanoutMax
-	noStats := time.Hour
+	var ws []window
 	if fanout {
-		noStats = sampleNoStats
-	}
-	ws, err := q.readWindows(ctx, r, noStats)
-	if err != nil {
-		return iter.NoopSampleIterator, err
+		ws = []window{{r.from.UnixNano(), r.until.UnixNano()}}
+	} else {
+		var err error
+		ws, err = q.readWindows(ctx, r)
+		if err != nil {
+			return iter.NoopSampleIterator, err
+		}
 	}
 	// Metric queries read everything anyway: one unchunked cursor per window.
 	rq := r.rq

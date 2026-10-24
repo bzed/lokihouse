@@ -9,7 +9,7 @@ changelog (`debian/changelog`) carries the same releases.
 ### Changed
 
 - Log queries whose selector matches a single stream read ClickHouse in the part's physical order instead of sorting the range by timestamp; their pagination continues from the last row with a keyset predicate the primary key can prune.
-- Sample queries whose selector matches up to 16 streams read every stream in parallel, one goroutine per stream, in the part's physical order, and merge the streams in Go in the global timestamp order. Their duplicates are removed in lokihouse instead of with `FINAL` (the part-order read returns them adjacent), which also lets the line text index skip granules of unmerged parts, and ranges of at most two hours skip the hourly-stats round trip when planning read windows.
+- Sample queries whose selector matches up to 16 streams read every stream in parallel, one goroutine per stream, in the part's physical order, and merge the streams in Go in the global timestamp order. Their duplicates are removed in lokihouse instead of with `FINAL` (the part-order read returns them adjacent), which also lets the line text index skip granules of unmerged parts. The fan-out reads the whole range in one window and does not plan windows from the hourly stats, and on a cluster each per-stream query is routed to the shard that owns the stream.
 
 ## [0.12.0] - 2026-10-24
 

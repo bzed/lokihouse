@@ -99,6 +99,11 @@ func TestSelectLogs_OpensWindowsLazily(t *testing.T) {
 func TestSelectSamples_ReadsInWindows(t *testing.T) {
 	conn, _ := chtest.New(t)
 	seedWindowData(t, conn)
+	// The global read keeps the two streams in one query, whose windows are
+	// planned from the hourly stats; the fan-out reads one window per stream
+	// (TestSelectSamples_FanoutSingleWindow).
+	t.Cleanup(func() { chstore.SetSampleFanoutMax(16) })
+	chstore.SetSampleFanoutMax(0)
 	q := &chstore.Querier{Conn: conn, WindowRows: 60}
 	expr, err := syntax.ParseSampleExpr(`count_over_time({app=~"a|b"}[5m])`)
 	require.NoError(t, err)

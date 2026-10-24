@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
@@ -13,13 +12,6 @@ import (
 // parallel, one goroutine per stream. It is package state only so tests can
 // tune it (SetSampleFanoutMax in export_test.go); production code never writes it.
 var sampleFanoutMax = 16
-
-// sampleNoStats is the range below which a fanned-out sample read plans a
-// single window: per-stream reads follow the part order, so no window has to
-// bound a sort and the hourly-stats round trip is pure overhead. Reads above
-// the fan-out limit keep the one-hour threshold, where windows bound the sort
-// of the global read.
-const sampleNoStats = 2 * time.Hour
 
 // rowBatch is a run of rows of one stream in (ts, entry_hash) order, or the
 // terminal error of the stream.
@@ -66,6 +58,7 @@ type streamReader struct {
 // stream's duplicates adjacent, and the row reader's dedup removes them (see
 // Querier.SelectSamples).
 func newStreamReader(ctx context.Context, conn driver.Conn, rq rowQuery, ids []uint64, ws []window) *streamReader {
+	ctx = perStreamContext(ctx)
 	ctx, cancel := context.WithCancel(ctx)
 	sr := &streamReader{ctx: ctx, cancel: cancel}
 	for _, id := range ids {

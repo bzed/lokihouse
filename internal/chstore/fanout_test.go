@@ -3,6 +3,7 @@ package chstore_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -129,13 +130,14 @@ func TestSelectSamples_FanoutStreamOrder(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
-// The fan-out opens every read window once per stream.
-func TestSelectSamples_FanoutOpensWindowsPerStream(t *testing.T) {
-	conn, _ := chtest.New(t)
+// The fan-out reads the whole range in one window per stream: a per-stream
+// in-order read has no sort for a window to bound, so the hourly stats are
+// never consulted, whatever the range.
+func TestSelectSamples_FanoutSingleWindow(t *testing.T) {
+	conn, db := chtest.New(t)
 	seedWindowData(t, conn) // two streams, three hours
 	t.Cleanup(func() { chstore.SetSampleFanoutMax(16) })
-	q := &chstore.Querier{Conn: conn, WindowRows: 60}
-	collect := func() int {
+	collect := func(q *chstore.Querier) int {
 		it := openSamples(context.Background(), t, q, `count_over_time({app=~"a|b"}[5m])`, t0, t0.Add(3*time.Hour))
 		for it.Next() {
 		}
@@ -143,22 +145,25 @@ func TestSelectSamples_FanoutOpensWindowsPerStream(t *testing.T) {
 		require.NoError(t, it.Close())
 		return chstore.OpenedSampleWindows(it)
 	}
-	chstore.SetSampleFanoutMax(0)
-	single := collect()
-	require.Positive(t, single)
+	chstore.SetSampleFanoutMax(0) // one query, global order: windows bound the sort
+	single := collect(&chstore.Querier{Conn: conn, WindowRows: 60})
+	require.Greater(t, single, 2, "the global read plans several windows from the stats")
 	chstore.SetSampleFanoutMax(16)
-	require.Equal(t, 2*single, collect(), "one window set per stream")
+	since := time.Now()
+	require.Equal(t, 2, collect(&chstore.Querier{Conn: conn, WindowRows: 60}), "one window per stream")
+	require.Empty(t, queriesSince(t, conn, db, since, "stream_stats_hourly"), "the fan-out never consults the stats")
 }
 
 // A fanned-out sample query reads one query per stream, in the part's physical
 // order and without FINAL (the row reader dedups the adjacent duplicates), and
-// over a range of at most two hours skips the hourly-stats round trip.
+// reads the whole range in one window: the hourly-stats round trip is skipped
+// at any range.
 func TestSelectSamples_FanoutQueryShape(t *testing.T) {
 	conn, db := chtest.New(t)
 	seedFanoutData(t, conn)
 	q := &chstore.Querier{Conn: conn}
 	since := time.Now()
-	it := openSamples(user.InjectOrgID(context.Background(), "t1"), t, q, `count_over_time({app=~"a|b"}[5m])`, t0.Add(-time.Minute), t0.Add(90*time.Minute))
+	it := openSamples(user.InjectOrgID(context.Background(), "t1"), t, q, `count_over_time({app=~"a|b"}[5m])`, t0.Add(-time.Minute), t0.Add(3*time.Hour))
 	for it.Next() {
 	}
 	require.NoError(t, it.Err())
@@ -172,7 +177,116 @@ func TestSelectSamples_FanoutQueryShape(t *testing.T) {
 		require.NotContains(t, qs, "lh_stream_ids", qs)
 		require.Contains(t, qs, "ORDER BY stream_id ASC, ts ASC, entry_hash ASC", qs)
 	}
-	require.Empty(t, queriesSince(t, conn, db, since, "stream_stats_hourly"), "no stats query below two hours")
+	require.Empty(t, queriesSince(t, conn, db, since, "stream_stats_hourly"), "no stats query at any range")
+}
+
+// On a cluster each per-stream query is routed to the shard owning the stream
+// (optimize_skip_unused_shards): a stream on the initiator's shard produces no
+// remote query at all, a stream on another shard exactly one — never one
+// remote query per shard per stream. The query selects one stream of each
+// placement, so without the routing both streams would produce a remote query.
+func TestSelectSamples_FanoutRoutesToOwningShard(t *testing.T) {
+	topo := chtest.Topology()
+	if topo.Cluster == "" {
+		t.Skip("needs a cluster")
+	}
+	conn, db := chtest.New(t)
+	ctx := context.Background()
+
+	var initHost string
+	require.NoError(t, conn.QueryRow(ctx, "SELECT hostName()").Scan(&initHost))
+
+	// replicasPerShard is the number of hosts every shard of the test cluster
+	// runs; the inserts are quorum-synchronous, so once a stream's rows are
+	// visible on that many hosts the owner set below is complete.
+	replicas := map[uint32]int{}
+	rows, err := conn.Query(ctx, "SELECT shard_num, count() FROM system.clusters WHERE cluster = ? GROUP BY shard_num", topo.Cluster)
+	require.NoError(t, err)
+	for rows.Next() {
+		var shard uint32
+		var n uint64
+		require.NoError(t, rows.Scan(&shard, &n))
+		replicas[shard] = int(n)
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	require.NotEmpty(t, replicas)
+	replicasPerShard := -1
+	for _, n := range replicas {
+		if replicasPerShard == -1 {
+			replicasPerShard = n
+		}
+		require.Equal(t, replicasPerShard, n, "uniform replica count per shard")
+	}
+
+	// Seed candidate streams and classify each by the shard owning it.
+	const candidates = 16 // the fan-out limit
+	seeded := make([]logproto.Stream, 0, candidates)
+	for i := range candidates {
+		seeded = append(seeded, logproto.Stream{
+			Labels: fmt.Sprintf(`{app="s%02d"}`, i),
+			Entries: []logproto.Entry{
+				{Timestamp: t0, Line: "line one"},
+				{Timestamp: t0.Add(time.Minute), Line: "line two"},
+			},
+		})
+	}
+	seed(t, &chstore.Writer{Conn: conn}, "t1", seeded...)
+
+	ms, err := syntax.ParseMatchers(`{app=~"s[0-9]+"}`, false)
+	require.NoError(t, err)
+	streams, err := chstore.ResolveStreams(user.InjectOrgID(ctx, "t1"), conn, "t1", ms, t0.Add(-time.Minute), t0.Add(10*time.Minute))
+	require.NoError(t, err)
+	require.Len(t, streams, candidates)
+	var local, remote string
+	for _, s := range streams {
+		var hosts []string
+		require.Eventually(t, func() bool {
+			hosts = hostsWithStream(t, conn, topo.Cluster, db, s.ID)
+			return len(hosts) == replicasPerShard
+		}, 10*time.Second, 50*time.Millisecond, "stream %d on every replica of its shard", s.ID)
+		app := s.Labels.Get("app")
+		if slices.Contains(hosts, initHost) {
+			local = app // on the initiator's shard: no remote query
+		} else {
+			remote = app // on another shard: exactly one remote query
+		}
+	}
+	if local == "" || remote == "" {
+		t.Skipf("the %d candidate streams did not split across shards", candidates)
+	}
+	qs := fmt.Sprintf(`count_over_time({app=~"%s|%s"}[5m])`, local, remote)
+
+	since := time.Now()
+	it := openSamples(user.InjectOrgID(ctx, "t1"), t, &chstore.Querier{Conn: conn}, qs, t0.Add(-time.Minute), t0.Add(10*time.Minute))
+	for it.Next() {
+	}
+	require.NoError(t, it.Err())
+	require.NoError(t, it.Close())
+
+	require.NoError(t, conn.Exec(ctx, "SYSTEM FLUSH LOGS ON CLUSTER "+topo.Cluster))
+	// Remote executions of the per-stream reads run against the local table
+	// (`<db>`.`logs_local`) in the remote connection's default database, so
+	// they are recognised by the table reference, not by current_database.
+	var got uint64
+	require.NoError(t, conn.QueryRow(ctx, "SELECT count() FROM clusterAllReplicas("+topo.Cluster+", system, query_log) WHERE type = 'QueryFinish' AND NOT is_initial_query AND query_kind = 'Select' AND event_time_microseconds >= fromUnixTimestamp64Micro(?) AND position(query, ?) > 0", since.UnixMicro(), "`"+db+"`.`"+topo.Local("logs")+"`").Scan(&got))
+	require.Equal(t, uint64(1), got, "only the stream on the other shard produces a remote query (%s local, %s remote)", local, remote)
+}
+
+// hostsWithStream returns the hosts whose local logs table holds rows of streamID.
+func hostsWithStream(t *testing.T, conn driver.Conn, cluster, db string, streamID uint64) []string {
+	t.Helper()
+	rows, err := conn.Query(context.Background(), "SELECT DISTINCT hostName() FROM clusterAllReplicas("+cluster+", "+db+", logs_local) WHERE stream_id = ?", streamID)
+	require.NoError(t, err)
+	defer rows.Close()
+	var hosts []string
+	for rows.Next() {
+		var h string
+		require.NoError(t, rows.Scan(&h))
+		hosts = append(hosts, h)
+	}
+	require.NoError(t, rows.Err())
+	return hosts
 }
 
 // Above the fan-out limit the sample query reads all streams in one query in
