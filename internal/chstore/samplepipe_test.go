@@ -21,7 +21,7 @@ import (
 	"github.com/bzed/lokihouse/internal/chstore/chtest"
 )
 
-func openSamples(t *testing.T, ctx context.Context, q *chstore.Querier, qs string, from, to time.Time) iter.SampleIterator {
+func openSamples(ctx context.Context, t *testing.T, q *chstore.Querier, qs string, from, to time.Time) iter.SampleIterator {
 	t.Helper()
 	expr, err := syntax.ParseSampleExpr(qs)
 	require.NoError(t, err)
@@ -80,7 +80,7 @@ func TestSelectSamples_SameResultForAnyWorkerCount(t *testing.T) {
 
 	postFilter := func(workers int) int64 {
 		st, ctx := stats.NewContext(user.InjectOrgID(context.Background(), "t1"))
-		it := openSamples(t, ctx, &chstore.Querier{Conn: conn, Workers: workers}, `count_over_time({env=~".+"} | logfmt [5m])`, t0, t0.Add(3*time.Hour))
+		it := openSamples(ctx, t, &chstore.Querier{Conn: conn, Workers: workers}, `count_over_time({env=~".+"} | logfmt [5m])`, t0, t0.Add(3*time.Hour))
 		for it.Next() {
 		}
 		require.NoError(t, it.Err())
@@ -98,7 +98,7 @@ func TestSelectSamples_CloseMidStream(t *testing.T) {
 	conn, _ := chtest.New(t)
 	seedMany(t, conn, 20000)
 	q := &chstore.Querier{Conn: conn, Workers: 4}
-	it := openSamples(t, context.Background(), q, `count_over_time({app=~"a|b"}[1m])`, t0, t0.Add(time.Minute))
+	it := openSamples(context.Background(), t, q, `count_over_time({app=~"a|b"}[1m])`, t0, t0.Add(time.Minute))
 	require.True(t, it.Next())
 
 	done := make(chan error, 1)
@@ -113,7 +113,7 @@ func TestSelectSamples_CloseMidStream(t *testing.T) {
 	require.NoError(t, it.Err())
 	require.NoError(t, it.Close(), "Close is idempotent")
 
-	unread := openSamples(t, context.Background(), q, `count_over_time({app=~"a|b"}[1m])`, t0, t0.Add(time.Minute))
+	unread := openSamples(context.Background(), t, q, `count_over_time({app=~"a|b"}[1m])`, t0, t0.Add(time.Minute))
 	require.NoError(t, unread.Close())
 }
 
@@ -123,7 +123,7 @@ func TestSelectSamples_CancelledContext(t *testing.T) {
 	seedMany(t, conn, 20000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	it := openSamples(t, ctx, &chstore.Querier{Conn: conn, Workers: 4}, `count_over_time({app=~"a|b"}[1m])`, t0, t0.Add(time.Minute))
+	it := openSamples(ctx, t, &chstore.Querier{Conn: conn, Workers: 4}, `count_over_time({app=~"a|b"}[1m])`, t0, t0.Add(time.Minute))
 	defer it.Close()
 	require.True(t, it.Next())
 	cancel()
