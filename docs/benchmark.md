@@ -44,23 +44,29 @@ compared with the oracle's `Compare`, so a fast-but-wrong answer fails the run.
 
 ## Result
 
-Recorded 2026-10-12 on the environment above (200 000 lines, 50 streams, 5
-rounds per query). Loki is faster on raw log filtering and `count_over_time`
-(which it serves from the ingester's in-memory chunks); lokihouse is faster on
-the push-down metric queries. `unwrap quantile` is slower in both — it is the
-most expensive query in the set.
+Recorded 2026-10-24 on the environment above, at lokihouse 0.11.0 (200 000
+lines, 50 streams, 5 rounds per query). lokihouse is faster on `logfmt filter`
+and the push-down metric queries (`count_over_time`, `topk`, `bytes_over_time`)
+and level with Loki on `log filter` and `rate regex`. `unwrap quantile` is slower
+than Loki — it is the most expensive query in the set and not yet pushed down.
+The data set is small and warm, so the 0.11.0 label-filter pushdown and windowed
+reads barely show here; they matter on larger data.
 
 | query | Loki p50 | Loki p95 | lokihouse p50 | lokihouse p95 |
 |---|---:|---:|---:|---:|
-| log filter | 6ms | 7ms | 9ms | 10ms |
-| logfmt filter | 53ms | 55ms | 30ms | 32ms |
-| count_over_time | 70ms | 70ms | 17ms | 17ms |
-| rate regex | 18ms | 19ms | 13ms | 14ms |
-| topk | 33ms | 33ms | 13ms | 14ms |
-| unwrap quantile | 69ms | 69ms | 159ms | 160ms |
-| bytes_over_time | 35ms | 35ms | 15ms | 15ms |
+| log filter | 9ms | 9ms | 8ms | 9ms |
+| logfmt filter | 79ms | 79ms | 26ms | 28ms |
+| count_over_time | 70ms | 71ms | 12ms | 14ms |
+| rate regex | 17ms | 18ms | 15ms | 17ms |
+| topk | 33ms | 33ms | 11ms | 12ms |
+| unwrap quantile | 69ms | 70ms | 155ms | 157ms |
+| bytes_over_time | 33ms | 33ms | 15ms | 16ms |
 | labels | 1ms | 1ms | 2ms | 2ms |
-| series | 0s | 0s | 2ms | 2ms |
+| series | 1ms | 1ms | 2ms | 2ms |
+
+The previous run (2026-10-12, 0.5.0) had lokihouse at 9ms for `log filter`, 30ms
+for `logfmt filter`, 17ms for `count_over_time`, 13ms for `rate regex`, 13ms for
+`topk` and 159ms for `unwrap quantile`.
 
 Re-run with `make bench` to refresh; the table is also written to
 `.cache/bench/results.md`.
