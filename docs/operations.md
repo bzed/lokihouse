@@ -52,9 +52,9 @@ against roughly 3 MiB for a single-query read). The fan-out drains its streams
 before the query returns: a stream's goroutine waits on nothing, so the query
 holds its connections only while its streams transfer — never while the engine
 waits on a sibling leg of the same request (a binary operation, a multi-tenant
-merge) and never while a stream's query queues for a connection. Requests with
-several legs therefore cannot deadlock the pool, even when the pool is smaller
-than one fan-out; concurrent fanned-out queries queue on the pool and succeed.
+merge) and never while a stream's query queues for a connection. Fanned-out
+legs therefore cannot deadlock the pool, even when the pool is smaller than
+one fan-out; concurrent fanned-out queries queue on the pool and succeed.
 The drained result is capped at about a million samples (roughly 48 MiB, up
 to about 100 MiB at the cap where the per-stream slices and the merged slice
 coexist); a query over the cap reads all streams in one query, so it reads
@@ -63,7 +63,12 @@ statistics count both reads. The connection reservation is
 all-or-nothing and capped at half of `clickhouse.max_open_conns`; when it
 cannot be taken in full the query falls back to one query over all streams (the
 behaviour above 16 streams), so a busy pool degrades latency, never
-correctness. On a cluster each per-stream query is routed to the shard owning
+correctness. Known limitation, pre-existing since 0.12.0: a leg that reads all
+streams in one query is still streamed lazily, so a request whose engine steps
+several such legs in turn (a binary operation over wide selectors, a
+multi-tenant merge) can hold the pool's connections while a sibling leg waits
+for one and fail on the pool's acquire timeout. This branch only shrinks that
+cycle, because fanned-out legs no longer take part. On a cluster each per-stream query is routed to the shard owning
 the stream (`optimize_skip_unused_shards`), so a fanned-out query costs one
 shard query per stream, not one per shard per stream. Size
 `clickhouse.max_open_conns` (default `100`) and ClickHouse

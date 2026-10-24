@@ -523,16 +523,21 @@ func TestSelectSamples_FanoutMultiLegQueriesNeverDeadlockPool(t *testing.T) {
 	start, end := t0, t0.Add(60*time.Millisecond) // all 50 000 rows of every stream
 	step := time.Millisecond
 
-	// A pool of four, half of it the fan-out budget as production wires it:
-	// every binary operation runs two 2-stream fan-outs in lockstep.
+	// A pool of four connections, and a budget far above it: every leg of
+	// every binary operation fans out (ten queries, two legs, two streams
+	// each — 40 units at most), so the test exercises the fan-out's lockstep
+	// legs, not the global read's lazy cursors. Those can hold the pool in
+	// their own lockstep cycle — a known limitation inherited from 0.12.0
+	// (see docs/operations.md). The drain makes a budget above the pool safe
+	// (see TestSelectSamples_FanoutBudgetAbovePoolSucceeds).
 	opts := chtest.Options(db)
 	opts.MaxOpenConns, opts.MaxIdleConns = 4, 4
-	opts.DialTimeout = 30 * time.Second
+	opts.DialTimeout = 5 * time.Second    // the production default: a regression fails fast
 	opts.Settings["max_block_size"] = 500 // small blocks: a long transfer
 	pool, err := clickhouse.Open(opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = pool.Close() })
-	q := &chstore.Querier{Conn: pool, FanoutConns: 2}
+	q := &chstore.Querier{Conn: pool, FanoutConns: 40}
 
 	want := run(t, engine(t, q), qs, start, end, step, logproto.FORWARD, 0)
 	require.NotEmpty(t, want.Data)
