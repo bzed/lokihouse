@@ -315,11 +315,13 @@ func TestQuerier_HidesPendingDeletes(t *testing.T) {
 		{Timestamp: t0.Add(2 * time.Second), Line: "secret 2"}}})
 	del := fakeDeletes{{Query: `{app="a"} |= "secret"`, StartTime: model.TimeFromUnixNano(t0.UnixNano()),
 		EndTime: model.TimeFromUnixNano(t0.Add(time.Second).UnixNano()), Status: deletionproto.StatusReceived}}
-	ng := engine(t, &chstore.Querier{Conn: conn, Deletes: del})
-	res := run(t, ng, `{app="a"}`, t0, t0.Add(time.Minute), 0, logproto.FORWARD, 100)
-	require.Equal(t, []string{"keep", "secret 2"}, lines(res.Data.(logqlmodel.Streams)[0]), "only inside [start, end]")
-	m := run(t, ng, `count_over_time({app="a"}[1m])`, t0.Add(time.Minute), t0.Add(time.Minute), 0, logproto.FORWARD, 0)
-	require.Equal(t, 1.0, m.Data.(promql.Vector)[0].F)
+	for _, workers := range []int{0, 4} {
+		ng := engine(t, &chstore.Querier{Conn: conn, Deletes: del, Workers: workers})
+		res := run(t, ng, `{app="a"}`, t0, t0.Add(time.Minute), 0, logproto.FORWARD, 100)
+		require.Equal(t, []string{"keep", "secret 2"}, lines(res.Data.(logqlmodel.Streams)[0]), "only inside [start, end]")
+		m := run(t, ng, `count_over_time({app="a"}[1m])`, t0.Add(time.Minute), t0.Add(time.Minute), 0, logproto.FORWARD, 0)
+		require.Equal(t, 1.0, m.Data.(promql.Vector)[0].F, "workers=%d", workers)
+	}
 }
 
 // TestQuerier_HidesPendingDeletesAdjacent verifies the filter hides matching

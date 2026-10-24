@@ -2,6 +2,7 @@ package chstore
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"slices"
 	"sort"
@@ -101,3 +102,5 @@ func sortedIDs(ss []Stream) []uint64 {
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
 }
+
+func isCanceled(err error) bool { return errors.Is(err, context.Canceled) }

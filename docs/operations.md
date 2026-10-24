@@ -38,6 +38,12 @@ decompressed, Loki's defaults); they are not configurable.
 | `max_query_series` | Loki engine | `400` if the result would exceed the cap (default `500`). |
 | `max_query_range` | Loki engine | `400` if the range is wider than allowed. |
 
+Metric queries that lokihouse evaluates itself (parsers, `unwrap`) parse lines on
+`min(GOMAXPROCS, matching streams)` goroutines *per query*, so concurrent queries
+multiply the goroutine count while `GOMAXPROCS` (Go follows the cgroup CPU quota)
+bounds the CPU they use together. Set the `GOMAXPROCS` environment variable to
+limit it.
+
 `limits_config` is the same for every tenant; there are no per-tenant
 overrides. Where a request names several tenants (multi-tenant queries), the
 smallest positive value is used, as in Loki.
