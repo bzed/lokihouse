@@ -10,7 +10,7 @@ changelog (`debian/changelog`) carries the same releases.
 
 - Log queries whose selector matches a single stream read ClickHouse in the part's physical order instead of sorting the range by timestamp; their pagination continues from the last row with a keyset predicate the primary key can prune.
 - Sample queries whose selector matches up to 16 streams read every stream in parallel, one goroutine per stream, in the part's physical order, and merge the streams in Go in the global timestamp order. Their duplicates are removed in lokihouse instead of with `FINAL` (the part-order read returns them adjacent), which also lets the line text index skip granules of unmerged parts. The fan-out reads the whole range in one window and does not plan windows from the hourly stats, and on a cluster each per-stream query and each single-stream log query is routed to the shard that owns the stream.
-- A fanned-out sample query holds one ClickHouse connection per stream for the duration of the read; the reservation is capped at half of `clickhouse.max_open_conns` and, when it cannot be taken in full, the query falls back to a single query over all streams.
+- A fanned-out sample query drains its streams before the query returns, holding one ClickHouse connection per stream only while it reads, so requests with several legs (binary operations, multi-tenant queries) cannot deadlock the connection pool; the reservation is capped at half of `clickhouse.max_open_conns` and, when it cannot be taken in full, the query falls back to a single query over all streams. A fan-out whose result would exceed about a million samples also reads all streams in a single query.
 
 ## [0.12.0] - 2026-10-24
 

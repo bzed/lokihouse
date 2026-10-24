@@ -2,6 +2,7 @@ package chstore
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"sync"
 	"time"
@@ -62,15 +63,15 @@ func (q *Querier) fanoutLimit() int {
 }
 
 // fanoutSemaphore bounds the connections concurrent fan-outs hold. It is
-// built once from FanoutConns; a zero or negative FanoutConns disables the
-// fan-out (the reservation can never succeed).
+// built once; a zero or negative FanoutConns means the default budget of
+// fanoutLimit connections.
 func (q *Querier) fanoutSemaphore() *semaphore.Weighted {
 	q.fanoutOnce.Do(func() {
 		n := q.FanoutConns
 		if n <= 0 {
 			n = q.fanoutLimit()
 		}
-		q.fanoutSem = semaphore.NewWeighted(int64(max(n, 0)))
+		q.fanoutSem = semaphore.NewWeighted(int64(n))
 	})
 	return q.fanoutSem
 }
@@ -252,22 +253,20 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	if err != nil || len(r.byID) == 0 {
 		return iter.NoopSampleIterator, err
 	}
-	// Loki's extractors are not safe for concurrent use: one per worker.
-	workers := q.Workers
-	if workers <= 0 {
-		workers = runtime.GOMAXPROCS(0)
-	}
-	workers = max(1, min(workers, len(r.byID)))
-	extractors := make([]log.SampleExtractor, workers)
-	for i := range extractors {
-		if i > 0 {
-			if extractor, err = expr.Extractor(); err != nil {
+	// Loki's extractors are not safe for concurrent use: one per extraction
+	// goroutine — the fan-out's streams, the global read's workers.
+	makeExtractors := func(n int) ([]log.SampleExtractor, error) {
+		exs := make([]log.SampleExtractor, n)
+		for i := range exs {
+			ex, err := expr.Extractor()
+			if err != nil {
+				return nil, err
+			}
+			if exs[i], err = utildeletion.SetupExtractor(p, ex); err != nil {
 				return nil, err
 			}
 		}
-		if extractors[i], err = utildeletion.SetupExtractor(p, extractor); err != nil {
-			return nil, err
-		}
+		return exs, nil
 	}
 	// A fanned-out read (one goroutine and one ClickHouse query per stream,
 	// in the part's physical order) needs no window to bound a sort, so it
@@ -277,28 +276,16 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 	fanout := len(r.ids) <= q.fanoutLimit()
 	var reserve *semaphore.Weighted
 	if fanout {
-		// Reserve one connection per stream, all or nothing. A stream holds
-		// its connection while it streams, and the merge cannot emit a row
-		// before every stream produced its head, so an unbounded fan-out
-		// deadlocks the pool under concurrent queries. When the reservation
-		// fails, read all streams in one query instead.
+		// Reserve one connection per stream, all or nothing: the drain below
+		// holds them for its duration, and the reservation keeps concurrent
+		// fan-outs within the budget. When it cannot be taken in full, read
+		// all streams in one query instead.
 		reserve = q.fanoutSemaphore()
 		if !reserve.TryAcquire(int64(len(r.ids))) {
 			reserve = nil
 			fanout = false
 		}
 	}
-	var ws []window
-	if fanout {
-		ws = []window{{r.from.UnixNano(), r.until.UnixNano()}}
-	} else {
-		var err error
-		ws, err = q.readWindows(ctx, r)
-		if err != nil {
-			return iter.NoopSampleIterator, err
-		}
-	}
-	// Metric queries read everything anyway: one unchunked cursor per window.
 	rq := r.rq
 	if fanout {
 		// Per-stream reads follow the part order, so duplicates of one stream
@@ -306,9 +293,47 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 		// removes them. FINAL is not needed, and it would cost the text index:
 		// under FINAL ClickHouse keeps the skip index exact only by reading
 		// several times more granules of unmerged parts.
-		// Cancel the read with the iterator: Close stops the producers and the ClickHouse queries.
-		rctx, cancel := context.WithCancel(ctx)
-		return newSampleIter(rctx, cancel, newStreamReader(rctx, q.Conn, rq, r.ids, ws, reserve, int64(len(r.ids))), r.byID, extractors, stats.FromContext(ctx)), nil
+		//
+		// The fan-out is drained before the query returns (drainFanout): the
+		// leg holds its connections only while its streams drain — they wait
+		// on nothing — so a request whose engine is blocked on a sibling leg
+		// (a binary operation, a multi-tenant merge) can never hold
+		// connections that sibling needs, and neither can a stream whose
+		// query is still waiting for a connection. The engine materialises a
+		// range query's full result before it responds, so draining first
+		// costs no end-to-end latency. The drained result is capped; a query
+		// over the cap reads all streams in one query below.
+		ws := []window{{r.from.UnixNano(), r.until.UnixNano()}}
+		exs, err := makeExtractors(len(r.ids))
+		if err != nil {
+			reserve.Release(int64(len(r.ids)))
+			return nil, err
+		}
+		samples, opened, err := q.drainFanout(ctx, rq, r.ids, ws, reserve, r.byID, exs, stats.FromContext(ctx))
+		if err == nil {
+			return newSliceSampleIter(samples, opened), nil
+		}
+		if !errors.Is(err, errFanoutTooLarge) {
+			return nil, err
+		}
+		// Over the sample cap: fall through to the global read below.
+	}
+	// The global read: one query over all streams, in the global order, with
+	// FINAL (above the fan-out limit, or when the reservation or the sample
+	// cap sent the query here). Metric queries read everything anyway: one
+	// unchunked cursor per window.
+	ws, err := q.readWindows(ctx, r)
+	if err != nil {
+		return iter.NoopSampleIterator, err
+	}
+	workers := q.Workers
+	if workers <= 0 {
+		workers = runtime.GOMAXPROCS(0)
+	}
+	workers = max(1, min(workers, len(r.byID)))
+	exs, err := makeExtractors(workers)
+	if err != nil {
+		return nil, err
 	}
 	rq.final = true
 	sctx, err := withStreamIDs(ctx, r.ids)
@@ -322,5 +347,5 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 		sql, args := rq.sql(w)
 		return openCursor(rctx, q.Conn, sql, args...)
 	}}
-	return newSampleIter(rctx, cancel, wr, r.byID, extractors, stats.FromContext(ctx)), nil
+	return newSampleIter(rctx, cancel, wr, r.byID, exs, stats.FromContext(ctx)), nil
 }

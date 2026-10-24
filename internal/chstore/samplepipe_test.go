@@ -93,11 +93,13 @@ func TestSelectSamples_SameResultForAnyWorkerCount(t *testing.T) {
 }
 
 // Closing a half-read iterator must stop the producer and workers and cancel the
-// ClickHouse query; goleak in TestMain proves the goroutines are gone.
+// ClickHouse query; goleak in TestMain proves the goroutines are gone. FanoutMax
+// 1 keeps the query on the global read: its producer is lazy, while a fan-out
+// drains its streams before the query returns.
 func TestSelectSamples_CloseMidStream(t *testing.T) {
 	conn, _ := chtest.New(t)
 	seedMany(t, conn, 20000)
-	q := &chstore.Querier{Conn: conn, Workers: 4}
+	q := &chstore.Querier{Conn: conn, Workers: 4, FanoutMax: 1}
 	it := openSamples(context.Background(), t, q, `count_over_time({app=~"a|b"}[1m])`, t0, t0.Add(time.Minute))
 	require.True(t, it.Next())
 
@@ -118,12 +120,14 @@ func TestSelectSamples_CloseMidStream(t *testing.T) {
 }
 
 // A cancelled query context ends the iteration with the context's error, without a hang.
+// FanoutMax 1 keeps the query on the global read, whose producer is lazy; a
+// fan-out drains before the query returns and surfaces a cancel as its error.
 func TestSelectSamples_CancelledContext(t *testing.T) {
 	conn, _ := chtest.New(t)
 	seedMany(t, conn, 20000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	it := openSamples(ctx, t, &chstore.Querier{Conn: conn, Workers: 4}, `count_over_time({app=~"a|b"}[1m])`, t0, t0.Add(time.Minute))
+	it := openSamples(ctx, t, &chstore.Querier{Conn: conn, Workers: 4, FanoutMax: 1}, `count_over_time({app=~"a|b"}[1m])`, t0, t0.Add(time.Minute))
 	defer it.Close()
 	require.True(t, it.Next())
 	cancel()

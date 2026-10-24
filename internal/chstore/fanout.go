@@ -2,10 +2,14 @@ package chstore
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/grafana/loki/v3/pkg/logproto"
+	"github.com/grafana/loki/v3/pkg/logql/log"
+	"github.com/grafana/loki/v3/pkg/logqlmodel/stats"
+	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -13,209 +17,196 @@ import (
 // streams a sample query reads in parallel, one goroutine per stream.
 const defaultFanoutMax = 16
 
-// rowBatch is a run of rows of one stream in (ts, entry_hash) order, or the
-// terminal error of the stream.
-type rowBatch struct {
-	rows []row
-	err  error
+// maxFanoutSamples caps the samples a fanned-out read buffers before it
+// serves them: 1<<20 samples at 48 bytes each (sample, labels, stream) is
+// 48 MiB, the same order as the driver blocks a streaming read buffers. A
+// query that would produce more reads all streams in one query instead. It
+// is package state only so tests can shrink it (SetMaxFanoutSamples in
+// export_test.go); production code never writes it.
+var maxFanoutSamples = int64(1 << 20)
+
+// errFanoutTooLarge reports a drained fan-out that exceeded maxFanoutSamples;
+// the caller falls back to the global read.
+var errFanoutTooLarge = errors.New("fan-out result exceeds the sample cap")
+
+// drainedSample is one sample of a drained fan-out, with the labels and the
+// stream hash the engine reads from the iterator.
+type drainedSample struct {
+	sample logproto.Sample
+	lbls   string
+	stream uint64
 }
 
-// streamHead is one stream of the fan-out: the channel its goroutine sends
-// batches on, and the consumer's position in the batch it holds.
-type streamHead struct {
-	id   uint64
-	ch   chan rowBatch
-	rows []row // batch being consumed
-	pos  int
-	done bool // the stream ended
-}
-
-// streamReader is a rowSource that reads every resolved stream on its own
-// goroutine — one query per stream and window, in the part's physical order,
-// so ClickHouse reads each stream without sorting — and merges the streams in
-// the global (ts, stream_id, entry_hash) order the sample pipeline needs.
+// drainFanout reads every stream of the fan-out on its own goroutine — one
+// ClickHouse query per stream and window, in the part's physical order —
+// extracts each stream's samples and merges them in the global (ts,
+// stream_id) order the single-query read produces. reserve is the
+// connection reservation for the streams (one per stream), returned when the
+// drain ends.
 //
-// The windows are contiguous, so a stream's rows arrive in timestamp order
-// whatever window it is reading, and a linear scan over the heads finds the
-// smallest row: the merged stream is exactly the ORDER BY ts, stream_id,
-// entry_hash of the single-query read.
+// A goroutine waits on nothing: it consumes its query as fast as the server
+// sends and appends to its own slice, so it holds its connection only for the
+// transfer. The leg therefore holds its connections only until its streams
+// are drained — never while the engine waits on a sibling leg of the same
+// request (a binary operation, a multi-tenant merge), and never while the
+// merge waits for a stream whose query has not started — so neither
+// concurrent multi-leg queries nor a pool smaller than a fan-out can
+// deadlock: there is no circular wait. The engine materialises a range
+// query's full result before it responds, so draining first costs no
+// end-to-end latency.
 //
-// The goroutines start with the reader and are owned by it: close cancels the
-// read and waits for them.
-type streamReader struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	heads  []*streamHead
-	wg     sync.WaitGroup
-	opened atomic.Int64 // windows opened across the streams, for tests
-
-	// reserve and weight are the connection reservation the fan-out holds
-	// while it reads; close returns it.
-	reserve     *semaphore.Weighted
-	weight      int64
-	releaseOnce sync.Once
-
-	curRow row
-	err    error
-}
-
-// newStreamReader starts one goroutine per stream reading rq over ws. rq must
-// be a forward sample query without FINAL: the part-order read returns each
-// stream's duplicates adjacent, and the row reader's dedup removes them (see
-// Querier.SelectSamples). reserve is the connection reservation for the
-// streams (one per stream), released by close.
-func newStreamReader(ctx context.Context, conn driver.Conn, rq rowQuery, ids []uint64, ws []window, reserve *semaphore.Weighted, weight int64) *streamReader {
+// The result is capped at maxFanoutSamples; over the cap the drain gives up
+// (errFanoutTooLarge) and the caller reads all streams in one query instead.
+func (q *Querier) drainFanout(ctx context.Context, rq rowQuery, ids []uint64, ws []window, reserve *semaphore.Weighted, byID map[uint64]Stream, extractors []log.SampleExtractor, st *stats.Context) ([]drainedSample, int, error) {
+	if reserve != nil {
+		defer reserve.Release(int64(len(ids)))
+	}
 	ctx = perStreamContext(ctx)
 	ctx, cancel := context.WithCancel(ctx)
-	sr := &streamReader{ctx: ctx, cancel: cancel, reserve: reserve, weight: weight}
-	for _, id := range ids {
-		h := &streamHead{id: id, ch: make(chan rowBatch, 1)}
-		sr.heads = append(sr.heads, h)
-		sr.wg.Add(1)
-		go sr.read(ctx, conn, rq, h, ws)
-	}
-	return sr
-}
-
-// read streams the stream's rows window by window into batches. On exit it
-// closes the head's channel: a clean end, an error batch, or a cancellation
-// that stopped the sends.
-func (sr *streamReader) read(ctx context.Context, conn driver.Conn, rq rowQuery, h *streamHead, ws []window) {
-	defer sr.wg.Done()
-	defer close(h.ch)
-	crq := rq
-	crq.single = true
-	crq.streamID = &h.id
-	wr := &windowReader{ws: ws, open: func(w window) (rowSource, error) {
-		sr.opened.Add(1)
-		sql, args := crq.sql(w)
-		return openCursor(ctx, conn, sql, args...)
-	}}
-	defer func() { _ = wr.close() }() // the read is over; a close error is not actionable
-	batch := make([]row, 0, sampleBatchRows)
-	for wr.next() {
-		batch = append(batch, wr.cur())
-		if len(batch) < sampleBatchRows {
-			continue
-		}
-		if !sr.send(ctx, h, rowBatch{rows: batch}) {
-			return
-		}
-		batch = make([]row, 0, sampleBatchRows)
-	}
-	if err := wr.errOf(); err != nil {
-		// On cancellation the send gives up and the error is dropped; the
-		// consumer records the cancellation when the channel closes.
-		sr.send(ctx, h, rowBatch{err: err})
-		return
-	}
-	if len(batch) > 0 {
-		sr.send(ctx, h, rowBatch{rows: batch})
-	}
-}
-
-// send hands b to the consumer, giving up when the read context ends.
-func (sr *streamReader) send(ctx context.Context, h *streamHead, b rowBatch) bool {
-	select {
-	case h.ch <- b:
-		return true
-	case <-ctx.Done():
-		return false
-	}
-}
-
-// rowKeyLess orders rows by (ts, stream_id, entry_hash): the global sample order.
-func rowKeyLess(a, b row) bool {
-	if !a.ts.Equal(b.ts) {
-		return a.ts.Before(b.ts)
-	}
-	if a.streamID != b.streamID {
-		return a.streamID < b.streamID
-	}
-	return a.entryHash < b.entryHash
-}
-
-// fill pulls the head's next batch. It reports false when the stream ended,
-// recording a terminal error or the cancellation that cut the stream short.
-func (sr *streamReader) fill(h *streamHead) bool {
-	select {
-	case b, ok := <-h.ch:
-		if !ok {
-			h.done = true
-			if err := sr.ctx.Err(); err != nil && sr.err == nil {
-				sr.err = err // the stream was cut short by the cancellation
+	defer cancel()
+	perStream := make([][]drainedSample, len(ids))
+	errs := make([]error, len(ids))
+	var total, opened atomic.Int64
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sid := id
+			crq := rq
+			crq.single = true
+			crq.streamID = &sid
+			wr := &windowReader{ws: ws, open: func(w window) (rowSource, error) {
+				opened.Add(1)
+				sql, args := crq.sql(w)
+				return openCursor(ctx, q.Conn, sql, args...)
+			}}
+			defer func() { _ = wr.close() }() // the read is over; a close error is not actionable
+			se := extractors[i].ForStream(byID[id].Labels)
+			var kept int64
+			for wr.next() {
+				r := wr.cur()
+				s, ok := se.ProcessString(r.ts.UnixNano(), r.line, labels.FromMap(r.md))
+				if !ok {
+					continue
+				}
+				kept++
+				// The sample hash is the row's entry hash, the table's dedup
+				// identity: decoded with the row for free, and it identifies
+				// exact repeats, which is what a merge dedup needs. It is not
+				// Loki's definition (a hash of the extracted sample labels and
+				// the line), which differs when a query drops the metadata:
+				// nothing consumes the hash for merging today, but a future
+				// path that merges sample iterators must know.
+				perStream[i] = append(perStream[i], drainedSample{
+					sample: logproto.Sample{Timestamp: r.ts.UnixNano(), Value: s.Value, Hash: r.entryHash},
+					lbls:   s.Labels.String(),
+					stream: id,
+				})
+				if total.Add(1) > maxFanoutSamples {
+					errs[i] = errFanoutTooLarge
+					cancel()
+					return
+				}
 			}
-			return false
-		}
-		if b.err != nil {
-			h.done = true
-			if sr.err == nil {
-				sr.err = b.err
+			if err := wr.errOf(); err != nil {
+				errs[i] = err
+				cancel()
+				return
 			}
-			return false
+			if st != nil && kept > 0 {
+				st.AddPostFilterLines(kept)
+			}
+		}()
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if errors.Is(err, errFanoutTooLarge) {
+			return nil, 0, errFanoutTooLarge
 		}
-		h.rows, h.pos = b.rows, 0
-		return true
-	case <-sr.ctx.Done():
-		h.done = true
-		if sr.err == nil {
-			sr.err = sr.ctx.Err()
+	}
+	for _, err := range errs {
+		if err != nil {
+			return nil, 0, err
 		}
-		return false
+	}
+	samples := mergeSamples(perStream)
+	// Intern the label strings: the distinct sets are few, and the slice
+	// would otherwise hold a copy of each per sample.
+	interned := make(map[string]string, len(ids))
+	for i := range samples {
+		if s, ok := interned[samples[i].lbls]; ok {
+			samples[i].lbls = s
+		} else {
+			interned[samples[i].lbls] = samples[i].lbls
+		}
+	}
+	return samples, int(opened.Load()), nil
+}
+
+// mergeSamples merges the per-stream sample slices in the global (ts,
+// stream_id) order — the order of the single-query read — preserving each
+// stream's order within one timestamp.
+func mergeSamples(perStream [][]drainedSample) []drainedSample {
+	var total int
+	for _, ss := range perStream {
+		total += len(ss)
+	}
+	out := make([]drainedSample, 0, total)
+	pos := make([]int, len(perStream))
+	for {
+		best := -1
+		var bestSample drainedSample
+		for i, ss := range perStream {
+			if pos[i] >= len(ss) {
+				continue
+			}
+			if best < 0 || sampleKeyLess(ss[pos[i]], bestSample) {
+				best, bestSample = i, ss[pos[i]]
+			}
+		}
+		if best < 0 {
+			return out
+		}
+		out = append(out, bestSample)
+		pos[best]++
 	}
 }
 
-// head returns the head's next row, pulling batches as needed.
-func (sr *streamReader) head(h *streamHead) (row, bool) {
-	for h.pos >= len(h.rows) {
-		if h.done || !sr.fill(h) {
-			return row{}, false
-		}
+// sampleKeyLess orders samples by (ts, stream_id): the global sample order.
+func sampleKeyLess(a, b drainedSample) bool {
+	if a.sample.Timestamp != b.sample.Timestamp {
+		return a.sample.Timestamp < b.sample.Timestamp
 	}
-	return h.rows[h.pos], true
+	return a.stream < b.stream
 }
 
-func (sr *streamReader) next() bool {
-	if sr.err != nil {
+// sliceSampleIter serves the samples a fanned-out read drained (drainFanout).
+// The read is over when the iterator is created: Next replays the slice and
+// Close is a no-op. opened is the number of windows the fan-out opened, for
+// tests.
+type sliceSampleIter struct {
+	samples []drainedSample
+	opened  int
+	pos     int
+	cur     drainedSample
+}
+
+func newSliceSampleIter(samples []drainedSample, opened int) *sliceSampleIter {
+	return &sliceSampleIter{samples: samples, opened: opened}
+}
+
+func (it *sliceSampleIter) Next() bool {
+	if it.pos >= len(it.samples) {
 		return false
 	}
-	var best *streamHead
-	var bestRow row
-	for _, h := range sr.heads {
-		r, ok := sr.head(h)
-		if !ok {
-			if sr.err != nil {
-				return false
-			}
-			continue
-		}
-		if best == nil || rowKeyLess(r, bestRow) {
-			best, bestRow = h, r
-		}
-	}
-	if best == nil {
-		return false
-	}
-	sr.curRow = bestRow
-	best.pos++
+	it.cur = it.samples[it.pos]
+	it.pos++
 	return true
 }
 
-func (sr *streamReader) cur() row     { return sr.curRow }
-func (sr *streamReader) errOf() error { return sr.err }
-
-// openedWindows reports how many windows the streams opened, for tests.
-func (sr *streamReader) openedWindows() int { return int(sr.opened.Load()) }
-
-// close cancels the read, waits for the stream goroutines and returns the
-// connection reservation. It is safe to call more than once.
-func (sr *streamReader) close() error {
-	sr.cancel()
-	sr.wg.Wait()
-	sr.releaseOnce.Do(func() {
-		if sr.reserve != nil {
-			sr.reserve.Release(sr.weight)
-		}
-	})
-	return nil
-}
+func (it *sliceSampleIter) At() logproto.Sample { return it.cur.sample }
+func (it *sliceSampleIter) Labels() string      { return it.cur.lbls }
+func (it *sliceSampleIter) StreamHash() uint64  { return it.cur.stream }
+func (it *sliceSampleIter) Err() error          { return nil }
+func (it *sliceSampleIter) Close() error        { return nil }

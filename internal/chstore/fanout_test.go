@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
+	"github.com/grafana/loki/v3/pkg/logqlmodel"
 	"github.com/grafana/loki/v3/pkg/querier/plan"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
@@ -229,10 +230,8 @@ func TestSelectSamples_FanoutQueryShape(t *testing.T) {
 	require.Empty(t, queriesSince(t, conn, db, since, "stream_stats_hourly"), "no stats query at any range")
 }
 
-// A fan-out holds one pool connection per stream while it streams, and the
-// merge cannot emit a row before every stream produced its head. A query whose
-// connection reservation (FanoutConns) fails reads all streams in one query
-// instead of deadlocking the pool.
+// A fan-out reserves one connection per stream, all or nothing. A query whose
+// reservation (FanoutConns) fails reads all streams in one query instead.
 func TestSelectSamples_FanoutFallsBackWhenConnsBusy(t *testing.T) {
 	conn, db := chtest.New(t)
 	seedFanoutData(t, conn)
@@ -250,13 +249,13 @@ func TestSelectSamples_FanoutFallsBackWhenConnsBusy(t *testing.T) {
 	require.Contains(t, rows[0], "lh_stream_ids", rows[0])
 }
 
-// A fan-out needs one pool connection per stream: the merge cannot emit a row
-// before every stream produced its head, and a stream blocked sending its
-// next batch holds its connection (see seedPoolStreams). A pool smaller than
-// the fan-out therefore deadlocks a single query on its own. The connection
-// reservation (FanoutConns, wired to half the pool in production) turns that
-// into a fallback: with a pool of four and a budget of two, a six-stream query
-// reads all streams in one query and succeeds.
+// The connection reservation (FanoutConns, wired to half the pool in
+// production) is all or nothing: a fan-out reserves one connection per
+// stream, and when the reservation cannot be taken in full the query reads
+// all streams in one query instead. With a budget of two, a six-stream query
+// never fans out — and a pool of four proves the one-query read needs only
+// one connection. (When the budget is granted, a pool smaller than the
+// fan-out still succeeds: see TestSelectSamples_FanoutBudgetAbovePoolSucceeds.)
 func TestSelectSamples_FanoutPoolTooSmallFallsBack(t *testing.T) {
 	conn, db := chtest.New(t)
 	seedPoolStreams(t, conn, 6)
@@ -289,13 +288,12 @@ func TestSelectSamples_FanoutPoolTooSmallFallsBack(t *testing.T) {
 
 // seedPoolStreams writes n streams of 50 000 rows each over a 50 ms range, in
 // 10 000-row chunks. The ~200-byte lines make a stream carry about ten
-// megabytes: at the pool's max_block_size of 500 that is a hundred blocks. A
-// stream whose consumer stopped reading has at most ~3 000 rows (~600 KB) read
-// and two blocks buffered by the driver, so the server is still mid-stream —
-// its socket buffer holds far less than the remaining ~9 MB — and the stream
-// keeps its pool connection until the consumer drains it. (With a megabyte per
-// stream the server finishes into the socket and driver buffers and no
-// connection is held; that is why the streams are this large.)
+// megabytes: at the pool's max_block_size of 500 that is a hundred blocks, so
+// a stream's transfer spans many blocks and concurrent streams overlap on the
+// pool's connections for a long time — the pool tests need that overlap. (With
+// a megabyte per stream the server finishes into the socket and driver buffers
+// almost at once and the overlap vanishes; that is why the streams are this
+// large.)
 func seedPoolStreams(t *testing.T, conn driver.Conn, n int) {
 	t.Helper()
 	w := &chstore.Writer{Conn: conn}
@@ -313,62 +311,50 @@ func seedPoolStreams(t *testing.T, conn driver.Conn, n int) {
 	}
 }
 
-// Concurrent fan-outs share the FanoutConns budget all or nothing: while one
-// query holds the whole budget — and its eight connections, stalled
-// mid-stream — until its iterator closes, the next reads globally. Both
-// succeed on a pool that holds one fan-out plus headroom.
+// Concurrent fan-outs share the FanoutConns budget all or nothing: while the
+// whole budget is held, a query reads all streams in one query; with the
+// budget free it fans out. Both succeed on a pool that holds one fan-out plus
+// headroom.
 func TestSelectSamples_FanoutConcurrentPool(t *testing.T) {
 	conn, db := chtest.New(t)
 	seedPoolStreams(t, conn, 8)
-	ctx := user.InjectOrgID(context.Background(), "t1")
+	ctx := context.Background()
 	qs := `count_over_time({app=~"s[0-9]+"}[5m])`
 	start, end := t0, t0.Add(60*time.Millisecond) // all 50 000 rows of every stream
 
 	// A pool that holds one fan-out (8 connections) plus headroom.
 	opts := chtest.Options(db)
 	opts.MaxOpenConns, opts.MaxIdleConns = 12, 12
-	opts.DialTimeout = 2 * time.Second
-	opts.Settings["max_block_size"] = 500 // small blocks: the hold engages
+	opts.DialTimeout = 10 * time.Second
+	opts.Settings["max_block_size"] = 500 // small blocks: a long transfer
 	pool, err := clickhouse.Open(opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = pool.Close() })
 
 	q := &chstore.Querier{Conn: pool, FanoutConns: 8}
-	want, err := collectSamplesQuery(context.Background(), q, qs, start, end)
+	want, err := collectSamplesQuery(ctx, q, qs, start, end)
 	require.NoError(t, err)
 	require.NotEmpty(t, want)
-	since := time.Now()
 
-	// The first query fans out; one sample proves every stream's query is in
-	// flight, so its eight connections are held, and the unconsumed rest
-	// stalls the streams mid-stream (see seedPoolStreams)...
-	it := openSamples(ctx, t, q, qs, start, end)
-	defer func() { _ = it.Close() }()
-	require.True(t, it.Next(), "one sample: every stream's query is in flight")
-	s := it.At()
-	first := fmt.Sprintf("%s %d %v", it.Labels(), s.Timestamp, s.Value)
-	// ...so a concurrent query cannot reserve 8 connections and reads all
-	// streams in one query.
-	got, err := collectSamplesQuery(context.Background(), q, qs, start, end)
+	// Hold the whole budget: the next query cannot reserve eight connections
+	// and reads all streams in one query.
+	require.True(t, chstore.AcquireFanoutBudget(q, 8))
+	since := time.Now()
+	got, err := collectSamplesQuery(ctx, q, qs, start, end)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
-	rest, err := drainSamples(it)
-	require.NoError(t, err)
-	require.Equal(t, want, append([]string{first}, rest...))
-	require.NoError(t, it.Close())
+	rows := queryStartsSince(t, conn, db, since, "FROM logs")
+	require.Len(t, rows, 1, "one query for all streams")
+	require.Contains(t, rows[0], "FINAL", rows[0])
+	require.Contains(t, rows[0], "lh_stream_ids", rows[0])
+	chstore.ReleaseFanoutBudget(q, 8)
 
-	// The first query read one query per stream; the second read all streams
-	// in one query.
-	var perStream, global int
-	for _, logged := range queryStartsSince(t, conn, db, since, "FROM logs") {
-		if strings.Contains(logged, "FINAL") {
-			global++
-		} else {
-			perStream++
-		}
-	}
-	require.Equal(t, 8, perStream, "the first query read one query per stream")
-	require.Equal(t, 1, global, "the second query read all streams in one query")
+	// With the budget free the query fans out: one query per stream.
+	since = time.Now()
+	got, err = collectSamplesQuery(ctx, q, qs, start, end)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Len(t, queryStartsSince(t, conn, db, since, "FROM logs"), 8, "one query per stream")
 }
 
 // Enough concurrent one-connection queries to saturate a small pool: the pool
@@ -413,81 +399,39 @@ func TestSelectSamples_SingleConnQueriesQueueOnSmallPool(t *testing.T) {
 	}
 }
 
-// Many concurrent fanned-out queries on a pool that cannot hold them all: the
-// all-or-nothing reservation admits one fan-out at a time and moves the rest
-// to one-query reads, which queue on the pool — every query succeeds. Without
-// the reservation the fan-outs hold connections while waiting for each other
-// and fail on the pool-acquire timeout.
+// Many concurrent fanned-out queries on a pool that cannot hold them all:
+// each fan-out drains its streams before the query returns, holding its
+// connections only while it transfers and waiting on nothing, so the
+// streams queue on the pool and every query succeeds — whatever the mix of
+// fan-outs (three connections each, within the budget) and one-query reads
+// (one each) the all-or-nothing reservation admits. Before the drain, the
+// fan-outs held connections while waiting for each other and failed on the
+// pool-acquire timeout.
 func TestSelectSamples_FanoutUnderConcurrentLoad(t *testing.T) {
 	conn, db := chtest.New(t)
 	seedPoolStreams(t, conn, 3)
-	ctx := user.InjectOrgID(context.Background(), "t1")
+	ctx := context.Background()
 	qs := `count_over_time({app=~"s[0-9]+"}[5m])`
 	start, end := t0, t0.Add(60*time.Millisecond) // all 50 000 rows of every stream
 
 	// Half the pool for the fan-out budget, as production wires it: one
-	// 3-stream fan-out (3 connections) plus one-query reads (1 each) — five
-	// concurrent queries need 3 + 4 = 7 against a pool of 6, so one read
-	// queues for a connection.
+	// 3-stream fan-out (3 connections) at a time, the rest one-query reads
+	// (1 each) — twelve concurrent queries need far more than the pool of 6.
 	opts := chtest.Options(db)
 	opts.MaxOpenConns, opts.MaxIdleConns = 6, 6
-	opts.DialTimeout = 10 * time.Second
-	opts.Settings["max_block_size"] = 500 // small blocks: the hold engages
+	opts.DialTimeout = 30 * time.Second
+	opts.Settings["max_block_size"] = 500 // small blocks: a long transfer
 	pool, err := clickhouse.Open(opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = pool.Close() })
 
 	q := &chstore.Querier{Conn: pool, FanoutConns: 3}
-	want, err := collectSamplesQuery(context.Background(), q, qs, start, end)
+	want, err := collectSamplesQuery(ctx, q, qs, start, end)
 	require.NoError(t, err)
 	require.NotEmpty(t, want)
 	since := time.Now()
 
-	// Two queries that are not consumed until the rest finished. One sample
-	// each proves their queries are in flight, so their connections are
-	// held: the fan-out holds three, stalled mid-stream; the one-query read
-	// holds one.
-	type held struct {
-		it    iter.SampleIterator
-		first string
-		err   error
-	}
-	ready := make(chan held, 2)
-	for range 2 {
-		go func() {
-			it, err := openSamplesQuery(ctx, q, qs, start, end)
-			if err != nil {
-				ready <- held{err: err}
-				return
-			}
-			if !it.Next() {
-				err := it.Err()
-				_ = it.Close()
-				ready <- held{err: err}
-				return
-			}
-			s := it.At()
-			ready <- held{it: it, first: fmt.Sprintf("%s %d %v", it.Labels(), s.Timestamp, s.Value)}
-		}()
-	}
-	var holders []held
-	for range 2 {
-		holders = append(holders, <-ready)
-	}
-	t.Cleanup(func() {
-		for _, h := range holders {
-			if h.it != nil {
-				_ = h.it.Close()
-			}
-		}
-	})
-	for _, h := range holders {
-		require.NoError(t, h.err)
-	}
-
-	// Three more queries arrive: none can reserve, all read globally, and
-	// they queue on the two remaining connections.
-	const concurrent = 3
+	const concurrent = 12
 	type outcome struct {
 		samples []string
 		err     error
@@ -495,7 +439,7 @@ func TestSelectSamples_FanoutUnderConcurrentLoad(t *testing.T) {
 	out := make(chan outcome, concurrent)
 	for range concurrent {
 		go func() {
-			samples, err := collectSamplesQuery(context.Background(), q, qs, start, end)
+			samples, err := collectSamplesQuery(ctx, q, qs, start, end)
 			out <- outcome{samples, err}
 		}()
 	}
@@ -504,15 +448,10 @@ func TestSelectSamples_FanoutUnderConcurrentLoad(t *testing.T) {
 		require.NoError(t, o.err)
 		require.Equal(t, want, o.samples)
 	}
-	for _, h := range holders {
-		rest, err := drainSamples(h.it)
-		require.NoError(t, err)
-		require.NoError(t, h.it.Close())
-		require.Equal(t, want, append([]string{h.first}, rest...))
-	}
 
-	// One query fanned out (three per-stream queries); the other four read
-	// all streams in one query.
+	// Every query read either one query per stream (a fan-out within the
+	// budget) or one query over all streams (the reservation failed): twelve
+	// queries in total, none failed on the pool.
 	var perStream, global int
 	for _, logged := range queryStartsSince(t, conn, db, since, "FROM logs") {
 		if strings.Contains(logged, "FINAL") {
@@ -521,8 +460,164 @@ func TestSelectSamples_FanoutUnderConcurrentLoad(t *testing.T) {
 			perStream++
 		}
 	}
-	require.Equal(t, 3, perStream, "one query read one query per stream")
-	require.Equal(t, 4, global, "the other four queries read all streams in one query")
+	require.Zero(t, perStream%3, "per-stream queries come in fan-outs of three")
+	require.Equal(t, concurrent, perStream/3+global, "every query read exactly one group of queries")
+}
+
+// The connection reservation is a budget, not a set of connections: a budget
+// above the pool size is granted, and the fan-out's streams queue on the pool
+// — every stream drains its query as fast as the server sends and waits on
+// nothing, so a pool smaller than the fan-out cannot deadlock. (The streaming
+// merge this replaces needed a row of every stream before emitting one, so a
+// stream still waiting for a connection stalled the started streams, which
+// held theirs: a circular wait, broken only by the pool-acquire timeout.)
+func TestSelectSamples_FanoutBudgetAbovePoolSucceeds(t *testing.T) {
+	conn, db := chtest.New(t)
+	seedPoolStreams(t, conn, 6)
+	ctx := context.Background()
+	qs := `count_over_time({app=~"s[0-9]+"}[5m])`
+	start, end := t0, t0.Add(60*time.Millisecond) // all 50 000 rows of every stream
+
+	// A pool of four connections cannot hold a six-stream fan-out.
+	opts := chtest.Options(db)
+	opts.MaxOpenConns, opts.MaxIdleConns = 4, 4
+	opts.DialTimeout = 30 * time.Second
+	opts.Settings["max_block_size"] = 500 // small blocks: a long transfer
+	pool, err := clickhouse.Open(opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = pool.Close() })
+
+	want, err := collectSamplesQuery(ctx, &chstore.Querier{Conn: conn}, qs, start, end)
+	require.NoError(t, err)
+	require.NotEmpty(t, want)
+
+	since := time.Now()
+	got, err := collectSamplesQuery(ctx, &chstore.Querier{Conn: pool, FanoutConns: 6}, qs, start, end)
+	require.NoError(t, err, "a fan-out on a pool smaller than its stream count must not deadlock")
+	require.Equal(t, want, got)
+	require.Len(t, queryStartsSince(t, conn, db, since, "FROM logs"), 6, "one query per stream")
+}
+
+// runQuery is run without the assertions, for use from goroutines.
+func runQuery(ng *logql.QueryEngine, qs string, start, end time.Time, step time.Duration) (logqlmodel.Result, error) {
+	p, err := logql.NewLiteralParams(qs, start, end, step, 0, logproto.FORWARD, 0, nil, nil)
+	if err != nil {
+		return logqlmodel.Result{}, err
+	}
+	return ng.Query(p).Exec(user.InjectOrgID(context.Background(), "t1"))
+}
+
+// A request whose engine consumes several sample iterators in lockstep — a
+// binary operation loads its two legs' step evaluators in parallel and steps
+// them alternately — cannot deadlock the pool either: each leg's fan-out
+// drains its streams before the engine reads them, holding its connections
+// only while it transfers, never while the engine waits on a sibling leg.
+// (The streaming merge this replaces held a leg's connections while its
+// streams waited for the engine, whose engine waited on the sibling leg,
+// whose streams waited for those connections: a circular wait, broken only
+// by the pool-acquire timeout.)
+func TestSelectSamples_FanoutMultiLegQueriesNeverDeadlockPool(t *testing.T) {
+	conn, db := chtest.New(t)
+	seedPoolStreams(t, conn, 4)
+	qs := `sum(count_over_time({app=~"s00|s01"}[1ms])) + sum(count_over_time({app=~"s02|s03"}[1ms]))`
+	start, end := t0, t0.Add(60*time.Millisecond) // all 50 000 rows of every stream
+	step := time.Millisecond
+
+	// A pool of four, half of it the fan-out budget as production wires it:
+	// every binary operation runs two 2-stream fan-outs in lockstep.
+	opts := chtest.Options(db)
+	opts.MaxOpenConns, opts.MaxIdleConns = 4, 4
+	opts.DialTimeout = 30 * time.Second
+	opts.Settings["max_block_size"] = 500 // small blocks: a long transfer
+	pool, err := clickhouse.Open(opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = pool.Close() })
+	q := &chstore.Querier{Conn: pool, FanoutConns: 2}
+
+	want := run(t, engine(t, q), qs, start, end, step, logproto.FORWARD, 0)
+	require.NotEmpty(t, want.Data)
+
+	// Concurrent binary operations on the pool that cannot hold them. The
+	// deadlock is timing-dependent, so run several rounds.
+	const concurrent = 10
+	ngs := make([]*logql.QueryEngine, concurrent)
+	for i := range ngs {
+		ngs[i] = engine(t, q)
+	}
+	for range 3 {
+		type outcome struct {
+			data logqlmodel.Result
+			err  error
+		}
+		out := make(chan outcome, concurrent)
+		for _, ng := range ngs {
+			go func() {
+				res, err := runQuery(ng, qs, start, end, step)
+				out <- outcome{res, err}
+			}()
+		}
+		for range concurrent {
+			o := <-out
+			require.NoError(t, o.err)
+			require.Equal(t, want.Data, o.data.Data)
+		}
+	}
+}
+
+// A fan-out whose drained result would exceed the sample cap reads all
+// streams in one query instead: the cap bounds the memory a fanned-out read
+// buffers before it serves its samples.
+func TestSelectSamples_FanoutOverSampleCapFallsBack(t *testing.T) {
+	conn, db := chtest.New(t)
+	seedFanoutData(t, conn) // two streams, 180 rows each
+	ctx := context.Background()
+	qs := `count_over_time({app=~"a|b"}[5m])`
+	start, end := t0.Add(-time.Minute), t0.Add(3*time.Hour)
+	q := &chstore.Querier{Conn: conn}
+	want, err := collectSamplesQuery(ctx, q, qs, start, end)
+	require.NoError(t, err)
+	require.NotEmpty(t, want)
+
+	chstore.SetMaxFanoutSamples(10) // far below the 360 samples the read yields
+	t.Cleanup(func() { chstore.SetMaxFanoutSamples(1 << 20) })
+	since := time.Now()
+	got, err := collectSamplesQuery(ctx, q, qs, start, end)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	// The drain starts its per-stream queries, exceeds the cap and gives up;
+	// the query then reads all streams in one query.
+	var global int
+	for _, logged := range queryStartsSince(t, conn, db, since, "FROM logs") {
+		if strings.Contains(logged, "FINAL") {
+			require.Contains(t, logged, "lh_stream_ids", logged)
+			global++
+		}
+	}
+	require.Equal(t, 1, global, "the over-cap query read all streams in one query")
+}
+
+// cancelledPerStreamConn passes every query through, but fails the per-stream
+// fan-out queries (their ORDER BY is the part's physical order) with the
+// context's cancellation.
+type cancelledPerStreamConn struct{ driver.Conn }
+
+func (c cancelledPerStreamConn) Query(ctx context.Context, query string, args ...any) (driver.Rows, error) {
+	if strings.Contains(query, "ORDER BY stream_id ASC") {
+		return nil, context.Canceled
+	}
+	return c.Conn.Query(ctx, query, args...)
+}
+
+// A stream whose query is cancelled fails the whole fan-out with that error:
+// the query never returns a short result silently.
+func TestSelectSamples_FanoutStreamCancelledFailsQuery(t *testing.T) {
+	conn, _ := chtest.New(t)
+	seedFanoutData(t, conn)
+	q := &chstore.Querier{Conn: cancelledPerStreamConn{conn}}
+	it, err := openSamplesQuery(context.Background(), q, `count_over_time({app=~"a|b"}[5m])`, t0.Add(-time.Minute), t0.Add(3*time.Hour))
+	require.Nil(t, it)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 // On a cluster each per-stream query is routed to the shard owning the stream
@@ -566,15 +661,14 @@ func TestSelectLogs_SingleStreamRoutesToOwningShard(t *testing.T) {
 		t.Skip("needs a cluster")
 	}
 	conn, db := chtest.New(t)
-	ctx := context.Background()
 	local, remote := seedRoutedStreams(t, conn, db, topo.Cluster)
 
 	remoteSelects := func(app string) uint64 {
 		since := time.Now()
 		run(t, engine(t, &chstore.Querier{Conn: conn}), fmt.Sprintf(`{app="%s"}`, app), t0.Add(-time.Minute), t0.Add(10*time.Minute), 0, logproto.FORWARD, 100)
-		require.NoError(t, conn.Exec(ctx, "SYSTEM FLUSH LOGS ON CLUSTER "+topo.Cluster))
+		require.NoError(t, conn.Exec(context.Background(), "SYSTEM FLUSH LOGS ON CLUSTER "+topo.Cluster))
 		var got uint64
-		require.NoError(t, conn.QueryRow(ctx, "SELECT count() FROM clusterAllReplicas("+topo.Cluster+", system, query_log) WHERE type = 'QueryFinish' AND NOT is_initial_query AND query_kind = 'Select' AND event_time_microseconds >= fromUnixTimestamp64Micro(?) AND position(query, ?) > 0", since.UnixMicro(), "`"+db+"`.`"+topo.Local("logs")+"`").Scan(&got))
+		require.NoError(t, conn.QueryRow(context.Background(), "SELECT count() FROM clusterAllReplicas("+topo.Cluster+", system, query_log) WHERE type = 'QueryFinish' AND NOT is_initial_query AND query_kind = 'Select' AND event_time_microseconds >= fromUnixTimestamp64Micro(?) AND position(query, ?) > 0", since.UnixMicro(), "`"+db+"`.`"+topo.Local("logs")+"`").Scan(&got))
 		return got
 	}
 	require.Equal(t, uint64(0), remoteSelects(local), "a stream on the initiator's shard produces no remote query")
