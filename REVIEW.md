@@ -1,334 +1,326 @@
-# Review: `feat/ch-query-review` and project-wide pass (2026-10-23)
+# Review: plan `2026-10-24-tierb-dedup-final-parallel` (commit `cb9a2e3`)
 
 Reviewer: Mistral Vibe (second pair of eyes)
-Branch: `feat/ch-query-review`, 19 commits ahead of `main` (18 real commits + 1 merge).
-Loki pinned at `bc1962860a1607eccb7e0c8ee206970b292b9e80` (`Makefile` `LOKI_COMMIT`, unchanged).
+Date: 2026-10-24
+Branch: `tierb-dedup-final-parallel` (plan commit `cb9a2e3` on top of 0.11.0)
+Skills applied: `clickhouse-best-practices` (31 rules, cited per rule) and
+`clickhouse-architecture-advisor` (workload classification, decision rules,
+provenance labels).
+
+The previous review in this file (2026-10-23, branch `feat/ch-query-review`)
+is preserved in git history at `76fab91`.
 
 ## 1. Scope and method
 
-Two passes:
+The commit under review adds one file,
+`docs/superpowers/plans/2026-10-24-tierb-dedup-final-parallel.md` (278 lines): a
+three-task implementation plan to cut the Tier B (Loki-engine) metric query path
+—
 
-1. **Branch vs. plans.** The branch implements the spec
-   `docs/superpowers/specs/2026-10-23-clickhouse-query-review.md` (9 required
-   changes) through four plans: `2026-10-23-ch-query-path-fixes.md`,
-   `2026-10-23-ch-time-windowed-reads.md`, `2026-10-23-ch-tiera-aggregation.md`,
-   `2026-10-23-ch-label-filter-pushdown.md`. Each plan's steps, its "Review
-   Focus" list and its test list were checked against the commits and the code.
-2. **General project review** with extra attention to security (AGENTS.md "Safe
-   Go" and "Untrusted input" rules) and to Loki compatibility (AGENTS.md "Loki
-   compatibility" rules).
+- **Task 1:** rewrite the Go dedup in `rowReader.next` without per-row
+  allocations (`internal/chstore/rowiter.go`),
+- **Task 2:** remove duplicates in ClickHouse with `FINAL` on metric reads
+  (`SelectSamples`), never on log reads,
+- **Task 3:** extract samples on `GOMAXPROCS` workers behind an ordered
+  producer/worker pipeline (`internal/chstore/samplepipe.go`),
+- **Task 4:** verification (gates + benchmark, no code).
 
-Method: read the spec, the four plans and every commit diff; read the pinned
-Loki source where behaviour could diverge (`logql` parser, `LabelsBuilder`,
-sample extractor); then run every gate in AGENTS.md "Before you push".
+Method: read the plan end to end; read the code it touches (`schema.sql`,
+`rowiter.go`, `windows.go`, `querier.go`, `samples.go`, `keyset.go`,
+`buckets.go`, `deleterows.go`, `topology.go`, `export_test.go`,
+`docs/benchmark.md`, `docs/divergences.md`, `CHANGELOG.md`, `go.mod`); read the
+pinned Loki source (`.cache/loki-src` at `bc1962860a16`) for every concurrency
+claim; checked every ClickHouse setting claim against a live
+`clickhouse-server 26.9.25.15` (`system.settings`); and validated the plan's
+central ClickHouse claims empirically with a scratch table (dropped afterwards,
+section 3). Bench/profile numbers from the plan's Background section are the
+author's measurements and are marked as such (F4).
 
-## 2. Verification gates
+**Verdict: the plan is sound and implementable as written. No blocking
+findings.** Every ClickHouse-facing decision checks out against the schema, the
+live 26.9 server, the pinned Loki source and both skills. The findings below
+are low/info hardening and documentation.
 
-All gates from AGENTS.md were run against a real local ClickHouse
-(`clickhouse-server:26.9` on `localhost:9000`).
+## 2. Workload summary (architecture-advisor)
 
-| Gate | Result |
+- **Workload:** observability — a Loki-compatible log store on ClickHouse.
+- **Latency target:** close the `unwrap quantile` gap: lokihouse 155 ms p50 vs
+  Loki 69 ms p50 at 0.11.0 (`docs/benchmark.md`); sub-100 ms target.
+- **Data shape:** append-only log lines; `logs` is `ReplacingMergeTree ORDER BY
+  (tenant, stream_id, ts, entry_hash)`, `PARTITION BY toDate(ts)`, with
+  `entry_hash = cityHash64(line, mapSort(structured_metadata))`; text skip
+  indexes on `line`, `sm_keys`, `sm_vals`, `line_ascii_escape`; an incremental
+  MV (`stream_stats_hourly`) feeding window planning and Tier A.
+- **Primary query patterns:** tenant + stream-set + time-range scans with line
+  and metadata filters; Tier A pushes plain aggregates down to SQL; Tier B runs
+  parsers/`unwrap` in Loki's engine in Go (this plan's target).
+- **Operational constraints:** Loki API/behaviour compatibility (oracle),
+  AGENTS.md gates (`make check`, `test-cluster`, `oracle-*`, `soak`, coverage),
+  no new third-party dependency, no new Loki config key.
+
+## 3. Empirical ClickHouse validation (26.9.25.15, scratch table)
+
+Reproduced the plan's storage claims on the live server with a scratch copy of
+the `logs` shape (day partition, same ORDER BY, text index), 100 000 distinct
+rows pushed 3× as three separate parts (retried pushes), plus rows differing
+only in structured metadata and one exact duplicate:
+
+| Check | Result |
 |---|---|
-| `go build ./...`, `go vet ./...` | pass |
-| `gofmt` / `goimports` | pass (only vendored `test/oracle/.cache/loki-src` flagged, not project code) |
-| `golangci-lint` v2.14.0 `run ./...` | 0 issues |
-| `go test ./... -race` (full suite) | pass |
-| `scripts/govulncheck.sh` | pass (`GO-2026-5115` allowlisted with documented reason + proving test `TestRules_PathTraversalRejected`) |
-| `make cover` (total coverage) | **87.2 %** (≥ 85 % required; up from 86.3 % before this branch) |
-| Oracle vs. real Loki, `LOKIHOUSE_ORACLE_PUSHDOWN=off` | pass (~47 s) |
-| Oracle vs. real Loki, `=downstream` | pass |
-| Oracle vs. real Loki, `=default on` | pass (~107 s), incl. new `test/oracle/corpus/pushdown.logql` entries |
-| `make test-cluster` equivalent (2 shards × 2 replicas, `LOKIHOUSE_TEST_CH_CLUSTER=lokihouse`) | pass (chstore 247 s, pushdown 70 s, server/cmd/rest ok); cluster torn down afterwards |
-| `make soak` (`-tags oracle,soak`, heap/goroutine profiles) | pass, 604 s, profiles flat |
+| raw rows / `FINAL` | 300 003 → 100 002 (dedup across unmerged parts works) |
+| `FINAL` + `do_not_merge_across_partitions_select_final = 1` | 100 002 — identical (duplicates share `ts`, hence the day partition) |
+| rows differing only in `structured_metadata` under `FINAL` | both kept (2) — `entry_hash` covers `mapSort(md)` |
+| exact duplicate of one of them, separate part | merged (2 not 3) |
+| text index under `FINAL` (needle among 300 k rows) | `read_rows = 2` (granule skipping works under `FINAL`), result correct: plain 2, `FINAL` 1, `FINAL`+no-cross-partition 1 |
+| `read_rows` under `FINAL` | counts pre-merge rows (2 raw, 1 result) → `totalLinesProcessed` semantics unchanged by `FINAL` |
 
-Plan-specific tests all pass with `-race`: `TestPlanWindows`,
-`TestPlanWindows_Invariants` (500 random cases), `TestManyStreams_AllPathsWork`,
-`TestStreamSet_*`, `TestSelectSamples_SameResultForAnyWindowSize`,
-`TestSelectLogs_SameResultForAnyWindowSize`, `TestSelectLogs_OpensWindowsLazily`,
-`TestMigrateSchema_*`, `TestMigrate_RefusesV2`, `TestLineASCIIEscapeFlag`,
-`TestMetadataFilter*`, `TestParsedFilter*`, `TestTierA_SumByNarrowsMetadata`,
-`TestTierA_SumLeafFallback`, `TestTierA_MetadataFilter`, `TestMap_SumLeaves`.
+Settings verified live: `use_skip_indexes_if_final = 1` and
+`use_skip_indexes_if_final_exact_mode = 1` are 26.9 defaults (the latter
+"scans the additional parts that overlap the ranges returned by the skip
+index" — the correctness mechanism the plan relies on);
+`do_not_merge_across_partitions_select_final = 0` by default, so the plan's
+explicit `SETTINGS` clause is required and matches Tier A. The scratch database
+was dropped afterwards.
 
-**Verdict: every gate passes.** The branch is pushable per AGENTS.md.
+## 4. Claim verification against the codebase and pinned Loki
 
-## 3. Branch vs. plans: conformance
+| # | Plan claim | Verified against | Result |
+|---|---|---|---|
+| 1 | `logs`: `ReplacingMergeTree ORDER BY (tenant, stream_id, ts, entry_hash)`, `entry_hash = cityHash64(line, mapSort(structured_metadata))`, `PARTITION BY toDate(ts)` | `internal/chstore/schema.sql:3-17` | confirmed |
+| 2 | `Distributed` shards by `cityHash64(tenant, stream_id)` → duplicates shard-local | `schema.sql:66-67` | confirmed |
+| 3 | Tier A already relies on `FINAL` + `do_not_merge_across_partitions_select_final = 1` with the same safety argument | `internal/chstore/buckets.go:54` + comment | confirmed |
+| 4 | `rowReader.next` allocates a fresh `groupSeen` map per group, `labels.FromMap`, `line+"\xff"+md.String()` key | `rowiter.go:32-53` | confirmed |
+| 5 | Rows arrive ordered `ts, stream_id, entry_hash`; keyset continuation is a strict `>` on the full key | `windows.go:88-101`, `keyset.go:30-56` | confirmed |
+| 6 | `SelectSamples` = one unchunked cursor per window; `SelectLogs` = keyset chunks (continuation inserted before `ORDER BY`, `LIMIT ?` appended) | `querier.go:196-201`, `keyset.go:41-56` | confirmed — `keysetReader` never sees `final` |
+| 7 | Bench: `unwrap quantile` 155 ms vs Loki 69 ms at 0.11.0 | `docs/benchmark.md` result table | confirmed |
+| 8 | `LogfmtParser` holds one shared `*logfmt.Decoder` | Loki `pkg/logql/log/parser.go:379-391`, used at `403-405` | confirmed — not concurrency-safe |
+| 9 | `ForStream` caches in unguarded maps | Loki `pipeline.go:266-274` (`streamPipelines`), `metrics_extraction.go:91-104`, `356-368` (`streamExtractors`) | confirmed |
+| 10 | Every `syntax.SampleExpr.Extractor()` call builds fresh stages → one extractor per worker is safe | Loki `pkg/logql/syntax/extractor.go:12-83` (`stagesFor(r.Left)` per call) | confirmed |
+| 11 | `stats.Context.AddPostFilterLines` is atomic | Loki `pkg/logqlmodel/stats/context.go:542` | confirmed |
+| 12 | `utildeletion.SetupExtractor(p, …)` is pure per call → safe once per worker | Loki `pkg/util/deletion/deletion.go:23-34` | confirmed |
+| 13 | 26.9 defaults `use_skip_indexes_if_final = 1`, `use_skip_indexes_if_final_exact_mode = 1` | live `system.settings` | confirmed |
+| 14 | Referenced tests/helpers exist: `TestRowReader_DedupesIdenticalRows`, `engine(t, …)`, `chtest.LogsRowsRead`, `TestQuerier_HidesPendingDeletes`, `TestSelectSamples_SameResultForAnyWindowSize`, `OpenedSampleWindows`, goleak in `go.mod`, bce ignore in `internal/api/main_test.go` | `rowiter_internal_test.go:15`, `querier_test.go:35`, `chtest/chtest.go:81`, `querier_test.go:310`, `windows_test.go:39`, `export_test.go`, `go.mod:53` | confirmed |
+| 15 | `row.md` readers are only `rowiter.go`, `keyset.go` (copies), `entryIter`, `sampleIter` | grep across `internal/` | confirmed — Task 1's file list is complete |
+| 16 | `internal/chstore` starts no goroutines today → `goleak.VerifyTestMain` is required once the pipeline lands (AGENTS.md) | grep `go func` in `internal/chstore` | confirmed — plan adds `main_test.go` |
+| 17 | `chstore.Querier` is constructed only at `internal/server/server.go:216` → `Workers` zero value (= `GOMAXPROCS`) applies everywhere; no config key needed | `server.go:216` | confirmed |
+| 18 | No new third-party dependency (`xxhash`, `goleak`, `testify` already used) | `go.mod` | confirmed |
+| 19 | `CHANGELOG.md` `## [Unreleased]` empty; `docs/divergences.md` has a Query section | both files | confirmed — the plan's doc steps land cleanly |
+| 20 | Go 1.27, `GOMAXPROCS` cgroup-aware since Go 1.25 | `go.mod` (`go 1.27.1`) | confirmed |
 
-All 9 required changes of the spec are implemented, each by the expected
-commits, with tests. Mapping:
+## 5. Rules checked (clickhouse-best-practices)
 
-| # | Spec requirement | Commits | Key tests | Verdict |
-|---|---|---|---|---|
-| 1 | Stream ID sets of any size in every stream-filtering query | `e651453` (+ `27dffde` refactor) | `TestManyStreams_AllPathsWork`, `TestStreamSet_*`; oracle `streams.logql` | conformant — all 5 stream-ID query paths use `streamIDsIn` with empty-set guards |
-| 2 | Case-insensitive line filters push `line ILIKE` under the k/K/s/S fold rule | `71e4c50` | fold-case table tests; oracle | conformant (see F4: one plan-table row is imprecise, code is right) |
-| 3 | Pushdown tests prove granule skipping (rows read), not only EXPLAIN | `fdbaf18` | rows-read assertions in pushdown tests | conformant |
-| 4 | `RegexExact` regex stream matchers also evaluated in SQL | `91c9b25` | regex matcher tests; oracle | conformant — Go still re-checks |
-| 5 | Tier B reads in time windows sized from `stream_stats_hourly` | `57869ed`, `0d1c271`, `3905ad5`, `27dffde` | `TestPlanWindows*`, `TestSelect*_SameResultForAnyWindowSize`, `TestSelectLogs_OpensWindowsLazily` | conformant; window coverage/contiguity verified by `TestPlanWindows_Invariants` |
-| 6 | Tier A: `line` only for byte aggs; `do_not_merge_across_partitions_select_final = 1`; `sum by` groups only by visible metadata keys | `7547bea`, `fa0eb0d` | `TestTierA_SumByNarrowsMetadata`, `TestTierA_SumLeafFallback`, `TestMap_SumLeaves` | conformant, with one test-coverage gap (F1) |
-| 7 | Schema v3: `sm_keys`, `sm_vals`, `line_ascii_escape`; offline `-schema.migrate` | `7ced5a6`, `5cb4964` | `TestMigrateSchema_*`, `TestMigrate_RefusesV2`, `TestLineASCIIEscapeFlag`; `testdata/schema_v2.sql` byte-identical to pre-branch `schema.sql` | conformant; DDL in `schema.sql` == `migrate_v3.go` (test-enforced shape equality) |
-| 8 | Pre-parser label filters push `structured_metadata[k] = v`; exact keeps Tier A | `70e4b59` | `TestMetadataFilter*`, `TestTierA_MetadataFilter` | conformant — uses Loki's `bloomv1.ExtractTestableLabelMatchers` |
-| 9 | Post-parser equality after `\| json` / `\| logfmt` pushes `LIKE` / `mapContainsKey` / `line_ascii_escape` OR | `b4a6874`, `3d3b22c` | `TestParsedFilter*`, `TestLineASCIIEscapeFlag` | conformant; three-way OR granule-skipping measured and test-proven |
+| Rule | Status | Note |
+|---|---|---|
+| `insert-optimize-avoid-final` | Compliant | The rule prohibits `OPTIMIZE TABLE … FINAL` and explicitly states `FINAL` in SELECT "may be necessary for deduplicated results in ReplacingMergeTree and is generally fine to use". The plan uses `FINAL` only on metric reads, never `OPTIMIZE FINAL`, keeps log/keyset reads without it, and bounds the cost with `do_not_merge_across_partitions_select_final = 1` (verified necessary: default 0). |
+| `query-index-skipping-indices` | Compliant | Skip indexes (`line_text`, `sm_keys`, `sm_vals`, `line_ascii_escape_idx`) keep working under `FINAL`: 26.9 defaults verified live, mechanism verified empirically (section 3), and Task 2 pins it with a rows-read assertion (`TestSelectSamples_FinalKeepsTextIndex`) plus a correctness assertion (count = 1). |
+| `schema-pk-filter-on-orderby` | Compliant | Row queries filter the `tenant` prefix, the stream set and a `ts` range; `ORDER BY (tenant, stream_id, ts, entry_hash)` aligns; the `FINAL` rendering keeps the `ORDER BY` for deterministic order. Pre-existing, unchanged by the plan. |
+| `schema-pk-cardinality-order` | Compliant (no change) | `tenant` (LowCardinality) first, then `stream_id`, `ts`, `entry_hash` — matches the query filters. Schema untouched by the plan. |
+| `schema-pk-prioritize-filters` | Compliant (no change) | Same as above. |
+| `schema-partition-low-cardinality` | Compliant | Day partitions, count bounded by retention (the sweeper drops whole UTC days); the plan's `FINAL` usage leans on the day partition and is safe because `ts` is in the sorting key. |
+| `schema-partition-lifecycle` | Compliant | Partitioning is used for lifecycle (retention drops whole day partitions), not as a query crutch. |
+| `schema-types-*` (5 rules) | Not applicable | The plan changes no column types. |
+| `insert-mutation-avoid-update` | Compliant | `ReplacingMergeTree` is already the engine for replacement semantics (retried pushes, `delete_requests` version column); the rule's own "correct" example is `SELECT … FINAL`, exactly what Task 2 adds. |
+| `insert-mutation-avoid-delete` | Compliant | Deletes already use lightweight `DELETE` + `APPLY DELETED MASK` + `DROP PARTITION` for retention (`deleterows.go`, `retention.go`); the plan does not change deletes. Review Focus #4 covers the delete-filter/worker interaction. |
+| `insert-batch-size`, `insert-async-small-batches`, `insert-format-native` | Not applicable | Ingest path unchanged. |
+| `query-join-*` (5 rules) | Not applicable | The plan's queries join nothing (the stream-ID set rides the `lh_stream_ids` external table). |
+| `query-mv-incremental` | Compliant | `stream_stats_hourly_mv` is an incremental MV into an `AggregatingMergeTree` — the documented pattern; it also feeds the window planning this plan builds on. |
+| `schema-json-when-to-use` | Not applicable | `structured_metadata` is a typed `Map` column, pre-existing. |
 
-Style/fix commits `9f1f0ab` (gofmt), `4e149ec` (gocritic), `8933bca` (do not
-push label filters on names renamed by a stream-label clash — a real bug found
-by this branch's own review focus) are consistent with AGENTS.md.
+## 6. Architecture assessment (clickhouse-architecture-advisor)
 
-Deep checks against pinned Loki source (all verified, no divergence):
+**Key decisions reviewed:**
 
-- `_extracted` semantics: Loki's `LabelsBuilder.Add` renames clashing added
-  labels to `<name>_extracted`; the JSON parser renames a parsed key when the
-  base has it or it is present in structured metadata. lokihouse stores
-  metadata as pushed (no write-time rename), so `clashNames`/`mdKeysFor` are
-  correct; the `8933bca` fix closes the remaining pushdown hole.
-- `!=` or-chain AND-pushdown: Loki's parser nests `!=`/`!~` or-chains as AND
-  (De Morgan); `Or` chains exist only for `|=`, `|~`, `|>`. lokihouse's
-  AND-of-`position()=0` pushdown is therefore right.
-- `tiera.go` `seriesLabels` mirrors Loki's sample extractor
-  (`NewBaseLabelsBuilder().ForLabels(...)` + `Add(StructuredMetadataLabel, md)`);
-  `eligibleRange` rejects grouped range aggregations, so grouping is always
-  nil — equivalent to the extractor.
-- `line_ascii_escape` regex verified byte-exact against `schema.sql`: matches
-  exactly `\u00XX` of `0-9A-Za-z`; `\u003c` (`<`) and `\u0026` (`&`) correctly
-  excluded (Go's common escapes do not set the flag).
-- Migration: ClickHouse computes a missing MATERIALIZED column **on read** for
-  old parts — `TestMigrateSchema_OldRowsHaveTheFlag` proves the flag is TRUE
-  for pre-migration rows containing `\u0065rror`. The implementation is safe;
-  see F3 for the plan text that mis-states this.
+1. **Dedup at read with `FINAL`, metric queries only.** Correct per
+   `decision-late-arriving-upserts` (replacement semantics belong to
+   `ReplacingMergeTree`, category: official — the duplicates come from retried
+   pushes; heavy write-side mutations are correctly avoided) and per
+   `insert-optimize-avoid-final` (SELECT `FINAL` endorsed; `OPTIMIZE FINAL`
+   avoided). Excluding log reads is the critical half of the decision: keyset
+   pagination (`LIMIT ?` + strict `>` continuation) is incompatible with
+   per-query merging, and the plan's own measurements show `FINAL` defeats
+   top-N on unmerged parts (75 vs 6 ms). Keeping the Go dedup on the sample
+   path under `FINAL` (one key comparison per row, no duplicates found) is a
+   cheap belt-and-braces that also covers the window before background merges
+   catch up.
+2. **Allocation-free Go dedup for the log path.** Pure Go refactor; semantics
+   preserved (the planned guard tests pin the A,B,A hash-collision case, the
+   metadata-only difference and the group reset; I checked the new
+   group-by-`(ts, stream_id, entry_hash)` slicing is equivalent to today's
+   map-based exact dedup, including across chunk boundaries, where the strict
+   `>` continuation already skips the rest of the last key group — the same
+   rule the engine itself applies).
+3. **Per-query parallel extraction bounded by `min(GOMAXPROCS, streams)`, ≥ 1.**
+   Correctly neutralises the single-stream regression risk (Review Focus #1),
+   keeps per-stream extractor state single-goroutine (streams pinned to one
+   worker, batches processed in channel order → identical per-stream line
+   sequence and identical output order), and bounds memory to
+   `sampleBatchesInFlight × sampleBatchRows` rows. Verified against the pinned
+   Loki source that one `SampleExtractor` per worker is the right granularity
+   (shared `logfmt.Decoder`, unguarded `ForStream` caches).
+4. **No new config key; `GOMAXPROCS` is the knob.** Consistent with AGENTS.md
+   Loki compatibility (no invented Loki key); the only construction site
+   (`server.go:216`) gets the `GOMAXPROCS` default for free.
 
-## 4. Findings
+**Recommendations:**
 
-Severity: **medium** = real gap, fix before merge or immediately after;
-**low** = harden or document; **info** = note for the record.
+### R1. Implement the plan as written
 
-### F1 (medium, test-coverage gap): the plan's Review Focus clash case is not actually seeded
+**Category:** derived · **Confidence:** high · **Source:** sections 3-5 above;
+`insert-optimize-avoid-final`, `decision-late-arriving-upserts`.
+**Validation:** already done — schema, settings, Loki concurrency and the
+FINAL mechanics all verified (sections 3-4); Task 4 re-measures end to end
+with `make bench` against the 0.11.0 rows.
 
-Plan `2026-10-23-ch-tiera-aggregation.md` (Review Focus) requires testing
-`sum by (level)` where `level` is both a stream label and a structured-metadata
-key, and `sum by (level_extracted)` fetching the base metadata key. In
-`internal/pushdown/tiera_test.go:318` `seedSumByData` builds the
-`{app="a", level="s"}` stream with `StructuredMetadata: md[1:]`
-(`tiera_test.go:326`) — i.e. **without** a `level` metadata key (only
-`trace_id`). The clash the plan asks to exercise (stream label `level` +
-metadata key `level`) therefore never occurs in the seeded data, and
-`sum by (level)` / `sum by (level_extracted)` in `sumByQueries` run against
-data where the two names never collide.
+### R2. Add a guard test for the "keyset never sees `final`" invariant
 
-I verified the implementation handles the real clash correctly with a
-temporary probe test (stream `{app="a", level="s"}` **with** `level` metadata;
-7 queries incl. `sum by (level)`, `sum by (level_extracted)`,
-`sum by (app, level_extracted)` and bytes variants): Tier A == Tier B results,
-`TierALeaves` incremented, series show
-`{app="a", level="s", level_extracted="warn", …}`. The probe was deleted after
-passing; it is not in the tree.
+**What:** one test asserting `keysetReader`'s rendered SQL never contains
+`FINAL`/`SETTINGS` (or that `rowQuery{final: true}` is rejected on the keyset
+path).
+**Why:** the invariant is currently a field comment (F1). Today a violation
+fails loudly (`LIMIT ?` appended after `SETTINGS` is a syntax error), but a
+cheap test turns silent future drift into a red build.
+**Category:** derived · **Confidence:** high · **Source:** `keyset.go:41-56`;
+ClickHouse `SETTINGS`-last syntax (verified live).
+**Validation:** `go test -run TestKeyset ./internal/chstore/`.
 
-**Recommendation:** extend `seedSumByData` — drop the `md[1:]` so the clash
-stream carries `level` metadata too (one-line change), making the existing
-`sumByQueries` actually cover the Review Focus case.
+### R3. State the pipeline's `done`-count rule and prefer per-worker routing
 
-### F2 (low): `planWindows` panics on `target == 0`
+**What:** in `samplepipe.go`, the `batch.done` WaitGroup count must equal the
+number of workers that receive the batch; the sketch's "send batch to every
+worker's channel" (broadcast) makes that N per batch and wakes every worker per
+batch — routing each batch only to workers that own rows in it is equally
+simple and strictly better. Also state explicitly how a producer read error
+reaches `Err()` (stash it, close the ordered channel).
+**Why:** a count/receiver mismatch hangs the consumer in `done.Wait()` — the
+one deadlock the sketch leaves to the implementer; Review Focus #2/#3 tests
+would catch it, but the rule should be in the design.
+**Category:** field (heuristic) · **Confidence:** medium · **Source:** plan
+Task 3 sketch; AGENTS.md "every goroutine has an owner that stops it".
+**Validation:** `TestSelectSamples_CloseMidStream`,
+`TestSelectSamples_CancelledContext`, `go test -race -count=3`, goleak.
 
-`internal/chstore/windows.go:54` computes `n := int64((count + target - 1) / target)`.
-With `target == 0` this divides by zero and panics. The only caller
-(`windows.go:111-113`) substitutes `defaultWindowRows` when
-`q.WindowRows == 0`, so no request path can trigger it today, and
-`TestPlanWindows_Invariants` covers 500 random cases. Still, the function's
-safety depends on a guard one call site away.
+### R4. Keep the `use_skip_indexes_if_final` pin, do not set the settings explicitly
 
-**Recommendation:** either clamp inside `planWindows` (treat 0 as
-`defaultWindowRows`) or document the precondition on the function.
+**What:** rely on the 26.9 defaults (`use_skip_indexes_if_final = 1`,
+`use_skip_indexes_if_final_exact_mode = 1`) rather than adding `SETTINGS` for
+them, and keep `TestSelectSamples_FinalKeepsTextIndex`.
+**Why:** the defaults are the correctness-preserving configuration (verified
+live, including the exact-mode description); pinning via test detects a
+server-upgrade default change, an explicit `SETTINGS` would hide it.
+`do_not_merge_across_partitions_select_final = 1` must stay explicit (default
+0, and required to bound `FINAL` cost).
+**Category:** official · **Confidence:** high · **Source:**
+`system.settings` on 26.9.25.15;
+https://clickhouse.com/docs/operations/settings/settings
+**Validation:** the Task 2 text-index test (rows read < 25 000, count = 1).
 
-### F3 (low, info): plan text mis-states pre-migration `line_ascii_escape` reads
+### R5. Document the per-query goroutine multiplier in `docs/operations.md`
 
-The plan for schema v3 claims the flag "reads as false" for rows written
-before the migration. That is wrong: ClickHouse evaluates a missing
-MATERIALIZED column on read for old parts, and
-`TestMigrateSchema_OldRowsHaveTheFlag` proves the flag is TRUE for
-pre-migration rows containing `\u0065rror`. The implementation is safe (the
-flag is conservative-correct for old rows); CHANGELOG's "Existing data is not
-re-indexed" is accurate for the text indexes only.
+**What:** the planned paragraph should state that a metric query spawns up to
+`min(GOMAXPROCS, resolved streams)` extraction goroutines *per query*, so
+concurrent queries multiply; `GOMAXPROCS` bounds the total.
+**Why:** operators sizing a box need the multiplier; the plan documents the
+knob but not the fan-out shape.
+**Category:** derived · **Confidence:** high · **Source:** plan Task 3
+interfaces; `make soak` goroutine profiles (Task 4 Step 3) as validation.
 
-**Recommendation:** correct the plan document; no code change.
+### R6. No change needed for query stats semantics
 
-### F4 (low, info): plan fold-case table row contradicts its own k/s rule
+**What:** nothing — `read_rows` (and therefore `totalLinesProcessed`) counts
+pre-merge rows under `FINAL` (verified live: 2 read, 1 result), so the existing
+`docs/divergences.md` stats bullet stays accurate.
+**Category:** official (observed server behaviour) · **Confidence:** high
+· **Source:** `system.query_log` on 26.9.25.15; `internal/chstore/withstats.go`.
 
-The plan's fold-case table lists `(?i)connection refused` → two ILIKEs, but
-`refused` contains `s`, so by the plan's own rule ("no `k`, `K`, `s` or `S`")
-the fold is unsafe and the correct pushdown is a single `ILIKE '%connection%'`
-(and `(?i)connection failed` is the two-ILIKE case). The implementation and
-its tests follow the rule; only the plan table is imprecise.
+## 7. Findings
 
-**Recommendation:** fix the plan table; no code change.
+Severity: **medium** = real gap, fix before merge; **low** = harden or
+document; **info** = note for the record.
 
-### F5 (info): one oracle corpus entry is vacuous
-
-`test/oracle/corpus/pushdown.logql` contains
-`range:count_over_time({app="web"} | level="error" [5m])`, but the corpus
-fixture has no structured metadata, so both sides are empty (the entry's own
-comment admits this). It adds no signal. Real coverage of metadata filters in
-Tier A is `TestTierA_MetadataFilter` and the `TestMetadataFilter*` unit tests.
-
-**Recommendation:** optional — give the fixture a `level` metadata key so the
-entry is meaningful, or drop it.
-
-### F6 (info): `TierALeaves` counts attempts, not successes
-
-`internal/pushdown/engine.go:128` increments `TierALeaves` whenever
-`TierA.Exec` does not return `ErrFallback` — including when it returns a real
-error. It is a test-only counter (documented as such at `engine.go:27`), used
-for coverage assertions, so the semantics are harmless but slightly misleading.
-
-**Recommendation:** optional — increment only on `err == nil`, or rename to
-`TierAAttempts`.
-
-### F7 (info, pre-existing): mutable package state `logChunkSize`
-
-`internal/chstore/keyset.go:11` declares `var logChunkSize = 1000`, mutated by
-tests through `SetLogChunkSize` (`internal/chstore/export_test.go:6`).
-AGENTS.md allows package-level mutable state only for Prometheus collectors
-and values Loki forces on us, "document those where they are declared" — this
-one is neither and is undocumented. Pre-existing, not introduced by this branch.
-
-**Recommendation:** add a one-line comment at the declaration naming the test
-mutation, or make the chunk size a field on the querier.
-
-### F8 (info, pre-existing): client-side binding size limit and error leakage
-
-- clickhouse-go binds `?` parameters client-side, so bound filter values are
-  interpolated into the query text and count toward ClickHouse
-  `max_query_size` (256 KiB, per the spec's own measurement). A single filter
-  value ≳ 256 KiB fails the query where Loki would answer it. The branch's new
-  fragments add more such sites, but the mechanism is pre-existing (it is why
-  stream ID sets moved to the `lh_stream_ids` external table in `e651453`).
-- `internal/ingest/handler.go:73` answers `http.Error(w, err.Error(), 500)`,
-  leaking ClickHouse error text (host, user, internal paths) to clients.
-  Several other handlers do the same for 4xx/5xx paths.
-
-**Recommendation:** optional hardening — log the detailed error server-side and
-return a generic message; consider server-side binding or chunking for
-oversized values. Both pre-date this branch; neither is a regression.
-
-### F9 (info): `MetadataFilterSQL` and `ParsedFilterSQL` duplicate the stream-label set construction
-
-`MetadataFilterSQL` (`internal/chstore/labelfilter.go:23-26`) and
-`ParsedFilterSQL` (`internal/chstore/labelfilter.go:113-116`) each build the
-identical set of stream label names:
-
-```go
-streamLabels := map[string]struct{}{}
-for _, s := range streams {
-	s.Labels.Range(func(l labels.Label) { streamLabels[l.Name] = struct{}{} })
-}
-```
-
-Both are called together at the single production call site
-(`internal/chstore/querier.go:73`) with the same `streams` slice, so the set is
-built twice per query resolution. The set is consumed by the already-shared
-`clashNames`/`clashesWithStream` logic (`labelfilter.go:41-57`); only its
-construction is duplicated. The other `Labels.Range` loops in the package are
-not candidates for the same helper: `metadata.go:36` builds a name set or a
-per-name value set depending on `req.Values`, `detected.go:162` builds a
-name→values map, `stats.go:96` aggregates volumes.
-
-**Recommendation:** extract an unexported
-`streamLabelNames(streams []Stream) map[string]struct{}` helper in
-`labelfilter.go` used by both functions — it keeps the exported signatures and
-the tests (`labelfilter_test.go` calls both with explicit `streams`) unchanged.
-Optionally, compute the set once at the `querier.go:73` call site and pass it
-in, saving one pass per query, at the cost of changing both signatures and
-their tests. No behaviour change either way.
-
-## 5. Security review
-
-**Clean.** Checked against AGENTS.md "Safe Go" and "Untrusted input":
-
-- **No SQL injection.** All user-controlled values (tenant, label names and
-  values, line-filter needles, time bounds) are `?`-bound parameters or sent
-  via the `lh_stream_ids` external table; clickhouse-go binds client-side with
-  proper escaping. Identifiers that reach SQL (database, table, cluster names)
-  come from config, not requests, and go through `quoteIdent`/`sqlString`.
-  Delete mutations keep batched literal lists per the plan, with the lists
-  built from validated stream IDs.
-- **No ReDoS.** User regexes run in RE2 (Go `regexp`), which has no
-  catastrophic backtracking; the `RegexExact` gate is sound (verified against
-  Loki's own use of the same predicate).
-- **`escapedLike`** escapes `\`, `%` and `_` before building `LIKE` patterns.
-- **Path traversal:** `GO-2026-5115` is allowlisted in govulncheck with a
-  documented reason, and `TestRules_PathTraversalRejected` proves ruler rule
-  paths are validated; rule files and query strings are validated before use.
-- **Secrets:** `password_file` is supported for credentials; no secrets appear
-  in the new log lines, error messages or metric labels.
-- **Concurrency:** shared state is mutex/atomic-guarded; full suite passes
-  with `-race`; soak profiles are flat.
-- **Timeouts/contexts:** every I/O path takes `context.Context` first; the one
-  new `//nolint:gosec` (`windows.go:54`, integer conversion) carries the linter
-  name and reason as AGENTS.md requires.
-
-## 6. Loki compatibility review
-
-**Clean.**
-
-- `docs/divergences.md` is correctly unchanged: the branch adds no observable
-  behaviour difference, and the oracle (all 3 modes, whole corpus incl. new
-  `pushdown.logql` entries) confirms lokihouse matches real Loki at the pinned
-  commit.
-- Copied-from-Loki code keeps its `// Copied from grafana/loki@<commit>
-  <path>; modifications: <list>` headers (pre-existing copies). New code imports
-  Loki (`bloomv1.ExtractTestableLabelMatchers`) instead of copying — preferred
-  per AGENTS.md.
-- No new Loki config keys, flags, metric names or error messages were
-  introduced; where Loki has them, lokihouse uses Loki's exactly.
-- `go.mod`/`go.sum` unchanged — no new third-party dependency.
-- CHANGELOG `[Unreleased]` covers every user-visible change (Added/Changed/
-  Fixed), including the breaking `-schema.migrate` requirement.
-- Docs updated consistently: man page, `install/index.md`,
-  `debian/README.Debian`, `reference/configuration.md` (grants for the new
-  indexes and `-schema.migrate`).
-- **Due at release:** the `debian/README.Debian` packaging change needs a
-  `debian/changelog` entry. Repo convention is that entries appear in the
-  release commit (no `Unreleased` section exists in `debian/changelog`), so
-  this is a reminder for the 0.11 release commit, not a defect now.
-
-## 7. General review
-
-- **Structure:** `cmd/lokihouse` stays thin (flags/signals only); `internal/`
-  packages keep single responsibilities; no package imports `cmd` or `test`.
-- **Tests:** behaviour is tested through public APIs; deterministic (no
-  sleeps; `require.Eventually` where polling is needed); nothing writes outside
-  `t.TempDir()`.
-- One `panic(err)` in the test helper `streamsOf` (`labelfilter_test.go`) —
-  acceptable for fixed test strings, not in a request path.
-- Untracked `.claude/` directory is pre-existing; left alone.
-- Not verified: the mkdocs documentation build (no docs CI gate was run); worth
-  a `mkdocs build` before release if one exists.
+- **F1 (low):** the "`keysetReader` never sees `final: true`" invariant is a
+  comment, not a guard. A violation fails loudly today (`LIMIT ?` after
+  `SETTINGS` is a syntax error — verified against ClickHouse's `SETTINGS`-last
+  syntax), but add the R2 guard test so drift is a red build, not a runtime
+  query failure.
+- **F2 (low):** the Task 3 sketch leaves two rules to the implementer: the
+  `batch.done` WaitGroup count must match the batch's receivers exactly
+  (broadcast makes it N; a mismatch hangs `Next` in `done.Wait()`), and the
+  producer's read error must be stashed and surfaced via `Err()` after the
+  ordered channel closes. See R3.
+- **F3 (info):** Tasks 1 and 2 are complementary, not redundant. Task 1 saves
+  allocations on duplicates that still reach Go (log reads — no `FINAL` — and
+  sample reads before merges catch up); Task 2 removes duplicates at the source
+  for metric reads. After Task 2 lands, the sample path's Go dedup finds ~no
+  duplicates — do not "simplify" Task 1 away on that observation; the log
+  path still needs it.
+- **F4 (info):** the Background numbers (profile breakdown, the `FINAL` cost
+  table, 176→153 / 326→208 ms end-to-end) are the author's 2026-10-24
+  measurements; I could not re-derive them here (no bench data). They are
+  internally consistent with `docs/benchmark.md` (155 ms p50) and with the
+  `FINAL` mechanics I verified empirically (section 3). Task 4 re-measures
+  with `make bench` and explicit targets — the right way to confirm them.
+- **F5 (info):** the planned divergence bullet is honest and complete: metric
+  queries will merge two different entries that share stream, nanosecond
+  timestamp and `cityHash64` (vs Loki's exact line+metadata comparison), and
+  it already notes that background merges apply the same hash rule to stored
+  data — i.e. `FINAL` makes the query path consistent with what merges will
+  eventually do, rather than introducing a new kind of divergence. Collision
+  probability is negligible and the engine itself merges on the same key.
+- **F6 (info):** no config key for `Querier.Workers` — verified: the only
+  construction site is `internal/server/server.go:216`, so the zero value
+  (`GOMAXPROCS` at query time) applies everywhere and the plan's "Loki has
+  none" reasoning holds. Per-query goroutine fan-out (queries ×
+  `min(GOMAXPROCS, streams)`) is bounded in memory but not in goroutine count;
+  R5 documents it, `make soak` (Task 4 Step 3) checks the profiles.
+- **F7 (low):** `docs/operations.md` has no "query/performance section" — its
+  sections are Limits (Ingestion/Query), Health checks, Deletes and disk
+  space, Retention, Metrics, Profiling, Multi-tenant queries, When ClickHouse
+  is unavailable. Anchor the planned `GOMAXPROCS` paragraph under `### Query`
+  (Limits) or `## Profiling`.
+- **F8 (info):** the Task 1 group comparison is O(k²) within a
+  `(ts, stream_id, entry_hash)` group. Groups are duplicates (k ≈ 1-3), and a
+  collision storm would require `cityHash64` collisions — the same assumption
+  the storage engine already makes when merging. No action.
+- **F9 (info):** AGENTS.md process compliance verified: gates enumerated
+  correctly (`make check`, `test-cluster`, `oracle-all`/`oracle-cluster`,
+  `soak`), goleak `TestMain` planned for the first goroutine-owning package,
+  no new dependency, divergences + CHANGELOG in the same commits as the
+  behaviour changes, conventional commit prefixes, deterministic tests
+  (`require.Equal` across worker counts, no sleeps).
 
 ## 8. Recommendations (prioritized)
 
-1. **F1 (medium):** extend `seedSumByData` in `internal/pushdown/tiera_test.go`
-   (drop `md[1:]` at line 326) so the clash cases the plan's Review Focus asks
-   for are actually seeded. One line; I verified the implementation passes the
-   resulting tests.
-2. **F2 (low):** guard `target == 0` inside `planWindows` or document the
-   precondition (`internal/chstore/windows.go:54`).
-3. **At the 0.11 release commit:** add the `debian/changelog` entry for the
-   `README.Debian` packaging change (repo convention).
-4. **F7 (info):** document the `logChunkSize` test-mutation exception at
-   `internal/chstore/keyset.go:11`, or make it injectable.
-5. **F8 (info, pre-existing, optional):** stop leaking ClickHouse error text in
-   `internal/ingest/handler.go` (and the other handlers); consider a strategy
-   for filter values approaching `max_query_size`.
-6. **F3/F4 (info):** correct the two plan-document inaccuracies (docs only).
-7. **F5/F6 (info, optional):** make the vacuous oracle corpus entry meaningful
-   or drop it; make `TierALeaves` count successes only.
-8. **F9 (info, optional):** extract a shared `streamLabelNames` helper in
-   `internal/chstore/labelfilter.go` for the duplicated stream-label set
-   construction in `MetadataFilterSQL`/`ParsedFilterSQL`.
+1. **Implement the plan as written** — no blocking findings; the
+   ClickHouse-facing decisions are verified against the live 26.9 server, the
+   schema and the pinned Loki source.
+2. **F1/R2:** add the keyset-never-`FINAL` guard test (Task 2 or Task 3).
+3. **F2/R3:** write the `done`-count rule and the producer-error path into the
+   Task 3 sketch before implementing; prefer per-worker routing over broadcast.
+4. **R4:** keep the skip-index pin as a test; do not add explicit
+   `use_skip_indexes_if_final*` settings; keep
+   `do_not_merge_across_partitions_select_final = 1` explicit.
+5. **F7 + R5:** anchor the `operations.md` paragraph correctly and document the
+   per-query goroutine multiplier.
+6. **F4:** let Task 4's `make bench` run confirm the Background numbers against
+   the 0.11.0 rows (guard list verified present in `docs/benchmark.md`).
 
 ## 9. Bottom line
 
-The branch faithfully implements all 9 required changes of the
-2026-10-23 spec through its four plans, passes every gate in AGENTS.md
-(coverage 87.2 %, race, lint, govulncheck, oracle in 3 modes against real
-Loki, 2×2 cluster, soak), introduces no security issue and no Loki-compatibility
-divergence. The single substantive finding is a test-seeding gap (F1) that
-leaves one of the plan's own Review Focus cases unexercised — the code is
-verified correct, but the regression test should exist. Everything else is
-low/info hardening, documentation and small DRY cleanups.
+The plan's three ClickHouse-facing decisions — `FINAL` on metric reads only,
+`do_not_merge_across_partitions_select_final = 1`, and skip indexes under
+`FINAL` — are all correct on 26.9, empirically validated, and compliant with
+`insert-optimize-avoid-final` (which explicitly endorses SELECT `FINAL` for
+`ReplacingMergeTree` and prohibits only `OPTIMIZE TABLE FINAL`), with
+`query-index-skipping-indices` and with the architecture advisor's
+`decision-late-arriving-upserts` (ReplacingMergeTree + read-side `FINAL`, no
+heavy mutations). The concurrency design is sound at the pinned Loki commit
+(one extractor per worker; stream pinning; ordered output; atomic stats), the
+single-stream and cancellation/close paths are covered by named tests plus
+goleak, and the AGENTS.md gate list is complete. The findings are one guard
+test, two sketch-level rules for the pipeline, and documentation placement —
+nothing that changes the design.
+
+Not verified here: the author's profiling numbers (F4 — Task 4 re-measures),
+cluster behaviour of `FINAL` on the `Distributed` table (Tier A precedent
+`buckets.go:54` plus the `make test-cluster` gate cover it; duplicates are
+shard-local by `cityHash64(tenant, stream_id)`), and the mkdocs build.
