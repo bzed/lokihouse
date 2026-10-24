@@ -199,6 +199,8 @@ func (it *sampleIter) work(w int, ex log.SampleExtractor) {
 			if it.stats != nil && kept > 0 {
 				it.stats.AddPostFilterLines(kept)
 			}
+		} else {
+			it.setErr(it.ctx.Err()) // the batch was skipped: the result is short, say so
 		}
 		b.done.Done()
 	}
