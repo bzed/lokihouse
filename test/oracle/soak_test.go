@@ -137,7 +137,7 @@ func TestSoak(t *testing.T) {
 		}
 	}
 	wg.Wait()
-	saveProfile(t, house, "heap", out, "end")
+	endHeap := saveProfile(t, house, "heap", out, "end")
 	saveProfile(t, house, "goroutine", out, "end")
 
 	csv := "heap_inuse_bytes,goroutines\n"
@@ -171,6 +171,13 @@ func TestSoak(t *testing.T) {
 	if last > first*1.2 {
 		t.Errorf("heap grew from %.1f MiB to %.1f MiB after warm-up; compare: go tool pprof -base %s %s",
 			first/(1<<20), last/(1<<20), filepath.Join(out, "warm-heap.pb.gz"), filepath.Join(out, "end-heap.pb.gz"))
+	}
+	// A second, independent signal for an idle-floor leak: the post-GC heap
+	// after the workload stopped (no queries in flight) stays within 50% of
+	// the warm-up floor.
+	if endHeap > first*1.5 {
+		t.Errorf("heap after the workload stopped is %.1f MiB, above 1.5x the warm-up floor %.1f MiB; compare: go tool pprof -base %s %s",
+			endHeap/(1<<20), first/(1<<20), filepath.Join(out, "warm-heap.pb.gz"), filepath.Join(out, "end-heap.pb.gz"))
 	}
 	if g0, g1 := samples[0].goroutines, samples[len(samples)-1].goroutines; g1 > g0+20 {
 		t.Errorf("goroutines grew from %.0f to %.0f; see %s", g0, g1, filepath.Join(out, "end-goroutine.pb.gz"))
