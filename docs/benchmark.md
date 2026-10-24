@@ -44,19 +44,23 @@ compared with the oracle's `Compare`, so a fast-but-wrong answer fails the run.
 
 ## Result
 
+### Pre-release measurement (unreleased, after 0.12.0)
+
 Recorded 2026-10-24 on the environment above, with the unreleased query-path
-changes after 0.12.0 (200 000 lines, 50 streams, 5 rounds per query).
-lokihouse is faster than Loki on every query except `log filter` (a few
-milliseconds behind). The two changes since 0.12.0 target the two slowest
-queries: single-stream log queries read ClickHouse in the part's physical
-order instead of sorting by timestamp (`log filter` 9 ms → 8 ms), and sample
-queries over up to 16 streams read every stream in parallel, one goroutine per
-stream, in the part's physical order, merging the streams in Go
-(`unwrap quantile` 72 ms → 54 ms, now 14 ms faster than Loki). `unwrap
-quantile` is still the most expensive query in the set: the wall is the
-engine's own aggregation, which runs Loki's code. The data set is small and
-warm, so the label-filter pushdown and windowed reads of 0.11.0 barely show
-here; they matter on larger data.
+changes after 0.12.0 (200 000 lines, 50 streams, 5 rounds per query). This
+run is not a release measurement; it is re-run at every release.
+lokihouse is faster than Loki on the six push-down queries (`logfmt filter`,
+`count_over_time`, `rate regex`, `topk`, `unwrap quantile`, `bytes_over_time`)
+and a few milliseconds behind on `log filter`, `labels` and `series`. The two
+changes since 0.12.0 target the two slowest queries: single-stream log
+queries read ClickHouse in the part's physical order instead of sorting by
+timestamp (`log filter` 9 ms → 8 ms), and sample queries over up to 16 streams
+read every stream in parallel, one goroutine per stream, in the part's physical
+order, merging the streams in Go (`unwrap quantile` 72 ms → 54 ms, now 14 ms
+faster than Loki). `unwrap quantile` is still the most expensive query in the
+set: the wall is the engine's own aggregation, which runs Loki's code. The
+data set is small and warm, so the label-filter pushdown and windowed reads
+of 0.11.0 barely show here; they matter on larger data.
 
 | query | Loki p50 | Loki p95 | lokihouse p50 | lokihouse p95 |
 |---|---:|---:|---:|---:|
