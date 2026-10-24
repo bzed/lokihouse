@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/logqlmodel/stats"
 	querierdeletion "github.com/grafana/loki/v3/pkg/querier/deletion"
 	utildeletion "github.com/grafana/loki/v3/pkg/util/deletion"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // Querier executes LogQL queries against ClickHouse. It implements logql.Querier
@@ -139,7 +140,7 @@ func (it *entryIter) Next() bool {
 			sp = it.pipeline.ForStream(it.byID[r.streamID].Labels)
 			it.sp[r.streamID] = sp
 		}
-		line, res, matches := sp.ProcessString(r.ts.UnixNano(), r.line, r.md)
+		line, res, matches := sp.ProcessString(r.ts.UnixNano(), r.line, labels.FromMap(r.md))
 		if !matches {
 			continue
 		}

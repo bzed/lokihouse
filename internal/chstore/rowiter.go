@@ -2,6 +2,8 @@ package chstore
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sort"
 	"time"
 
@@ -14,7 +16,7 @@ type row struct {
 	streamID  uint64
 	ts        time.Time
 	line      string
-	md        labels.Labels
+	md        map[string]string // raw ClickHouse map, nil or empty when none
 	entryHash uint64
 }
 
@@ -26,9 +28,15 @@ type rowReader struct {
 	lastRow   row // last raw row read from ClickHouse (before dedup), for keyset continuation
 	groupTS   time.Time
 	groupSID  uint64
-	groupSeen map[string]struct{}
+	groupHash uint64
+	group     []row // rows already yielded in the current (ts, stream_id, entry_hash) group
 	err       error
 	count     int // rows yielded by next() since the chunk was opened
+}
+
+// sameEntry reports whether two rows carry the same line and structured metadata.
+func sameEntry(a, b row) bool {
+	return a.line == b.line && maps.Equal(a.md, b.md)
 }
 
 func (r *rowReader) next() bool {
@@ -39,16 +47,18 @@ func (r *rowReader) next() bool {
 			return false
 		}
 		r.count++
-		r.curRow.md = labels.FromMap(md)
+		r.curRow.md = md
 		r.lastRow = r.curRow
-		if !r.curRow.ts.Equal(r.groupTS) || r.curRow.streamID != r.groupSID || r.groupSeen == nil {
-			r.groupTS, r.groupSID, r.groupSeen = r.curRow.ts, r.curRow.streamID, map[string]struct{}{}
-		}
-		key := r.curRow.line + "\xff" + r.curRow.md.String()
-		if _, dup := r.groupSeen[key]; dup {
+		// Rows arrive ordered by (ts, stream_id, entry_hash), so duplicates are
+		// adjacent; the group holds the distinct rows of one hash (more than one
+		// only on a hash collision).
+		if !r.curRow.ts.Equal(r.groupTS) || r.curRow.streamID != r.groupSID || r.curRow.entryHash != r.groupHash || len(r.group) == 0 {
+			r.groupTS, r.groupSID, r.groupHash = r.curRow.ts, r.curRow.streamID, r.curRow.entryHash
+			r.group = r.group[:0]
+		} else if slices.ContainsFunc(r.group, func(g row) bool { return sameEntry(g, r.curRow) }) {
 			continue
 		}
-		r.groupSeen[key] = struct{}{}
+		r.group = append(r.group, r.curRow)
 		return true
 	}
 	r.err = r.rows.Err()

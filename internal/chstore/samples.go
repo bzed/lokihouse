@@ -5,6 +5,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql/log"
 	"github.com/grafana/loki/v3/pkg/logqlmodel/stats"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // sampleIter turns the ts-ordered row cursor into samples one row at a time.
@@ -28,7 +29,7 @@ func (it *sampleIter) Next() bool {
 			se = it.extractor.ForStream(it.byID[r.streamID].Labels)
 			it.ex[r.streamID] = se
 		}
-		s, ok := se.ProcessString(r.ts.UnixNano(), r.line, r.md)
+		s, ok := se.ProcessString(r.ts.UnixNano(), r.line, labels.FromMap(r.md))
 		if !ok {
 			continue
 		}
