@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -397,4 +398,67 @@ func TestResolveStreams_RegexSameAsGo(t *testing.T) {
 		require.ElementsMatch(t, want, gotL, q)
 		require.NotEmpty(t, want, q)
 	}
+}
+
+// Rows that differ only in structured metadata are not duplicates, whoever
+// removes the duplicates (FINAL or the Go dedup).
+func TestSelectSamples_KeepsMetadataOnlyDifference(t *testing.T) {
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	one := func(id string) logproto.Stream {
+		return logproto.Stream{Labels: `{app="a"}`, Entries: []logproto.Entry{{Timestamp: t0, Line: "x", StructuredMetadata: md("trace_id", id)}}}
+	}
+	seed(t, w, "t1", one("1"))
+	seed(t, w, "t1", one("2"))
+	seed(t, w, "t1", one("1"))
+	end := t0.Add(30 * time.Second) // Loki range windows are left-open
+	res := run(t, engine(t, &chstore.Querier{Conn: conn}), `sum(count_over_time({app="a"}[1m]))`, end, end, 0, logproto.FORWARD, 0)
+	v := res.Data.(promql.Vector)
+	require.Len(t, v, 1)
+	require.Equal(t, 2.0, v[0].F)
+}
+
+// Log reads page through keyset chunks that FINAL would make slow (and whose
+// SQL it would break); only metric reads may use FINAL.
+func TestSelectLogs_NeverReadsFinal(t *testing.T) {
+	conn, db := chtest.New(t)
+	var es []logproto.Entry
+	for i := range 10 {
+		es = append(es, logproto.Entry{Timestamp: t0.Add(time.Duration(i) * time.Second), Line: fmt.Sprint("l", i)})
+	}
+	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: es})
+	ng := engine(t, &chstore.Querier{Conn: conn})
+	chstore.SetLogChunkSize(1)
+	t.Cleanup(func() { chstore.SetLogChunkSize(1000) })
+	since := time.Now()
+	run(t, ng, `{app="a"}`, t0, t0.Add(time.Minute), 0, logproto.FORWARD, 5)
+	end := t0.Add(time.Minute)
+	run(t, ng, `count_over_time({app="a"}[1m])`, end, end, 0, logproto.FORWARD, 0)
+
+	ctx := context.Background()
+	topo := chtest.Topology()
+	flush, src := "SYSTEM FLUSH LOGS query_log", "system.query_log"
+	if topo.Cluster != "" {
+		flush = "SYSTEM FLUSH LOGS ON CLUSTER " + topo.Cluster
+		src = fmt.Sprintf("clusterAllReplicas(%s, system, query_log)", topo.Cluster)
+	}
+	require.NoError(t, conn.Exec(ctx, flush))
+	rows, err := conn.Query(ctx, "SELECT query FROM "+src+" WHERE type = 'QueryFinish' AND is_initial_query AND query_kind = 'Select' AND current_database = ? AND event_time_microseconds >= fromUnixTimestamp64Micro(?) AND position(query, 'FROM logs') > 0 AND position(query, 'query_log') = 0", db, since.UnixMicro())
+	require.NoError(t, err)
+	defer rows.Close()
+	var keyset, final int
+	for rows.Next() {
+		var q string
+		require.NoError(t, rows.Scan(&q))
+		switch {
+		case strings.Contains(q, "LIMIT"):
+			keyset++
+			require.NotContains(t, q, "FINAL", "keyset chunk must not use FINAL")
+		case strings.Contains(q, "FINAL"):
+			final++
+		}
+	}
+	require.NoError(t, rows.Err())
+	require.Positive(t, keyset, "no keyset query seen")
+	require.Positive(t, final, "metric query did not use FINAL")
 }

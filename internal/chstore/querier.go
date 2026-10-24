@@ -205,8 +205,10 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 		return iter.NoopSampleIterator, err
 	}
 	// Metric queries read everything anyway: one unchunked cursor per window.
+	rq := r.rq
+	rq.final = true
 	wr := &windowReader{ws: ws, open: func(w window) (rowSource, error) {
-		sql, args := r.rq.sql(w)
+		sql, args := rq.sql(w)
 		return openCursor(sctx, q.Conn, sql, args...)
 	}}
 	return &sampleIter{rr: wr, byID: r.byID, extractor: extractor, ex: map[uint64]log.StreamSampleExtractor{}, stats: stats.FromContext(ctx)}, nil

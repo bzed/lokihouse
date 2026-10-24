@@ -2,11 +2,14 @@ package chstore_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bzed/lokihouse/internal/chstore"
@@ -45,4 +48,25 @@ func TestLineFilterSQL_UsesTextIndex(t *testing.T) {
 		require.True(t, ok, q)
 		check("exact: "+q, f)
 	}
+}
+
+// FINAL must not stop the text index from skipping granules of an unmerged table.
+func TestSelectSamples_FinalKeepsTextIndex(t *testing.T) {
+	ctx := context.Background()
+	const rows = 50000
+	conn, db := chtest.New(t)
+	es := make([]logproto.Entry, rows)
+	for i := range es {
+		es[i] = logproto.Entry{Timestamp: t0.Add(time.Duration(i) * time.Millisecond), Line: fmt.Sprint("row ", i)}
+	}
+	es[31337].Line += " needle here"
+	require.NoError(t, (&chstore.Writer{Conn: conn}).Write(ctx, "t1", []logproto.Stream{{Labels: `{a="b"}`, Entries: es}}))
+
+	since := time.Now()
+	end := t0.Add(time.Hour)
+	res := run(t, engine(t, &chstore.Querier{Conn: conn}), `count_over_time({a="b"} |= "needle" [1h])`, end, end, 0, logproto.FORWARD, 0)
+	v := res.Data.(promql.Vector)
+	require.Len(t, v, 1)
+	require.Equal(t, 1.0, v[0].F)
+	require.Less(t, chtest.LogsRowsRead(t, conn, db, since), uint64(rows/2))
 }
