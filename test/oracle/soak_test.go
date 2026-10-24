@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -149,18 +150,24 @@ func TestSoak(t *testing.T) {
 	if len(samples) < 10 {
 		t.Fatalf("only %d samples; run longer", len(samples))
 	}
-	// Leak criteria (after warm-up): the last quarter's mean heap is at most
-	// 20% above the first quarter's, and goroutines at most 20 above the
-	// first sample (live tail connections come and go).
+	// Leak criteria (after warm-up): the last quarter's median heap is at
+	// most 20% above the first quarter's, and goroutines at most 20 above
+	// the first sample (live tail connections come and go). The median, not
+	// the mean: a sample taken while a query is mid-flight counts that
+	// query's live buffers in the post-GC floor, so a quarter's mean is
+	// dominated by however many samples caught concurrent fan-outs reading
+	// (their driver blocks are megabytes each). A leak raises the idle floor
+	// itself, which the median still tracks; a transient spike does not.
 	q := len(samples) / 4
-	mean := func(ss []sample) float64 {
-		var m float64
-		for _, s := range ss {
-			m += s.heap
+	median := func(ss []sample) float64 {
+		heaps := make([]float64, len(ss))
+		for i, s := range ss {
+			heaps[i] = s.heap
 		}
-		return m / float64(len(ss))
+		slices.Sort(heaps)
+		return heaps[len(heaps)/2]
 	}
-	first, last := mean(samples[:q]), mean(samples[len(samples)-q:])
+	first, last := median(samples[:q]), median(samples[len(samples)-q:])
 	if last > first*1.2 {
 		t.Errorf("heap grew from %.1f MiB to %.1f MiB after warm-up; compare: go tool pprof -base %s %s",
 			first/(1<<20), last/(1<<20), filepath.Join(out, "warm-heap.pb.gz"), filepath.Join(out, "end-heap.pb.gz"))
