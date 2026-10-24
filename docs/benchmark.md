@@ -44,33 +44,36 @@ compared with the oracle's `Compare`, so a fast-but-wrong answer fails the run.
 
 ## Result
 
-Recorded 2026-10-24 on the environment above, at lokihouse 0.12.0 (200 000
-lines, 50 streams, 5 rounds per query). lokihouse is faster on `logfmt filter`
-and the push-down metric queries (`count_over_time`, `topk`, `bytes_over_time`),
-level with Loki on `rate regex` and `unwrap quantile`, and a few milliseconds
-behind on `log filter`. `unwrap quantile` is the most expensive query in the set;
-0.12.0 lets ClickHouse remove duplicates for metric reads and extracts samples on
-several cores, which more than halves it. The data set is small and warm, so the
-label-filter pushdown and windowed reads of 0.11.0 barely show here; they matter
-on larger data.
+Recorded 2026-10-24 on the environment above, with the unreleased query-path
+changes after 0.12.0 (200 000 lines, 50 streams, 5 rounds per query).
+lokihouse is faster than Loki on every query except `log filter` (a few
+milliseconds behind). The two changes since 0.12.0 target the two slowest
+queries: single-stream log queries read ClickHouse in the part's physical
+order instead of sorting by timestamp (`log filter` 9 ms → 8 ms), and sample
+queries over up to 16 streams read every stream in parallel, one goroutine per
+stream, in the part's physical order, merging the streams in Go
+(`unwrap quantile` 72 ms → 54 ms, now 14 ms faster than Loki). `unwrap
+quantile` is still the most expensive query in the set: the wall is the
+engine's own aggregation, which runs Loki's code. The data set is small and
+warm, so the label-filter pushdown and windowed reads of 0.11.0 barely show
+here; they matter on larger data.
 
 | query | Loki p50 | Loki p95 | lokihouse p50 | lokihouse p95 |
 |---|---:|---:|---:|---:|
-| log filter | 6ms | 6ms | 9ms | 11ms |
-| logfmt filter | 56ms | 56ms | 27ms | 27ms |
-| count_over_time | 71ms | 72ms | 12ms | 14ms |
-| rate regex | 18ms | 18ms | 13ms | 15ms |
-| topk | 34ms | 35ms | 12ms | 13ms |
-| unwrap quantile | 69ms | 70ms | 72ms | 72ms |
-| bytes_over_time | 33ms | 33ms | 14ms | 15ms |
+| log filter | 5ms | 6ms | 8ms | 8ms |
+| logfmt filter | 49ms | 50ms | 27ms | 28ms |
+| count_over_time | 69ms | 69ms | 14ms | 14ms |
+| rate regex | 17ms | 18ms | 12ms | 15ms |
+| topk | 33ms | 33ms | 10ms | 11ms |
+| unwrap quantile | 68ms | 69ms | 54ms | 55ms |
+| bytes_over_time | 40ms | 41ms | 14ms | 15ms |
 | labels | 0s | 0s | 2ms | 2ms |
 | series | 0s | 0s | 2ms | 2ms |
 
-The previous run (0.11.0, same day, same machine) had lokihouse at 8ms for
-`log filter`, 26ms for `logfmt filter`, 12ms for `count_over_time`, 15ms for
-`rate regex`, 11ms for `topk`, 155ms for `unwrap quantile` and 15ms for
-`bytes_over_time`. A `main` run just before this one, back to back, measured
-lokihouse at 164ms for `unwrap quantile`.
+The previous run (0.12.0, same day, same machine) had lokihouse at 9ms for
+`log filter`, 27ms for `logfmt filter`, 12ms for `count_over_time`, 13ms for
+`rate regex`, 12ms for `topk`, 72ms for `unwrap quantile` and 14ms for
+`bytes_over_time`.
 
 Re-run with `make bench` to refresh; the table is also written to
 `.cache/bench/results.md`.
