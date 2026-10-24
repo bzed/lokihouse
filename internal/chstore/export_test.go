@@ -30,10 +30,6 @@ func OpenedSampleWindows(it iter.SampleIterator) int {
 	}
 }
 
-// SetMaxFanoutSamples overrides the fan-out sample cap (default 1<<20) for
-// tests.
-func SetMaxFanoutSamples(n int64) { maxFanoutSamples = n }
-
 // AcquireFanoutBudget takes n units of q's fan-out connection budget, all or
 // nothing; ReleaseFanoutBudget returns them. Tests hold the whole budget to
 // make a query fall back to the global read deterministically.

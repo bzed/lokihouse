@@ -55,8 +55,11 @@ waits on a sibling leg of the same request (a binary operation, a multi-tenant
 merge) and never while a stream's query queues for a connection. Requests with
 several legs therefore cannot deadlock the pool, even when the pool is smaller
 than one fan-out; concurrent fanned-out queries queue on the pool and succeed.
-The drained result is capped at about a million samples (roughly 48 MiB); a
-query over the cap reads all streams in one query. The connection reservation is
+The drained result is capped at about a million samples (roughly 48 MiB, up
+to about 100 MiB at the cap where the per-stream slices and the merged slice
+coexist); a query over the cap reads all streams in one query, so it reads
+them twice — the discarded drain and the single query — and its query
+statistics count both reads. The connection reservation is
 all-or-nothing and capped at half of `clickhouse.max_open_conns`; when it
 cannot be taken in full the query falls back to one query over all streams (the
 behaviour above 16 streams), so a busy pool degrades latency, never

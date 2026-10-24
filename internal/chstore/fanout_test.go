@@ -578,10 +578,10 @@ func TestSelectSamples_FanoutOverSampleCapFallsBack(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, want)
 
-	chstore.SetMaxFanoutSamples(10) // far below the 360 samples the read yields
-	t.Cleanup(func() { chstore.SetMaxFanoutSamples(1 << 20) })
+	// A cap far below the 360 samples the read yields: the query reads all
+	// streams in one query.
 	since := time.Now()
-	got, err := collectSamplesQuery(ctx, q, qs, start, end)
+	got, err := collectSamplesQuery(ctx, &chstore.Querier{Conn: conn, FanoutMaxSamples: 10}, qs, start, end)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 

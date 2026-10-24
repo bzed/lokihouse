@@ -49,6 +49,13 @@ type Querier struct {
 	// wires half the pool, so the log path, tail, ruler and stats keep
 	// headroom.
 	FanoutConns int
+	// FanoutMaxSamples caps the samples a fanned-out read buffers before it
+	// serves them: 1<<20 samples at 48 bytes each (sample, labels, stream)
+	// is 48 MiB, the same order as the driver blocks a streaming read
+	// buffers, and at the cap the per-stream slices and the merged slice
+	// coexist, so up to about 100 MiB. A query that would produce more reads
+	// all streams in one query instead. 0 means 1<<20.
+	FanoutMaxSamples int64
 
 	fanoutOnce sync.Once
 	fanoutSem  *semaphore.Weighted
@@ -60,6 +67,14 @@ func (q *Querier) fanoutLimit() int {
 		return defaultFanoutMax
 	}
 	return q.FanoutMax
+}
+
+// fanoutMaxSamples is the sample cap of a fanned-out read.
+func (q *Querier) fanoutMaxSamples() int64 {
+	if q.FanoutMaxSamples > 0 {
+		return q.FanoutMaxSamples
+	}
+	return 1 << 20
 }
 
 // fanoutSemaphore bounds the connections concurrent fan-outs hold. It is

@@ -17,16 +17,8 @@ import (
 // streams a sample query reads in parallel, one goroutine per stream.
 const defaultFanoutMax = 16
 
-// maxFanoutSamples caps the samples a fanned-out read buffers before it
-// serves them: 1<<20 samples at 48 bytes each (sample, labels, stream) is
-// 48 MiB, the same order as the driver blocks a streaming read buffers. A
-// query that would produce more reads all streams in one query instead. It
-// is package state only so tests can shrink it (SetMaxFanoutSamples in
-// export_test.go); production code never writes it.
-var maxFanoutSamples = int64(1 << 20)
-
-// errFanoutTooLarge reports a drained fan-out that exceeded maxFanoutSamples;
-// the caller falls back to the global read.
+// errFanoutTooLarge reports a drained fan-out that exceeded
+// Querier.FanoutMaxSamples; the caller falls back to the global read.
 var errFanoutTooLarge = errors.New("fan-out result exceeds the sample cap")
 
 // drainedSample is one sample of a drained fan-out, with the labels and the
@@ -55,12 +47,14 @@ type drainedSample struct {
 // query's full result before it responds, so draining first costs no
 // end-to-end latency.
 //
-// The result is capped at maxFanoutSamples; over the cap the drain gives up
-// (errFanoutTooLarge) and the caller reads all streams in one query instead.
+// The result is capped at the Querier's FanoutMaxSamples; over the cap the
+// drain gives up (errFanoutTooLarge) and the caller reads all streams in one
+// query instead.
 func (q *Querier) drainFanout(ctx context.Context, rq rowQuery, ids []uint64, ws []window, reserve *semaphore.Weighted, byID map[uint64]Stream, extractors []log.SampleExtractor, st *stats.Context) ([]drainedSample, int, error) {
 	if reserve != nil {
 		defer reserve.Release(int64(len(ids)))
 	}
+	maxSamples := q.fanoutMaxSamples()
 	ctx = perStreamContext(ctx)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -103,7 +97,7 @@ func (q *Querier) drainFanout(ctx context.Context, rq rowQuery, ids []uint64, ws
 					lbls:   s.Labels.String(),
 					stream: id,
 				})
-				if total.Add(1) > maxFanoutSamples {
+				if total.Add(1) > maxSamples {
 					errs[i] = errFanoutTooLarge
 					cancel()
 					return
