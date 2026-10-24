@@ -80,9 +80,10 @@ func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req 
 	}, nil
 }
 
-// readWindows renders the read windows of a resolved query.
-func (q *Querier) readWindows(ctx context.Context, r resolved) ([]window, error) {
-	return q.windows(ctx, r.rq.tenant, r.ids, r.from, r.until, r.rq.dir)
+// readWindows renders the read windows of a resolved query. Ranges of at most
+// noStats read in one window, without the hourly-stats round trip.
+func (q *Querier) readWindows(ctx context.Context, r resolved, noStats time.Duration) ([]window, error) {
+	return q.windows(ctx, r.rq.tenant, r.ids, r.from, r.until, r.rq.dir, noStats)
 }
 
 // SelectLogs executes a log query and returns an iterator over the matching entries.
@@ -112,7 +113,7 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	}
 	// One stream: read its rows in the part's physical order (rowQuery.single).
 	r.rq.single = len(r.ids) == 1
-	ws, err := q.readWindows(ctx, r)
+	ws, err := q.readWindows(ctx, r, time.Hour)
 	if err != nil {
 		return iter.NoopEntryIterator, err
 	}
@@ -217,19 +218,38 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 			return nil, err
 		}
 	}
-	ws, err := q.readWindows(ctx, r)
+	// A fanned-out read (one goroutine per stream, in the part's physical
+	// order) needs no window to bound a sort, so it skips the hourly-stats
+	// round trip for ranges of at most two hours; the global read keeps the
+	// one-hour threshold.
+	fanout := len(r.ids) <= sampleFanoutMax
+	noStats := time.Hour
+	if fanout {
+		noStats = sampleNoStats
+	}
+	ws, err := q.readWindows(ctx, r, noStats)
 	if err != nil {
 		return iter.NoopSampleIterator, err
 	}
+	// Metric queries read everything anyway: one unchunked cursor per window.
+	rq := r.rq
+	if fanout {
+		// Per-stream reads follow the part order, so duplicates of one stream
+		// arrive adjacent and the row reader's dedup (Loki merge semantics)
+		// removes them. FINAL is not needed, and it would cost the text index:
+		// under FINAL ClickHouse keeps the skip index exact only by reading
+		// several times more granules of unmerged parts.
+		// Cancel the read with the iterator: Close stops the producers and the ClickHouse queries.
+		rctx, cancel := context.WithCancel(ctx)
+		return newSampleIter(rctx, cancel, newStreamReader(rctx, q.Conn, rq, r.ids, ws), r.byID, extractors, stats.FromContext(ctx)), nil
+	}
+	rq.final = true
 	sctx, err := withStreamIDs(ctx, r.ids)
 	if err != nil {
 		return iter.NoopSampleIterator, err
 	}
 	// Cancel the read with the iterator: Close stops the producer and the ClickHouse query.
 	rctx, cancel := context.WithCancel(sctx)
-	// Metric queries read everything anyway: one unchunked cursor per window.
-	rq := r.rq
-	rq.final = true
 	// The producer closes wr when it ends; only Close cancels rctx, as workers may still be extracting.
 	wr := &windowReader{ws: ws, open: func(w window) (rowSource, error) {
 		sql, args := rq.sql(w)

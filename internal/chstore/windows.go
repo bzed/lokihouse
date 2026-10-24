@@ -79,11 +79,14 @@ type rowQuery struct {
 	tenant string
 	filter Fragment
 	dir    logproto.Direction
-	// final lets ClickHouse remove duplicate rows (FINAL). Only unchunked
-	// metric reads set it: FINAL defeats top-N sorting on unmerged parts, which
+	// final lets ClickHouse remove duplicate rows (FINAL). Only the global
+	// metric read sets it: FINAL defeats top-N sorting on unmerged parts, which
 	// made a 1000-row keyset chunk 75 ms instead of 6 ms, and keysetReader
 	// inserts a predicate before ORDER BY and appends LIMIT, which a trailing
-	// SETTINGS clause would break.
+	// SETTINGS clause would break. The fanned-out metric read does not set it
+	// either: its per-stream part-order read returns duplicates adjacent, the
+	// row reader removes them, and FINAL would stop the text index from
+	// skipping granules of unmerged parts.
 	final bool
 	// single is set when the selector resolved to exactly one stream. The
 	// rows of a part are then physically ordered by (tenant, stream_id, ts,
@@ -93,6 +96,9 @@ type rowQuery struct {
 	// order: the engine and the limit need the newest rows overall, not per
 	// stream.
 	single bool
+	// streamID restricts the query to one stream (the sample fan-out reads
+	// every stream on its own); nil reads the streams of the external set.
+	streamID *uint64
 }
 
 // sql renders the query for w, without LIMIT. The ORDER BY comes last: the
@@ -104,9 +110,15 @@ func (q rowQuery) sql(w window) (string, []any) {
 	if q.final {
 		from = "logs FINAL"
 	}
-	s := "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM " + from + " WHERE tenant = ? AND " + streamIDsIn +
+	streams := streamIDsIn
+	args := []any{q.tenant}
+	if q.streamID != nil {
+		streams = "stream_id = ?"
+		args = append(args, *q.streamID)
+	}
+	s := "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM " + from + " WHERE tenant = ? AND " + streams +
 		" AND ts >= fromUnixTimestamp64Nano(?, 'UTC') AND ts < fromUnixTimestamp64Nano(?, 'UTC')"
-	args := []any{q.tenant, w.lo, w.hi}
+	args = append(args, w.lo, w.hi)
 	if !q.filter.Empty() {
 		s += " AND " + q.filter.SQL
 		args = append(args, q.filter.Args...)
@@ -135,10 +147,10 @@ func (q rowQuery) orderBy() string {
 }
 
 // windows returns the read windows of [from, through): one for ranges of at
-// most an hour, otherwise planned from the hourly stream stats.
-func (q *Querier) windows(ctx context.Context, tenant string, ids []uint64, from, through time.Time, dir logproto.Direction) ([]window, error) {
+// most noStats, otherwise planned from the hourly stream stats.
+func (q *Querier) windows(ctx context.Context, tenant string, ids []uint64, from, through time.Time, dir logproto.Direction, noStats time.Duration) ([]window, error) {
 	lo, hi := from.UnixNano(), through.UnixNano()
-	if hi-lo <= hourNs {
+	if hi-lo <= noStats.Nanoseconds() {
 		return []window{{lo, hi}}, nil
 	}
 	hours, err := HourlyStats(ctx, q.Conn, tenant, ids, from, through)

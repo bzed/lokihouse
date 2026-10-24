@@ -537,21 +537,26 @@ func TestSelectSamples_KeepsMetadataOnlyDifference(t *testing.T) {
 }
 
 // Log reads page through keyset chunks that FINAL would make slow (and whose
-// SQL it would break); only metric reads may use FINAL.
+// SQL it would break); only the global metric read (above the fan-out limit)
+// may use FINAL — a fanned-out metric read dedups in Go instead.
 func TestSelectLogs_NeverReadsFinal(t *testing.T) {
 	conn, db := chtest.New(t)
 	var es []logproto.Entry
 	for i := range 10 {
 		es = append(es, logproto.Entry{Timestamp: t0.Add(time.Duration(i) * time.Second), Line: fmt.Sprint("l", i)})
 	}
-	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: es})
+	streams := []logproto.Stream{{Labels: `{app="a"}`, Entries: es}}
+	for s := range 17 { // above the fan-out limit: the metric query reads globally, with FINAL
+		streams = append(streams, logproto.Stream{Labels: fmt.Sprintf(`{app="b%02d"}`, s), Entries: es})
+	}
+	seed(t, &chstore.Writer{Conn: conn}, "t1", streams...)
 	ng := engine(t, &chstore.Querier{Conn: conn})
 	chstore.SetLogChunkSize(1)
 	t.Cleanup(func() { chstore.SetLogChunkSize(1000) })
 	since := time.Now()
 	run(t, ng, `{app="a"}`, t0, t0.Add(time.Minute), 0, logproto.FORWARD, 5)
 	end := t0.Add(time.Minute)
-	run(t, ng, `count_over_time({app="a"}[1m])`, end, end, 0, logproto.FORWARD, 0)
+	run(t, ng, `count_over_time({app=~"b[0-9]+"}[1m])`, end, end, 0, logproto.FORWARD, 0)
 
 	ctx := context.Background()
 	topo := chtest.Topology()

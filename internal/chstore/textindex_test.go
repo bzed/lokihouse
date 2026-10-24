@@ -50,8 +50,12 @@ func TestLineFilterSQL_UsesTextIndex(t *testing.T) {
 	}
 }
 
-// FINAL must not stop the text index from skipping granules of an unmerged table.
-func TestSelectSamples_FinalKeepsTextIndex(t *testing.T) {
+// The sample read must not stop the text index from skipping granules of an
+// unmerged table. A single stream reads fanned out, in the part's physical
+// order and without FINAL (its duplicates arrive adjacent and the row reader
+// removes them), so the index prunes fully; above the fan-out limit the read
+// keeps FINAL and stays exact (TestSelectSamples_TextIndexAboveFanoutMax).
+func TestSelectSamples_KeepsTextIndex(t *testing.T) {
 	ctx := context.Background()
 	const rows = 50000
 	conn, db := chtest.New(t)
@@ -70,10 +74,11 @@ func TestSelectSamples_FinalKeepsTextIndex(t *testing.T) {
 	require.Less(t, chtest.LogsRowsRead(t, conn, db, since), uint64(rows/2))
 }
 
-// With overlapping unmerged parts the skip index must stay exact under FINAL
-// (use_skip_indexes_if_final_exact_mode, a 26.9 default): the needle is found
-// once even though a newer part re-pushes it and holds a second match.
-func TestSelectSamples_FinalIndexExactAcrossParts(t *testing.T) {
+// With overlapping unmerged parts the needle is found once even though a newer
+// part re-pushes it and holds a second match: the part-order read returns the
+// duplicates adjacent and the row reader removes them (above the fan-out limit
+// FINAL collapses them instead, see TestSelectSamples_TextIndexAboveFanoutMax).
+func TestSelectSamples_DedupAcrossParts(t *testing.T) {
 	ctx := context.Background()
 	conn, _ := chtest.New(t)
 	w := &chstore.Writer{Conn: conn}
