@@ -110,6 +110,8 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	if err != nil || len(r.byID) == 0 {
 		return iter.NoopEntryIterator, err
 	}
+	// One stream: read its rows in the part's physical order (rowQuery.single).
+	r.rq.single = len(r.ids) == 1
 	ws, err := q.readWindows(ctx, r)
 	if err != nil {
 		return iter.NoopEntryIterator, err

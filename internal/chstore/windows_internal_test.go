@@ -84,3 +84,26 @@ func TestRowQuery_FinalRendering(t *testing.T) {
 	require.NotContains(t, sql, "FINAL")
 	require.NotContains(t, sql, "SETTINGS")
 }
+
+// One resolved stream: the read follows the part sorting key
+// (tenant, stream_id, ts, entry_hash), so ClickHouse reads the rows in
+// physical order and stops at the chunk LIMIT instead of sorting the range.
+// Several streams keep the global timestamp order: the engine and the limit
+// need the newest rows overall, not per stream.
+func TestRowQuery_SingleStreamPartOrder(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rq   rowQuery
+		want string
+	}{
+		{"single backward", rowQuery{tenant: "t", single: true, dir: logproto.BACKWARD}, " ORDER BY stream_id DESC, ts DESC, entry_hash DESC"},
+		{"single forward", rowQuery{tenant: "t", single: true, dir: logproto.FORWARD}, " ORDER BY stream_id ASC, ts ASC, entry_hash ASC"},
+		{"multi backward", rowQuery{tenant: "t", dir: logproto.BACKWARD}, " ORDER BY ts DESC, stream_id ASC, entry_hash"},
+		{"multi forward", rowQuery{tenant: "t", dir: logproto.FORWARD}, " ORDER BY ts ASC, stream_id ASC, entry_hash"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sql, _ := tc.rq.sql(window{1, 2})
+			require.Contains(t, sql, tc.want, sql)
+		})
+	}
+}

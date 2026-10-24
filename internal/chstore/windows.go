@@ -85,6 +85,14 @@ type rowQuery struct {
 	// inserts a predicate before ORDER BY and appends LIMIT, which a trailing
 	// SETTINGS clause would break.
 	final bool
+	// single is set when the selector resolved to exactly one stream. The
+	// rows of a part are then physically ordered by (tenant, stream_id, ts,
+	// entry_hash), so the read follows that order and ClickHouse reads it in
+	// order (stopping at the chunk LIMIT) instead of sorting the range by
+	// global timestamp. Multi-stream reads must keep the global timestamp
+	// order: the engine and the limit need the newest rows overall, not per
+	// stream.
+	single bool
 }
 
 // sql renders the query for w, without LIMIT. The ORDER BY comes last: the
@@ -103,16 +111,27 @@ func (q rowQuery) sql(w window) (string, []any) {
 		s += " AND " + q.filter.SQL
 		args = append(args, q.filter.Args...)
 	}
-	order := "ts ASC"
-	if q.dir == logproto.BACKWARD {
-		order = "ts DESC"
-	}
-	s += " ORDER BY " + order + ", stream_id ASC, entry_hash"
+	s += " ORDER BY " + q.orderBy()
 	if q.final {
 		// Duplicates share ts, hence the day partition, so merging per partition is exact.
 		s += " SETTINGS do_not_merge_across_partitions_select_final = 1"
 	}
 	return s, args
+}
+
+// orderBy returns the ORDER BY clause: the part sorting key, in query
+// direction, for a single stream; the global timestamp order otherwise.
+func (q rowQuery) orderBy() string {
+	if q.single {
+		if q.dir == logproto.BACKWARD {
+			return "stream_id DESC, ts DESC, entry_hash DESC"
+		}
+		return "stream_id ASC, ts ASC, entry_hash ASC"
+	}
+	if q.dir == logproto.BACKWARD {
+		return "ts DESC, stream_id ASC, entry_hash"
+	}
+	return "ts ASC, stream_id ASC, entry_hash"
 }
 
 // windows returns the read windows of [from, through): one for ranges of at
