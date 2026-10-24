@@ -6,6 +6,8 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-24
+
 ### Changed
 
 - Metric queries that run in lokihouse's own engine (e.g. `| unwrap`, `quantile_over_time`) let ClickHouse remove duplicate entries (`FINAL`) instead of lokihouse; much faster when retried pushes left duplicates in unmerged parts.
