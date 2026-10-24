@@ -32,16 +32,19 @@ func TestKeysetContinuation(t *testing.T) {
 			wantArgs: []any{ts, uint64(7), uint64(9)},
 		},
 		{
+			// stream_id is constant under single: the prunable (ts,
+			// entry_hash) form, which the primary-key analysis can use to
+			// skip the granules the earlier chunks already read.
 			name:     "single-stream backward",
 			rq:       rowQuery{dir: logproto.BACKWARD, single: true},
-			wantSQL:  " AND (stream_id, ts, entry_hash) < (?, fromUnixTimestamp64Nano(?, 'UTC'), ?)",
-			wantArgs: []any{uint64(7), ts, uint64(9)},
+			wantSQL:  " AND (ts < fromUnixTimestamp64Nano(?, 'UTC') OR (ts = fromUnixTimestamp64Nano(?, 'UTC') AND entry_hash < ?))",
+			wantArgs: []any{ts, ts, uint64(9)},
 		},
 		{
 			name:     "single-stream forward",
 			rq:       rowQuery{dir: logproto.FORWARD, single: true},
-			wantSQL:  " AND (stream_id, ts, entry_hash) > (?, fromUnixTimestamp64Nano(?, 'UTC'), ?)",
-			wantArgs: []any{uint64(7), ts, uint64(9)},
+			wantSQL:  " AND (ts > fromUnixTimestamp64Nano(?, 'UTC') OR (ts = fromUnixTimestamp64Nano(?, 'UTC') AND entry_hash > ?))",
+			wantArgs: []any{ts, ts, uint64(9)},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

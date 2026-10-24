@@ -462,6 +462,41 @@ func lines(s logproto.Stream) []string {
 	return out
 }
 
+// A single-stream log query pages through keyset chunks. The filter stays in
+// Go (an or-chain of regex line filters is not pushed down), so every chunk
+// after the first must prune the granules the earlier chunks already read: a
+// continuation that the primary-key analysis cannot use re-reads them, which
+// makes the read quadratic in the chunk count.
+func TestSelectLogs_SingleStreamKeysetPrunes(t *testing.T) {
+	conn, db := chtest.New(t)
+	var es []logproto.Entry
+	for i := range 50000 {
+		line := fmt.Sprint("row ", i)
+		if i%10 == 0 {
+			line = "keep " + line
+		}
+		es = append(es, logproto.Entry{Timestamp: t0.Add(time.Duration(i) * 72 * time.Millisecond), Line: line})
+	}
+	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: es})
+	chstore.SetLogChunkSize(2000)
+	t.Cleanup(func() { chstore.SetLogChunkSize(1000) })
+	since := time.Now()
+	// 5 000 matches, 500 per 5 000-row chunk: ten chunks to reach the limit.
+	res := run(t, engine(t, &chstore.Querier{Conn: conn}), `{app="a"} |~ "keep" or "zzz"`, t0, t0.Add(time.Hour), 0, logproto.FORWARD, 5000)
+	streams := res.Data.(logqlmodel.Streams)
+	require.Len(t, streams, 1)
+	require.Len(t, lines(streams[0]), 5000)
+	// Ten chunks of 5 000 rows. With pruning every chunk reads the one or
+	// two granules around its boundary (308 202 rows in total, at this data's
+	// block and granule sizes); the row-tuple continuation prunes nothing,
+	// so the k-th chunk re-reads the k − 1 earlier chunks (496 618 rows).
+	require.Less(t, chtest.LogsRowsRead(t, conn, db, since), uint64(400000))
+	// The continuation is the prunable (ts, entry_hash) form, not the row
+	// tuple over (stream_id, ts, entry_hash) that filters rows but prunes no
+	// granules.
+	require.Len(t, queriesSince(t, conn, db, since, "entry_hash >"), 9, "chunks 2-10 continue from the last row")
+}
+
 // A case-insensitive line filter is pushed to ClickHouse only when ILIKE and
 // Go's (?i) agree; the Kelvin sign must still match "k".
 func TestSelectLogs_FoldCaseNotLost(t *testing.T) {
