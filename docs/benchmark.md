@@ -48,7 +48,7 @@ Recorded 2026-10-24 on the environment above, at lokihouse 0.11.0 (200 000
 lines, 50 streams, 5 rounds per query). lokihouse is faster on `logfmt filter`
 and the push-down metric queries (`count_over_time`, `topk`, `bytes_over_time`)
 and level with Loki on `log filter` and `rate regex`. `unwrap quantile` is slower
-than Loki — it is the most expensive query in the set and not yet pushed down.
+than Loki — it is the most expensive query in the set.
 The data set is small and warm, so the 0.11.0 label-filter pushdown and windowed
 reads barely show here; they matter on larger data.
 
@@ -64,7 +64,7 @@ reads barely show here; they matter on larger data.
 | labels | 1ms | 1ms | 2ms | 2ms |
 | series | 1ms | 1ms | 2ms | 2ms |
 
-The previous run (2026-10-12, 0.5.0) had lokihouse at 9ms for `log filter`, 30ms
+The previous run (2026-10-12) had lokihouse at 9ms for `log filter`, 30ms
 for `logfmt filter`, 17ms for `count_over_time`, 13ms for `rate regex`, 13ms for
 `topk` and 159ms for `unwrap quantile`.
 
