@@ -1,12 +1,203 @@
-# Review: branch `perf/part-order-stream-fanout` (HEAD `8e5572a`)
+# Review: branch `perf/part-order-stream-fanout` (HEAD `9919600`)
 
 Reviewer: Claude Opus 5.5 (second pair of eyes)
 Date: 2026-10-24
 
-This file holds two passes. §0 is the re-review of the fix commits
-`de5cc68..8e5572a` against the findings of the first pass. §1–§8 are the
-first pass at `8099b8e`, kept unchanged so that the finding numbers stay
-stable.
+This file holds three passes, newest first. §00 re-reviews the commits
+`918a35c..9919600` against R1–R5. §0 is the re-review of the fix commits
+`de5cc68..8e5572a` against the first pass's findings. §1–§8 are the first
+pass at `8099b8e`. The older passes are kept unchanged so that the finding
+numbers stay stable.
+
+## 00. Third pass: the R fixes (HEAD `9919600`)
+
+Commits: `918a35c` (R2), `ad38085` (R1, R3), `4bba64c` (R5), `9919600`
+(a test that only passed because of R2's bug). Method: as in §0. I read
+every changed line, then re-ran the earlier probes plus three new ones
+against HEAD, in a worktree under `/tmp`, on a single node and on the 2×2
+cluster. The probes are not committed. Copies are at
+`/tmp/claude-1000/-home-bzed-workspace-vibe-lokihouse/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review2_test.go`
+and `…/scratchpad/zz_review3_test.go`.
+
+**Verdict: merge-ready once one test is fixed.** R1 and R2 are fixed and
+verified live. R3 and R5 are fixed. R4 stays an optional follow-up. One
+issue does need attention before the merge (N4). The new regression test
+for R1 is **flaky on the cluster**: it failed in one of two full
+`test-cluster` runs. The cause is not the fan-out. Most of the test's legs
+never fan out, and they hit a lockstep cycle in the *global* read, which
+0.12.0 already had. Three further small points (N1–N3) do not block the
+merge.
+
+| Finding | Claimed fix | Status |
+|---|---|---|
+| R1 multi-cursor deadlock | `ad38085`: the fan-out *drains* inside `SelectSamples`. Each stream goroutine reads its rows, extracts its samples and appends them to its own slice; the slices are merged in Go and served by a `sliceSampleIter`. A cap of 2²⁰ samples falls back to the global read | **Fixed for fanned-out legs**, see below. The regression test is flaky, and the doc overclaims for legs that fall back (N4) |
+| R2 log routing | `918a35c`: under `single`, `rq.streamID = &r.ids[0]`, and the external-table upload is skipped | **Fixed**. Probe `TestReviewLogRouting` on the cluster: streams on the initiator's shard (s00, s11, s12) now cause **0** remote `logs_local` queries (before: 1); streams on other shards (s01, s06, s07) cause 1. `TestSelectLogs_SingleStreamRoutesToOwningShard` pins it (cluster only; it skips on a single node) |
+| R3 comment | `ad38085`: the comment now says "zero means the default budget"; `max(n, 0)` removed | **Fixed** |
+| R4 keyset over-read | — | Open, info (unchanged) |
+| R5 soak criterion | `4bba64c`: a second signal, the post-GC heap after the workload stopped, must be ≤ 1.5× the warm-up floor | **Fixed**, as recommended |
+
+`9919600` is a correct consequence of R2. `TestStreamSet_PrunesByPrimaryKey`
+had written straight into the initiator's local table, which only worked
+while the single-stream read still went to every shard. It now writes
+through the Distributed table and runs `OPTIMIZE … ON CLUSTER`. It passes on
+the cluster.
+
+### R1: why the drain fixes it, and what was measured
+
+The circular wait needed a connection to be held while its holder waited
+on something else: the merge waiting for a stream's head, or the engine
+waiting on a sibling leg. In `drainFanout` a goroutine waits on nothing.
+It reads its cursor to the end, as fast as the server sends, and only
+then does `SelectSamples` return, so a leg holds connections only for the
+duration of its own transfer. A stream still queued in `acquire` waits
+only for transfers that will finish on their own. No cycle remains, at any
+pool size. The commit's argument against a dedicated pool, which was my
+suggestion in §0, is correct: a leg could still hold one pool's
+connections while its sibling waits. Draining removes the wait itself.
+
+The streaming merge is gone, but the dedup it fed is not. The per-stream
+cursors are still `openCursor` → `rowReader`, which drops exact duplicates
+(line plus metadata within one `(ts, stream_id, entry_hash)` group).
+`mergeSamples` orders by `(ts, stream_id)` and is stable within a stream.
+That is the order the single-query read produces (`ORDER BY ts,
+stream_id, entry_hash`), so the result is unchanged. The oracle passes on
+it, in all three modes and on the cluster.
+
+Probes at HEAD:
+
+| Probe | Pool / timeout | Load | Result |
+|---|---|---|---|
+| `TestReviewLockstepBinop` (the §0 reproducer) | 4 conns, 3 s | 10 concurrent binary ops, two 2-stream legs, budget 2 | **0/10** failed (before: 9/10 in one of three runs); global-only: 0/10 |
+| `TestReviewSaturation` (new) | 4 conns, **5 s** (production default) | 10 concurrent binary ops, two **8-stream** legs, 16 × 10 MB streams, budget 2 or 16, two rounds each | **0/10** in every round, 1.43–1.48 s per round; global-only 1.43–1.58 s |
+| `TestReviewMultiLegStress` (new; the committed test's shape, counting failures) | 4 conns, 5 s | as `TestReviewLockstepBinop`, 6 rounds × 3 runs, while `internal/api` and `internal/pushdown` tests load the cluster | budget 2: **0/180**; global-only (`FanoutMax: 1`): **15/180** failed (`acquire conn timeout`), in 2 of 18 rounds. See N4 |
+
+For fanned-out legs, the `operations.md` sentence "a busy pool degrades
+latency, never correctness" is now true. It is not true for a leg that
+reads globally; see N4.
+
+The committed regression test,
+`TestSelectSamples_FanoutMultiLegQueriesNeverDeadlockPool`, uses a 30 s
+`DialTimeout`. That is fine for the drain, but against the old code it
+would only have gone red after 30 s per stuck round. A 3–5 s timeout
+catches the regression faster with the same signal. This is optional.
+
+### N4 (medium): the R1 regression test is flaky, and the doc overclaims for global legs
+
+`TestSelectSamples_FanoutMultiLegQueriesNeverDeadlockPool` **failed in one
+of two full `test-cluster` runs** at `9919600`. The failing round reported
+`fanout_test.go:561: Received unexpected error` after 35.7 s, which is the
+test's 30 s acquire timeout plus the run. Run alone it passes 3/3, and the
+second full run passed.
+
+The cause is in the test's setup, not in the drain. The comment says
+"every binary operation runs two 2-stream fan-outs in lockstep", but with
+`FanoutConns: 2` the whole budget fits **one** 2-stream leg. Of the 20
+legs in flight per round, at most one fans out at a time. The others fail
+`TryAcquire` and take the global read, which is lazy: it opens its cursor
+on the first `Next` and keeps its connection while the server is
+mid-stream. The engine steps both legs of a binary operation in turn. So
+with 10 queries × 2 global legs on a 4-connection pool, the first legs of
+four queries can hold all four connections while each query's second leg
+waits in `acquire`. That is the same circular wait as R1, on the 0.12.0
+code path. `TestReviewMultiLegStress` confirms it: global-only failed
+15/180 queries under load; the fan-out configuration failed 0/180. (The
+§0 probe's global-only 0/30 was a quieter run.)
+
+Consequences:
+
+- The test is red/green on timing that has nothing to do with the code it
+  pins. On CI it will flake, and when it does it reads as an R1
+  regression.
+- `operations.md` says "Requests with several legs therefore cannot
+  deadlock the pool, even when the pool is smaller than one fan-out", and
+  the CHANGELOG says "requests with several legs … cannot deadlock the
+  connection pool". That holds only for legs that fan out. A leg above 16
+  streams, a leg whose reservation fails, or a leg over the sample cap
+  still can. This is **pre-existing** (0.12.0 has it), not a regression of
+  this branch. The branch actually shrinks it, because fanned-out legs no
+  longer take part.
+
+Fix, before merge: make the test exercise what it claims. Give it a budget
+that lets every leg fan out (for example `FanoutConns: 40` on the
+4-connection pool; the drain makes a budget above the pool safe, as
+`TestSelectSamples_FanoutBudgetAbovePoolSucceeds` shows), and use a 5 s
+`DialTimeout`, so that a real regression fails fast. Then narrow the two
+doc sentences to "fanned-out legs", and record the global-read lockstep
+cycle as a known limitation. A later fix could drain the global read too,
+below a size bound, or give the engine's legs one shared cursor budget.
+Category: **derived** (reproduced). Confidence: high.
+
+### N1 (low): `maxFanoutSamples` is package-level mutable state
+
+`fanout.go` adds `var maxFanoutSamples = int64(1 << 20)`, which tests
+overwrite through `SetMaxFanoutSamples`. It copies the existing
+`logChunkSize` pattern word for word ("package state only so tests can
+shrink it"), so it is not out of character. But AGENTS.md allows no
+package-level mutable state except collectors and Loki-forced values, and
+F6 moved the sibling knobs onto `Querier` for exactly that reason. No
+chstore test calls `t.Parallel()`, so there is no race today. Fix: a
+`Querier.FanoutMaxSamples` field (0 = 2²⁰), like `FanoutMax`. That also
+removes the `t.Cleanup` reset in the tests.
+
+### N2 (info): an over-cap fan-out reads twice and counts both reads in its stats
+
+When the drain passes 2²⁰ samples it cancels, discards everything and
+re-reads all streams with the global `FINAL` query. In `TestReviewMemory`
+(16 streams, 800 000 samples, cap lowered to 400 000), the fallback took
+**332–335 ms**, against 232 ms for the global read alone and 184–191 ms
+for the fan-out under the cap. The discarded drain's ClickHouse progress
+is still added to the query's `decompressed lines/bytes` statistics
+(`WithQueryStats`), so such a query over-reports what it read. Both are
+bounded (one wasted read of at most ~1 M samples) and documented ("a query
+over the cap reads all streams in one query"). The stats double count
+could be noted in `operations.md`, or avoided by giving the drain its own
+`stats.Context` and merging it only on success.
+
+### N3 (info): the memory figure for the drain counts one copy
+
+`fanout.go` and `operations.md` give the cap as about 48 MiB (2²⁰ ×
+48-byte `drainedSample`). At the cap the per-stream slices and the merged
+slice coexist, so that is 2×, before the `append` growth slack. Each
+sample also carries its own `s.Labels.String()` allocation until the
+interning pass, which runs only after the merge. Measured, this does not
+matter in practice. At 800 000 samples the fan-out's peak heap delta was
+**196–208 MiB**, against **192–217 MiB** for the global read, because row
+decoding (≈200-byte lines) dominates both. Interning inside each stream
+goroutine (one map per stream) would remove the per-sample strings. The
+doc could say "up to ~100 MiB at the cap".
+
+### Gate results at `9919600`
+
+Single node (`localhost:9000`, ClickHouse 26.9.25.15) and the 2×2 cluster
+through ch1.
+
+| Gate | Result |
+|---|---|
+| `make check` (single node) | PASS: golangci-lint 0 issues, govulncheck clean (allowlisted `GO-2026-5115` only), total coverage **88.1 %** (88.5 % at `8e5572a`) |
+| `test-cluster` (`go test -count=1 ./...` on the cluster), run 1 | **FAIL**: `TestSelectSamples_FanoutMultiLegQueriesNeverDeadlockPool` (N4); every other package ok |
+| `test-cluster`, run 2 | PASS (chstore 383 s) |
+| oracle `off` / `downstream` / `on` | PASS (138.6 s / 103.8 s / 46.6 s) |
+| oracle, cluster | PASS (57.7 s) |
+| soak, `LOKIHOUSE_SOAK_DURATION=4m` (median plus the new end-heap check) | PASS (242.7 s) |
+
+Not run: `make bench`, the full 10-minute soak. (My own first cluster pass
+broke on a shell-quoting mistake in the gate script and was discarded; the
+runs above are the clean re-runs.)
+
+### Recommendations
+
+1. **N4 before merge:** let every leg of the regression test fan out
+   (budget above the pool), shorten its `DialTimeout`, and narrow the
+   "several legs cannot deadlock" sentences in `operations.md` and
+   `CHANGELOG.md` to fanned-out legs. Record the global-read lockstep
+   cycle (pre-existing since 0.12.0) as a known limitation.
+2. N1: move the sample cap onto `Querier` (and, while at it,
+   `logChunkSize`).
+3. N2/N3: optional. Separate stats for the drain, per-stream label
+   interning, a more accurate memory figure in `operations.md`.
+4. R4: optional, as before.
+
+---
 
 ## 0. Re-review of the fixes (HEAD `8e5572a`)
 
