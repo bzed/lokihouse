@@ -44,12 +44,16 @@ func (k *keysetReader) continuation() (string, []any) {
 	}
 	last := k.continuationKey() // (ts, stream_id, entry_hash) at Unix nanoseconds
 	if k.rq.single {
+		// stream_id is constant: compare the remaining key columns. A row
+		// tuple over (stream_id, ts, entry_hash) filters the same rows, but
+		// the primary-key analysis cannot use it and prunes no granules, so
+		// every chunk would re-read the earlier chunks.
 		if k.rq.dir == logproto.BACKWARD {
-			return " AND (stream_id, ts, entry_hash) < (?, fromUnixTimestamp64Nano(?, 'UTC'), ?)",
-				[]any{last[1], last[0], last[2]}
+			return " AND (ts < fromUnixTimestamp64Nano(?, 'UTC') OR (ts = fromUnixTimestamp64Nano(?, 'UTC') AND entry_hash < ?))",
+				[]any{last[0], last[0], last[2]}
 		}
-		return " AND (stream_id, ts, entry_hash) > (?, fromUnixTimestamp64Nano(?, 'UTC'), ?)",
-			[]any{last[1], last[0], last[2]}
+		return " AND (ts > fromUnixTimestamp64Nano(?, 'UTC') OR (ts = fromUnixTimestamp64Nano(?, 'UTC') AND entry_hash > ?))",
+			[]any{last[0], last[0], last[2]}
 	}
 	if k.rq.dir == logproto.BACKWARD {
 		return " AND (ts < fromUnixTimestamp64Nano(?, 'UTC') OR (ts = fromUnixTimestamp64Nano(?, 'UTC') AND (stream_id, entry_hash) > (?, ?)))",
