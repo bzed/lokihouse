@@ -45,3 +45,43 @@ func TestSampleIter_CancelledContextNeverShortWithoutError(t *testing.T) {
 		require.NoError(t, it.Close())
 	}
 }
+
+type hashRows struct {
+	rows   []row
+	curRow row
+}
+
+func (h *hashRows) next() bool {
+	if len(h.rows) == 0 {
+		return false
+	}
+	h.curRow = h.rows[0]
+	h.rows = h.rows[1:]
+	return true
+}
+func (h *hashRows) cur() row     { return h.curRow }
+func (h *hashRows) errOf() error { return nil }
+func (h *hashRows) close() error { return nil }
+
+// Sample.Hash carries the row's entry hash, the table's dedup identity
+// (cityHash64 of the line and the structured metadata): it is already decoded
+// with the row, and it identifies exact repeats, which is what a merge dedup
+// needs.
+func TestSampleIter_HashIsEntryHash(t *testing.T) {
+	expr, err := syntax.ParseSampleExpr(`count_over_time({app="a"}[1m])`)
+	require.NoError(t, err)
+	ex, err := expr.Extractor()
+	require.NoError(t, err)
+	rows := &hashRows{rows: []row{
+		{streamID: 1, ts: time.Unix(1, 0), line: "x", entryHash: 42},
+		{streamID: 1, ts: time.Unix(2, 0), line: "x", entryHash: 43},
+	}}
+	it := newSampleIter(context.Background(), func() {}, rows, map[uint64]Stream{1: {ID: 1}}, []log.SampleExtractor{ex}, nil)
+	require.True(t, it.Next())
+	require.Equal(t, uint64(42), it.At().Hash)
+	require.True(t, it.Next())
+	require.Equal(t, uint64(43), it.At().Hash)
+	require.False(t, it.Next())
+	require.NoError(t, it.Err())
+	require.NoError(t, it.Close())
+}

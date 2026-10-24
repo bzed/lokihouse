@@ -5,7 +5,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql/log"
 	"github.com/grafana/loki/v3/pkg/logqlmodel/stats"
@@ -174,7 +173,6 @@ func (it *sampleIter) dispatch(b *sampleBatch, used []bool) bool {
 func (it *sampleIter) work(w int, ex log.SampleExtractor) {
 	defer it.wg.Done()
 	streams := map[uint64]log.StreamSampleExtractor{}
-	var digest xxhash.Digest
 	for b := range it.chans[w] {
 		if it.ctx.Err() == nil {
 			var kept int64
@@ -192,11 +190,10 @@ func (it *sampleIter) work(w int, ex log.SampleExtractor) {
 					continue
 				}
 				kept++
-				lbls := s.Labels.String()
-				digest.Reset()
-				_, _ = digest.WriteString(lbls) // xxhash writes never fail
-				_, _ = digest.WriteString(r.line)
-				b.out[i] = sampleOut{ok: true, value: s.Value, lbls: lbls, hash: digest.Sum64()}
+				// The sample hash is the row's entry hash, the table's dedup
+				// identity: decoded with the row for free, and it identifies
+				// exact repeats, which is what a merge dedup needs.
+				b.out[i] = sampleOut{ok: true, value: s.Value, lbls: s.Labels.String(), hash: r.entryHash}
 			}
 			if it.stats != nil && kept > 0 {
 				it.stats.AddPostFilterLines(kept)
