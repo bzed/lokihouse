@@ -145,14 +145,15 @@ git commit -m "refactor: remove duplicates without per-row allocations"
 - [ ] **Step 1: Write the failing tests**
   - `windows_internal_test.go` `TestRowQuery_FinalRendering`: `rowQuery{tenant: "t", final: true}.sql(window{1, 2})` contains `"FROM logs FINAL WHERE"` and has suffix `" SETTINGS do_not_merge_across_partitions_select_final = 1"`; with `final: false` contains neither `FINAL` nor `SETTINGS`.
   - `querier_test.go` `TestSelectSamples_KeepsMetadataOnlyDifference`: seed, in two separate `seed` calls, `{app="a"}` entries at `t0` with line `"x"` and structured metadata `trace_id=1`, then `trace_id=2`; plus the first one again in a third call. `count_over_time({app="a"}[1m])` at `t0+1m` = 2.
+  - `querier_test.go` `TestSelectLogs_NeverReadsFinal`: run a log query (`{app="a"}`, limit 5, chunk size 1 via `chstore.SetLogChunkSize(1)`, restored in `t.Cleanup`) and a metric query on the same seeded data; `SYSTEM FLUSH LOGS query_log`, then from `system.query_log` (`clusterAllReplicas` on a cluster, as `chtest.LogsRowsRead` does) for `current_database = db`, `type = 'QueryFinish'`, `query LIKE '%FROM logs%'`: at least one keyset query (has `LIMIT`) and none of them contains `FINAL`; the metric query's SELECT does contain `FINAL`. Keyset chunks would fail with a syntax error under `final` (`LIMIT ?` after `SETTINGS`), and this turns that drift into a red build.
   - `textindex_test.go` `TestSelectSamples_FinalKeepsTextIndex`: write 50 000 lines to `{a="b"}` through `chstore.Writer` (no `OPTIMIZE`), exactly one containing `needle`; run `count_over_time({a="b"} |= "needle" [1h])` through `engine(t, &chstore.Querier{Conn: conn})` and assert the count is 1 and `chtest.LogsRowsRead(t, conn, db, since) < 25000`.
 
 - [ ] **Step 2: Run them**
 
   Run: `go test -race -run 'TestRowQuery_FinalRendering|TestSelectSamples_KeepsMetadataOnlyDifference|TestSelectSamples_FinalKeepsTextIndex' ./internal/chstore/`
-  Expected: `TestRowQuery_FinalRendering` FAILS (no `final` field / no `FINAL`); the other two pass and pin the behaviour across the change.
+  Expected: `TestRowQuery_FinalRendering` FAILS (no `final` field / no `FINAL`), and so does the metric-query half of `TestSelectLogs_NeverReadsFinal`; the other two pass and pin the behaviour across the change. (Add `TestSelectLogs_NeverReadsFinal` to the `-run` pattern.)
 
-- [ ] **Step 3: Implement** `rowQuery.final` and set it in `SelectSamples` (copy `r.rq`, set `final`, use it in the `open` closure). Leave the Go dedup on: under `FINAL` it finds no duplicate groups and costs one key comparison per row.
+- [ ] **Step 3: Implement** `rowQuery.final` and set it in `SelectSamples` (copy `r.rq`, set `final`, use it in the `open` closure). Leave the Go dedup on: under `FINAL` it finds no duplicate groups and costs one key comparison per row; the log path still needs it, so it must not be "simplified" away later. Set only `do_not_merge_across_partitions_select_final` (default 0); do not set `use_skip_indexes_if_final*` explicitly: the 26.9 defaults are correct, and `TestSelectSamples_FinalKeepsTextIndex` notices if a server upgrade changes them.
 
 - [ ] **Step 4: Run tests**
 
@@ -187,15 +188,27 @@ Replace `sampleIter` with an ordered pipeline in a new file:
 producer goroutine:  windowReader.next() → batch.rows (≤ sampleBatchRows),
                      batch.worker[i] = worker of rows[i].streamID
                      (assigned round-robin on first sight, map owned by producer)
-                     → send batch to every worker's channel, then to ordered channel
+                     → batch.done.Add(k) for the k workers owning rows in it,
+                       send it to those k workers' channels, then to ordered channel
+                     on exit (end, error, cancel): stash err, close every worker
+                     channel and the ordered channel, close rr
 worker w (N of them): for i where batch.worker[i]==w:
                        se := own ForStream cache[streamID] (from own SampleExtractor)
                        ProcessString(ts, line, labels.FromMap(md)) → batch.out[i]
                        {ok, value, lbls = s.Labels.String(), hash = xxhash(lbls, line)}
                      add post-filter count once per batch; batch.done.Done()
+                     for every batch received, also when ctx is cancelled
+                     (skip the work, never the Done)
 consumer (Next):     take batch from ordered channel, batch.done.Wait(),
-                     yield out[i] with ok in index order
+                     yield out[i] with ok in index order; when the ordered
+                     channel is closed, Next returns false and Err returns
+                     the stashed error (the channel close orders the write)
 ```
+
+Two rules keep this deadlock-free: a batch's `done` count equals the number
+of workers it was sent to (per-worker routing, not broadcast, so idle workers
+are not woken), and every worker calls `Done` for every batch it receives.
+A batch is added to `done` before it is sent anywhere, so `Wait` never races `Add`.
 
 A stream always goes to the same worker, and each worker handles its batches
 in channel order, so each per-stream extractor sees exactly the line sequence
@@ -255,7 +268,7 @@ the sequential iterator for every worker count.
   Expected: PASS.
 
 - [ ] **Step 6: Document**
-  - `docs/operations.md`: a short paragraph under the query/performance section: metric queries that lokihouse evaluates itself (parsers, `unwrap`) parse lines on up to `GOMAXPROCS` goroutines per query (Go follows the cgroup CPU quota). Set the `GOMAXPROCS` environment variable to limit that.
+  - `docs/operations.md`, under `## Limits` → `### Query`: a short paragraph: metric queries that lokihouse evaluates itself (parsers, `unwrap`) parse lines on `min(GOMAXPROCS, matching streams)` goroutines *per query*, so concurrent queries multiply the goroutine count while `GOMAXPROCS` (Go follows the cgroup CPU quota) bounds the CPU they use together. Set the `GOMAXPROCS` environment variable to limit it.
   - `CHANGELOG.md` `### Changed`: `- Metric queries that run in lokihouse's own engine parse and extract samples on up to GOMAXPROCS cores per query.`
 
 - [ ] **Step 7: Commit**
