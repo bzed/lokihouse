@@ -61,7 +61,6 @@ func TestSelectSamples_FinalKeepsTextIndex(t *testing.T) {
 	}
 	es[31337].Line += " needle here"
 	require.NoError(t, (&chstore.Writer{Conn: conn}).Write(ctx, "t1", []logproto.Stream{{Labels: `{a="b"}`, Entries: es}}))
-
 	since := time.Now()
 	end := t0.Add(time.Hour)
 	res := run(t, engine(t, &chstore.Querier{Conn: conn}), `count_over_time({a="b"} |= "needle" [1h])`, end, end, 0, logproto.FORWARD, 0)
@@ -69,4 +68,27 @@ func TestSelectSamples_FinalKeepsTextIndex(t *testing.T) {
 	require.Len(t, v, 1)
 	require.Equal(t, 1.0, v[0].F)
 	require.Less(t, chtest.LogsRowsRead(t, conn, db, since), uint64(rows/2))
+}
+
+// With overlapping unmerged parts the skip index must stay exact under FINAL
+// (use_skip_indexes_if_final_exact_mode, a 26.9 default): the needle is found
+// once even though a newer part re-pushes it and holds a second match.
+func TestSelectSamples_FinalIndexExactAcrossParts(t *testing.T) {
+	ctx := context.Background()
+	conn, _ := chtest.New(t)
+	w := &chstore.Writer{Conn: conn}
+	es := make([]logproto.Entry, 20000)
+	for i := range es {
+		es[i] = logproto.Entry{Timestamp: t0.Add(time.Duration(i) * time.Millisecond), Line: fmt.Sprint("row ", i)}
+	}
+	es[100].Line += " needle"
+	require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{a="b"}`, Entries: es}}))
+	require.NoError(t, w.Write(ctx, "t1", []logproto.Stream{{Labels: `{a="b"}`, Entries: []logproto.Entry{
+		es[100], {Timestamp: es[5000].Timestamp, Line: "other needle"}}}}))
+
+	end := t0.Add(time.Hour)
+	res := run(t, engine(t, &chstore.Querier{Conn: conn}), `count_over_time({a="b"} |= "needle" [1h])`, end, end, 0, logproto.FORWARD, 0)
+	v := res.Data.(promql.Vector)
+	require.Len(t, v, 1)
+	require.Equal(t, 2.0, v[0].F)
 }
