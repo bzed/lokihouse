@@ -537,6 +537,56 @@ func TestSelectSamples_FanoutRoutesToOwningShard(t *testing.T) {
 	}
 	conn, db := chtest.New(t)
 	ctx := context.Background()
+	local, remote := seedRoutedStreams(t, conn, db, topo.Cluster)
+	qs := fmt.Sprintf(`count_over_time({app=~"%s|%s"}[5m])`, local, remote)
+
+	since := time.Now()
+	it := openSamples(user.InjectOrgID(ctx, "t1"), t, &chstore.Querier{Conn: conn}, qs, t0.Add(-time.Minute), t0.Add(10*time.Minute))
+	for it.Next() {
+	}
+	require.NoError(t, it.Err())
+	require.NoError(t, it.Close())
+
+	require.NoError(t, conn.Exec(ctx, "SYSTEM FLUSH LOGS ON CLUSTER "+topo.Cluster))
+	// Remote executions of the per-stream reads run against the local table
+	// (`<db>`.`logs_local`) in the remote connection's default database, so
+	// they are recognised by the table reference, not by current_database.
+	var got uint64
+	require.NoError(t, conn.QueryRow(ctx, "SELECT count() FROM clusterAllReplicas("+topo.Cluster+", system, query_log) WHERE type = 'QueryFinish' AND NOT is_initial_query AND query_kind = 'Select' AND event_time_microseconds >= fromUnixTimestamp64Micro(?) AND position(query, ?) > 0", since.UnixMicro(), "`"+db+"`.`"+topo.Local("logs")+"`").Scan(&got))
+	require.Equal(t, uint64(1), got, "only the stream on the other shard produces a remote query (%s local, %s remote)", local, remote)
+}
+
+// On a cluster a single-stream log query is routed to the shard owning the
+// stream as well: its SQL restricts the read with `stream_id = ?`, which the
+// shard analysis can evaluate, so a stream on the initiator's shard produces
+// no remote query at all and a stream on another shard exactly one.
+func TestSelectLogs_SingleStreamRoutesToOwningShard(t *testing.T) {
+	topo := chtest.Topology()
+	if topo.Cluster == "" {
+		t.Skip("needs a cluster")
+	}
+	conn, db := chtest.New(t)
+	ctx := context.Background()
+	local, remote := seedRoutedStreams(t, conn, db, topo.Cluster)
+
+	remoteSelects := func(app string) uint64 {
+		since := time.Now()
+		run(t, engine(t, &chstore.Querier{Conn: conn}), fmt.Sprintf(`{app="%s"}`, app), t0.Add(-time.Minute), t0.Add(10*time.Minute), 0, logproto.FORWARD, 100)
+		require.NoError(t, conn.Exec(ctx, "SYSTEM FLUSH LOGS ON CLUSTER "+topo.Cluster))
+		var got uint64
+		require.NoError(t, conn.QueryRow(ctx, "SELECT count() FROM clusterAllReplicas("+topo.Cluster+", system, query_log) WHERE type = 'QueryFinish' AND NOT is_initial_query AND query_kind = 'Select' AND event_time_microseconds >= fromUnixTimestamp64Micro(?) AND position(query, ?) > 0", since.UnixMicro(), "`"+db+"`.`"+topo.Local("logs")+"`").Scan(&got))
+		return got
+	}
+	require.Equal(t, uint64(0), remoteSelects(local), "a stream on the initiator's shard produces no remote query")
+	require.Equal(t, uint64(1), remoteSelects(remote), "a stream on another shard produces exactly one remote query")
+}
+
+// seedRoutedStreams seeds candidate streams and returns one whose shard holds
+// the initiator and one whose shard does not. It skips the test when the
+// candidates did not split across shards.
+func seedRoutedStreams(t *testing.T, conn driver.Conn, db, cluster string) (local, remote string) {
+	t.Helper()
+	ctx := context.Background()
 
 	var initHost string
 	require.NoError(t, conn.QueryRow(ctx, "SELECT hostName()").Scan(&initHost))
@@ -545,7 +595,7 @@ func TestSelectSamples_FanoutRoutesToOwningShard(t *testing.T) {
 	// runs; the inserts are quorum-synchronous, so once a stream's rows are
 	// visible on that many hosts the owner set below is complete.
 	replicas := map[uint32]int{}
-	rows, err := conn.Query(ctx, "SELECT shard_num, count() FROM system.clusters WHERE cluster = ? GROUP BY shard_num", topo.Cluster)
+	rows, err := conn.Query(ctx, "SELECT shard_num, count() FROM system.clusters WHERE cluster = ? GROUP BY shard_num", cluster)
 	require.NoError(t, err)
 	for rows.Next() {
 		var shard uint32
@@ -583,11 +633,10 @@ func TestSelectSamples_FanoutRoutesToOwningShard(t *testing.T) {
 	streams, err := chstore.ResolveStreams(user.InjectOrgID(ctx, "t1"), conn, "t1", ms, t0.Add(-time.Minute), t0.Add(10*time.Minute))
 	require.NoError(t, err)
 	require.Len(t, streams, candidates)
-	var local, remote string
 	for _, s := range streams {
 		var hosts []string
 		require.Eventually(t, func() bool {
-			hosts = hostsWithStream(t, conn, topo.Cluster, db, s.ID)
+			hosts = hostsWithStream(t, conn, cluster, db, s.ID)
 			return len(hosts) == replicasPerShard
 		}, 10*time.Second, 50*time.Millisecond, "stream %d on every replica of its shard", s.ID)
 		app := s.Labels.Get("app")
@@ -600,22 +649,7 @@ func TestSelectSamples_FanoutRoutesToOwningShard(t *testing.T) {
 	if local == "" || remote == "" {
 		t.Skipf("the %d candidate streams did not split across shards", candidates)
 	}
-	qs := fmt.Sprintf(`count_over_time({app=~"%s|%s"}[5m])`, local, remote)
-
-	since := time.Now()
-	it := openSamples(user.InjectOrgID(ctx, "t1"), t, &chstore.Querier{Conn: conn}, qs, t0.Add(-time.Minute), t0.Add(10*time.Minute))
-	for it.Next() {
-	}
-	require.NoError(t, it.Err())
-	require.NoError(t, it.Close())
-
-	require.NoError(t, conn.Exec(ctx, "SYSTEM FLUSH LOGS ON CLUSTER "+topo.Cluster))
-	// Remote executions of the per-stream reads run against the local table
-	// (`<db>`.`logs_local`) in the remote connection's default database, so
-	// they are recognised by the table reference, not by current_database.
-	var got uint64
-	require.NoError(t, conn.QueryRow(ctx, "SELECT count() FROM clusterAllReplicas("+topo.Cluster+", system, query_log) WHERE type = 'QueryFinish' AND NOT is_initial_query AND query_kind = 'Select' AND event_time_microseconds >= fromUnixTimestamp64Micro(?) AND position(query, ?) > 0", since.UnixMicro(), "`"+db+"`.`"+topo.Local("logs")+"`").Scan(&got))
-	require.Equal(t, uint64(1), got, "only the stream on the other shard produces a remote query (%s local, %s remote)", local, remote)
+	return local, remote
 }
 
 // hostsWithStream returns the hosts whose local logs table holds rows of streamID.
