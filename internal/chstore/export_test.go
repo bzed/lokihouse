@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/grafana/loki/v3/pkg/iter"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // SetLogChunkSize overrides the minimum chunk size (default 1000) for tests.
@@ -35,6 +36,13 @@ func OpenedSampleWindows(it iter.SampleIterator) int {
 // make a query fall back to the global read deterministically.
 func AcquireFanoutBudget(q *Querier, n int64) bool { return q.fanoutSemaphore().TryAcquire(n) }
 func ReleaseFanoutBudget(q *Querier, n int64)      { q.fanoutSemaphore().Release(n) }
+
+// FanoutFallbackCount reports the current value of the fan-out fallback
+// counter (lokihouse_chstore_fanout_fallbacks_total) for reason ("budget" or
+// "cap"), for tests.
+func FanoutFallbackCount(reason string) float64 {
+	return testutil.ToFloat64(fanoutFallbacks.WithLabelValues(reason))
+}
 
 // OpenedLogWindows reports how many read windows a log iterator opened.
 func OpenedLogWindows(it iter.EntryIterator) int { return it.(*entryIter).rr.(*windowReader).opened }

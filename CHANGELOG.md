@@ -6,6 +6,10 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+### Added
+
+- Sample queries that read all streams in one query instead of fanning out — the connection reservation cannot be taken in full, or the drained result exceeds the sample cap — are counted in `lokihouse_chstore_fanout_fallbacks_total{reason="budget"|"cap"}` and logged, so a connection budget that is too small is detectable.
+
 ### Changed
 
 - Log queries whose selector matches a single stream read ClickHouse in the part's physical order instead of sorting the range by timestamp; their pagination continues from the last row with a keyset predicate the primary key can prune.

@@ -1,6 +1,7 @@
 package chstore_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"slices"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/iter"
 	"github.com/grafana/loki/v3/pkg/logproto"
@@ -364,6 +366,32 @@ func TestSelectSamples_FanoutConcurrentPool(t *testing.T) {
 	require.Len(t, queryStartsSince(t, conn, db, since, "FROM logs"), 8, "one query per stream")
 }
 
+// A sample query that cannot take the fan-out's connection reservation in
+// full reads all streams in one query — and says so: the fallback is counted
+// in lokihouse_chstore_fanout_fallbacks_total and written to the querier's
+// log, so a connection budget that is too small is detectable.
+func TestSelectSamples_FanoutFallbackCountedAndLogged(t *testing.T) {
+	conn, _ := chtest.New(t)
+	seedFanoutData(t, conn) // two streams
+	ctx := context.Background()
+	qs := `count_over_time({app=~"a|b"}[5m])`
+	start, end := t0.Add(-time.Minute), t0.Add(3*time.Hour)
+
+	var logBuf bytes.Buffer
+	// A budget of one connection cannot hold the fan-out's two streams.
+	q := &chstore.Querier{Conn: conn, FanoutConns: 1, Logger: log.NewLogfmtLogger(&logBuf)}
+	budgetBefore := chstore.FanoutFallbackCount("budget")
+	capBefore := chstore.FanoutFallbackCount("cap")
+	got, err := collectSamplesQuery(ctx, q, qs, start, end)
+	require.NoError(t, err)
+	require.NotEmpty(t, got)
+	require.Equal(t, budgetBefore+1, chstore.FanoutFallbackCount("budget"), "the reservation fallback is counted")
+	require.Equal(t, capBefore, chstore.FanoutFallbackCount("cap"), "no sample-cap fallback")
+	require.Contains(t, logBuf.String(), "instead of fanning out")
+	require.Contains(t, logBuf.String(), "reason=budget")
+	require.Contains(t, logBuf.String(), "tenant=t1")
+}
+
 // Enough concurrent one-connection queries to saturate a small pool: the pool
 // queues them (its acquire blocks until a connection frees), and every query
 // succeeds. Saturation is waiting, not deadlock — each running query holds
@@ -611,9 +639,11 @@ func TestSelectSamples_FanoutOverSampleCapFallsBack(t *testing.T) {
 	// A cap far below the 360 samples the read yields: the query reads all
 	// streams in one query.
 	since := time.Now()
+	capBefore := chstore.FanoutFallbackCount("cap")
 	got, err := collectSamplesQuery(ctx, &chstore.Querier{Conn: conn, FanoutMaxSamples: 10}, qs, start, end)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
+	require.Equal(t, capBefore+1, chstore.FanoutFallbackCount("cap"), "the sample-cap fallback is counted")
 
 	// The drain starts its per-stream queries, exceeds the cap and gives up;
 	// the query then reads all streams in one query.

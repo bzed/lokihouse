@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	kitlog "github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/loki/v3/pkg/iter"
 	"github.com/grafana/loki/v3/pkg/logproto"
@@ -56,6 +58,13 @@ type Querier struct {
 	// coexist, so up to about 100 MiB. A query that would produce more reads
 	// all streams in one query instead. 0 means 1<<20.
 	FanoutMaxSamples int64
+	// Logger, when set, receives one line per sample query that reads all
+	// streams in one query instead of fanning out (the connection
+	// reservation failed or the drained result exceeded the sample cap);
+	// nil disables the log line. The fallbacks are counted in
+	// lokihouse_chstore_fanout_fallbacks_total either way. Pass a
+	// concurrency-safe logger (dskit's is).
+	Logger kitlog.Logger
 
 	fanoutOnce sync.Once
 	fanoutSem  *semaphore.Weighted
@@ -89,6 +98,23 @@ func (q *Querier) fanoutSemaphore() *semaphore.Weighted {
 		q.fanoutSem = semaphore.NewWeighted(int64(n))
 	})
 	return q.fanoutSem
+}
+
+// noteFanoutFallback records that a sample query reads all streams in one
+// query instead of fanning out: counted in fanoutFallbacks and, when the
+// querier has a logger, logged. A rising count is the signal that the
+// connection budget (or the pool behind it) is the limit.
+func (q *Querier) noteFanoutFallback(ctx context.Context, reason string, streams int) {
+	fanoutFallbacks.WithLabelValues(reason).Inc()
+	if q.Logger == nil {
+		return
+	}
+	tid, err := tenant.TenantID(ctx)
+	if err != nil {
+		tid = "" // no tenant in the context (unit tests); the line stays useful
+	}
+	_ = level.Info(q.Logger).Log("msg", "sample query reads all streams in one query instead of fanning out",
+		"reason", reason, "streams", streams, "tenant", tid) // a logging error is not actionable
 }
 
 var _ logql.Querier = (*Querier)(nil)
@@ -299,6 +325,7 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 		if !reserve.TryAcquire(int64(len(r.ids))) {
 			reserve = nil
 			fanout = false
+			q.noteFanoutFallback(ctx, "budget", len(r.ids))
 		}
 	}
 	rq := r.rq
@@ -332,6 +359,7 @@ func (q *Querier) SelectSamples(ctx context.Context, p logql.SelectSampleParams)
 			return nil, err
 		}
 		// Over the sample cap: fall through to the global read below.
+		q.noteFanoutFallback(ctx, "cap", len(r.ids))
 	}
 	// The global read: one query over all streams, in the global order, with
 	// FINAL (above the fan-out limit, or when the reservation or the sample

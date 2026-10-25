@@ -63,7 +63,10 @@ statistics count both reads. The connection reservation is
 all-or-nothing and capped at half of `clickhouse.max_open_conns`; when it
 cannot be taken in full the query falls back to one query over all streams (the
 behaviour above 16 streams), so a busy pool degrades latency, never
-correctness. Known limitation, pre-existing since 0.12.0: a leg that reads all
+correctness. Both fallbacks — the failed reservation and the sample cap — are
+counted in `lokihouse_chstore_fanout_fallbacks_total` (reason `budget` or
+`cap`) and logged, so a budget that is too small shows up as a rising counter
+instead of a silent slowdown. Known limitation, pre-existing since 0.12.0: a leg that reads all
 streams in one query is still streamed lazily, so a request whose engine steps
 several such legs in turn (a binary operation over wide selectors, a
 multi-tenant merge) can hold the pool's connections while a sibling leg waits

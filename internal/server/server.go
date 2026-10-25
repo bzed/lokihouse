@@ -219,7 +219,7 @@ func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, 
 	// and stats keep headroom and the budget can never exceed the pool —
 	// with max_open_conns = 1 a zero budget would default to the fan-out
 	// limit and deadlock the pool.
-	q := &chstore.Querier{Conn: conn, Deletes: store, FanoutConns: max(cfg.ClickHouse.MaxOpenConns/2, 1)}
+	q := &chstore.Querier{Conn: conn, Deletes: store, FanoutConns: max(cfg.ClickHouse.MaxOpenConns/2, 1), Logger: logger}
 	// When multi-tenant queries are enabled, log/metric queries fan out per
 	// tenant through the multi-tenant querier; Tier A (SQL) is single-tenant
 	// and is bypassed for multi-tenant requests (pushdown engine guard).

@@ -9,6 +9,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql/log"
 	"github.com/grafana/loki/v3/pkg/logqlmodel/stats"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/sync/semaphore"
 )
@@ -16,6 +18,19 @@ import (
 // defaultFanoutMax is the default of Querier.FanoutMax: the maximum number of
 // streams a sample query reads in parallel, one goroutine per stream.
 const defaultFanoutMax = 16
+
+// fanoutFallbacks counts sample queries that read all streams in one query
+// instead of fanning out, by reason: "budget" when the connection
+// reservation cannot be taken in full, "cap" when the drained result exceeds
+// FanoutMaxSamples. A rising count is the signal that the connection budget
+// (or the pool behind it) is the limit. Package-level mutable state — the one
+// kind AGENTS.md allows: a Prometheus collector.
+var fanoutFallbacks = promauto.NewCounterVec(prometheus.CounterOpts{
+	Namespace: "lokihouse",
+	Subsystem: "chstore",
+	Name:      "fanout_fallbacks_total",
+	Help:      "Sample queries that read all streams in one query instead of fanning out, by reason (budget, cap).",
+}, []string{"reason"})
 
 // errFanoutTooLarge reports a drained fan-out that exceeded
 // Querier.FanoutMaxSamples; the caller falls back to the global read.
