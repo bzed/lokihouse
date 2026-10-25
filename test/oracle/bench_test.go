@@ -81,13 +81,18 @@ ruler_storage:
   filesystem: {dir: %s/rules}
 `, lokiDir))
 	house := StartLokihouse(t, "")
+	// The fallback floor: a pool of two, the smallest that can ingest (a push
+	// with new streams holds two connections), which caps the fan-out's budget
+	// at one — every sample query reads all streams in one query, and every
+	// query runs on a single connection.
+	houseFallback := StartLokihouseConns(t, "", 2)
 	end := time.Now().Truncate(time.Minute)
-	benchData(t, []string{loki, house}, lines, streams, end)
+	benchData(t, []string{loki, house, houseFallback}, lines, streams, end)
 	// Make sure Loki has everything (the oracle's readiness wait, scaled).
 	waitBenchQueryable(t, loki, lines, end)
 
 	var out strings.Builder
-	fmt.Fprintf(&out, "| query | Loki p50 | Loki p95 | lokihouse p50 | lokihouse p95 |\n|---|---:|---:|---:|---:|\n")
+	fmt.Fprintf(&out, "| query | Loki | lokihouse (optimal) | lokihouse (single connection) |\n|---|---:|---:|---:|\n")
 	for _, q := range benchQueries {
 		u := func(base string) string {
 			v := url.Values{"start": {strconv.FormatInt(end.Add(-time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
@@ -103,15 +108,18 @@ ruler_storage:
 		}
 		lt, lb := timeIt(t, u(loki), rounds)
 		ht, hb := timeIt(t, u(house), rounds)
-		// A benchmark of wrong answers is worthless: compare both stores.
+		ft, fb := timeIt(t, u(houseFallback), rounds)
+		// A benchmark of wrong answers is worthless: compare all stores.
 		// topk breaks ties by series order, which is undefined between the two
 		// engines; compare it as a multiset of values instead.
 		if q.name == "topk" {
 			CompareMut(t, "bench "+q.name, lb, hb, sortTopKValues)
+			CompareMut(t, "bench "+q.name+" (single connection)", lb, fb, sortTopKValues)
 		} else {
 			Compare(t, "bench "+q.name, lb, hb)
+			Compare(t, "bench "+q.name+" (single connection)", lb, fb)
 		}
-		fmt.Fprintf(&out, "| %s | %s | %s | %s | %s |\n", q.name, pct(lt, 50), pct(lt, 95), pct(ht, 50), pct(ht, 95))
+		fmt.Fprintf(&out, "| %s | %s | %s | %s |\n", q.name, minmax(lt), minmax(ht), minmax(ft))
 	}
 	p := os.Getenv("LOKIHOUSE_BENCH_OUT")
 	if p == "" {
@@ -191,13 +199,14 @@ func topKV(m map[string]any) float64 {
 	return mx
 }
 
-func pct(ds []time.Duration, p int) string {
-	s := append([]time.Duration(nil), ds...)
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
-	if len(s) == 0 {
-		return "n/a"
+// minmax formats the fastest and the slowest round as a range.
+func minmax(ds []time.Duration) string {
+	lo, hi := ds[0], ds[0]
+	for _, d := range ds[1:] {
+		lo = min(lo, d)
+		hi = max(hi, d)
 	}
-	return s[(len(s)-1)*p/100].Round(time.Millisecond).String()
+	return lo.Round(time.Millisecond).String() + "–" + hi.Round(time.Millisecond).String()
 }
 
 // waitBenchQueryable polls Loki until the instant query over a 2h window sees

@@ -24,6 +24,16 @@ import (
 // database with the extra YAML appended to the generated config, and waits
 // for /ready.
 func StartLokihouse(t *testing.T, extra string) string {
+	return StartLokihouseConns(t, extra, 0)
+}
+
+// StartLokihouseConns is StartLokihouse with a clickhouse.max_open_conns
+// override; 0 means the config default (100). The fallback case (2) is the
+// smallest pool that can ingest — a push with new streams holds two
+// connections, the logs batch and the stream registration — and it caps the
+// fan-out's budget at one, so every sample query reads all streams in one
+// query: the single-connection shape a saturated pool degrades to.
+func StartLokihouseConns(t *testing.T, extra string, maxOpenConns int) string {
 	// Build the binary from the repository root (go run sets cwd to the package dir).
 	repo, err := repoRoot()
 	if err != nil {
@@ -65,6 +75,10 @@ func StartLokihouse(t *testing.T, extra string) string {
 	if pushdown == "" {
 		pushdown = "on"
 	}
+	pool := ""
+	if maxOpenConns > 0 {
+		pool = fmt.Sprintf("  max_open_conns: %d\n  max_idle_conns: %d\n", maxOpenConns, maxOpenConns)
+	}
 	cfg := fmt.Sprintf(`auth_enabled: true
 server: {http_listen_port: %d}
 clickhouse:
@@ -73,13 +87,13 @@ clickhouse:
   username: default
   cluster: %q
   replicated: %t
-query:
+%squery:
   pushdown: %q
   querier: {multi_tenant_queries_enabled: true}
 limits_config:
   max_query_series: 100000
   volume_enabled: true
-`, port, chAddr(), db, topo.Cluster, topo.Replicated, pushdown) + extra
+`, port, chAddr(), db, topo.Cluster, topo.Replicated, pool, pushdown) + extra
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
