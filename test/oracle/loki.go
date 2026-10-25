@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -106,6 +107,14 @@ func StartLoki(t *testing.T, extra string) string {
 
 // StartLokiConfig is StartLoki with a config template other than the oracle's.
 func StartLokiConfig(t *testing.T, template, extra string) string {
+	url, _ := StartLokiStoppable(t, template, extra)
+	return url
+}
+
+// StartLokiStoppable is StartLokiConfig that also returns a function stopping
+// Loki gracefully (SIGTERM, then waiting for it to exit), so that it shuts
+// down its modules the way it does in production.
+func StartLokiStoppable(t *testing.T, template, extra string) (string, func()) {
 	bin := lokiBin(t)
 	dir := t.TempDir()
 	httpPort, grpcPort := freePort(t), freePort(t)
@@ -132,17 +141,32 @@ func StartLokiConfig(t *testing.T, template, extra string) string {
 	logf, _ := os.Create(filepath.Join(dir, "loki.log"))
 	cmd.Stdout, cmd.Stderr = logf, logf
 	require(cmd.Start(), "start loki")
+	exited := make(chan struct{})
+	go func() {
+		_, _ = cmd.Process.Wait()
+		close(exited)
+	}()
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
+		<-exited
 	})
+	stop := func() {
+		t.Helper()
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-exited:
+		case <-time.After(5 * time.Minute):
+			readLog(t, filepath.Join(dir, "loki.log"))
+			t.Fatal("loki did not stop within 5m of SIGTERM")
+		}
+	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", httpPort)
 	if err := waitForHTTP(url+"/ready", 120*time.Second); err != nil {
 		readLog(t, filepath.Join(dir, "loki.log"))
 		t.Fatalf("loki /ready: %v", err)
 	}
-	return url
+	return url, stop
 }
 
 func readLog(t *testing.T, p string) {

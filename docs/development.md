@@ -69,8 +69,10 @@ to the toolchain in `go.mod`.
 - `make oracle` / `make oracle-all` run the lokihouse-vs-Loki oracle in one
   push-down mode (or all three). Both need a running ClickHouse
   (`podman run -d -p 9000:9000 docker.io/clickhouse/clickhouse-server:26.9`).
-- `make bench` runs the latency benchmark against Loki (see
-  [Benchmark](benchmark.md)); results land in `.cache/bench/results.md`.
+- `make bench` starts the benchmark's servers (RustFS and three ClickHouse
+  servers, podman, ports 19100–19102 and 19900) and runs the latency
+  benchmark against Loki (see [Benchmark](benchmark.md)); results land in
+  `.cache/bench/results.md`. `make bench-down` removes the servers.
 
 ## Leak checks
 

@@ -43,6 +43,7 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/grafana/dskit v0.0.0-20260928073014-b6a53f6bee29
 	github.com/grafana/loki/v3 v3.0.0-20261012182635-bc1962860a16
+	github.com/minio/minio-go/v7 v7.3.0
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/common v0.72.0
@@ -222,7 +223,6 @@ require (
 	github.com/miekg/dns v1.1.73 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/minio/minio-go/v7 v7.3.0 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
