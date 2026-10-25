@@ -207,3 +207,14 @@ func TestSplitter_ObservesPartitions(t *testing.T) {
 }
 
 func chstoreWriter(conn driver.Conn) *chstore.Writer { return &chstore.Writer{Conn: conn} }
+
+type dtoMetric = dto.Metric
+
+func newTestOverrides(t testing.TB) *validation.Overrides {
+	t.Helper()
+	var l validation.Limits
+	l.RegisterFlags(flag.NewFlagSet("t", flag.PanicOnError))
+	o, err := validation.NewOverrides(l, nil)
+	require.NoError(t, err)
+	return o
+}
