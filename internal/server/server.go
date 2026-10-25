@@ -84,11 +84,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 	// server.register_instrumentation (Loki/dskit default true).
 	rulerReg := prometheus.NewRegistry()
 	store := &deletes.Store{Conn: conn}
-	dels, err := deletes.NewQueryClient(store, limits, deleteClientMetrics)
-	if err != nil {
-		closeConn()
-		return fmt.Errorf("delete requests client: %w", err)
-	}
+	dels := deletes.NewQueryClient(store, limits, deleteClientMetrics)
 	a, q := newAPI(cfg, conn, store, dels, limits, logger, rulerReg)
 	if cfg.Server.RegisterInstrumentation {
 		a.Pprof = true

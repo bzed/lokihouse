@@ -10,12 +10,11 @@ import (
 // store behind Loki's per-tenant cache (refreshed every 5 minutes) and its
 // deletion_mode check. The stack mirrors deleteRequestsClient in
 // grafana/loki@bc1962860a16 pkg/loki/modules.go. The caller must call Stop.
-func NewQueryClient(s *Store, l deletion.Limits, m *deletion.DeleteRequestClientMetrics, opts ...deletion.DeleteRequestsStoreOption) (deletion.DeleteRequestsClient, error) {
-	cached, err := deletion.NewDeleteRequestsClient(compactorClient{s}, m, "querier", opts...)
-	if err != nil {
-		return nil, err
-	}
-	return deletion.NewPerTenantDeleteRequestsClient(cached, l), nil
+func NewQueryClient(s *Store, l deletion.Limits, m *deletion.DeleteRequestClientMetrics, opts ...deletion.DeleteRequestsStoreOption) deletion.DeleteRequestsClient {
+	// The constructor returns an error for interface symmetry only; it has no
+	// failing path at the pinned commit.
+	cached, _ := deletion.NewDeleteRequestsClient(compactorClient{s}, m, "querier", opts...)
+	return deletion.NewPerTenantDeleteRequestsClient(cached, l)
 }
 
 // compactorClient adapts the store to the compactor API Loki's cache wraps.

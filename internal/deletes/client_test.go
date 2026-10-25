@@ -31,8 +31,7 @@ func (modeLimits) StreamRetention(string) []validation.StreamRetention { return 
 
 func newQueryClient(t *testing.T, s *deletes.Store, l modeLimits, opts ...deletion.DeleteRequestsStoreOption) deletion.DeleteRequestsClient {
 	t.Helper()
-	c, err := deletes.NewQueryClient(s, l, deletion.NewDeleteRequestClientMetrics(prometheus.NewRegistry()), opts...)
-	require.NoError(t, err)
+	c := deletes.NewQueryClient(s, l, deletion.NewDeleteRequestClientMetrics(prometheus.NewRegistry()), opts...)
 	t.Cleanup(c.Stop)
 	return c
 }
