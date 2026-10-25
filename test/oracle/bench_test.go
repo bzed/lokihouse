@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,27 +68,47 @@ var benchQueries = []struct{ name, path, query string }{
 	{"series", "series", `{env="prod"}`},
 }
 
+// benchStore is one store the benchmark times.
+type benchStore struct {
+	name string
+	url  string
+}
+
 func TestBench(t *testing.T) {
 	lines := envInt("LOKIHOUSE_BENCH_LINES", 200000)
 	streams := envInt("LOKIHOUSE_BENCH_STREAMS", 50)
-	rounds := envInt("LOKIHOUSE_BENCH_ROUNDS", 5)
+	rounds := envInt("LOKIHOUSE_BENCH_ROUNDS", 20)
+	const warmup = 2
 	// Loki's config template has no ruler storage; give it a local filesystem
 	// backend so it starts. The benchmark does not evaluate rules, so no
 	// remote_write/alertmanager is needed.
-	lokiDir := t.TempDir()
-	loki := StartLoki(t, fmt.Sprintf(`
-ruler_storage:
-  backend: filesystem
-  filesystem: {dir: %s/rules}
-`, lokiDir))
+	ruler := func() string {
+		return fmt.Sprintf("\nruler_storage:\n  backend: filesystem\n  filesystem: {dir: %s/rules}\n", t.TempDir())
+	}
+	// The oracle's Loki turns query sharding and splitting off, so its answers
+	// are the plain engine's. The benchmark times Loki as deployed: its default
+	// query tuning (sharding and splitting on), results cache still off. The
+	// unsharded Loki is timed too, to show what the parallelism buys.
+	loki := StartLokiConfig(t, lokiDefaultQueryTemplate(), ruler())
+	lokiPlain := StartLoki(t, ruler())
 	house := StartLokihouse(t, "")
+	stores := []benchStore{{"Loki", loki}, {"Loki (unsharded)", lokiPlain}, {"lokihouse", house}}
 	end := time.Now().Truncate(time.Minute)
-	benchData(t, []string{loki, house}, lines, streams, end)
+	benchData(t, []string{loki, lokiPlain, house}, lines, streams, end)
 	// Make sure Loki has everything (the oracle's readiness wait, scaled).
 	waitBenchQueryable(t, loki, lines, end)
+	waitBenchQueryable(t, lokiPlain, lines, end)
 
 	var out strings.Builder
-	fmt.Fprintf(&out, "| query | Loki p50 | Loki p95 | lokihouse p50 | lokihouse p95 |\n|---|---:|---:|---:|---:|\n")
+	out.WriteString("| query |")
+	for _, s := range stores {
+		out.WriteString(" " + s.name + " |")
+	}
+	out.WriteString(" lokihouse ÷ Loki |\n|---|")
+	for range stores {
+		out.WriteString("---:|")
+	}
+	out.WriteString("---:|\n")
 	for _, q := range benchQueries {
 		u := func(base string) string {
 			v := url.Values{"start": {strconv.FormatInt(end.Add(-time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
@@ -101,17 +122,23 @@ ruler_storage:
 			}
 			return base + "/loki/api/v1/" + q.path + "?" + v.Encode()
 		}
-		lt, lb := timeIt(t, u(loki), rounds)
-		ht, hb := timeIt(t, u(house), rounds)
-		// A benchmark of wrong answers is worthless: compare both stores.
-		// topk breaks ties by series order, which is undefined between the two
-		// engines; compare it as a multiset of values instead.
-		if q.name == "topk" {
-			CompareMut(t, "bench "+q.name, lb, hb, sortTopKValues)
-		} else {
-			Compare(t, "bench "+q.name, lb, hb)
+		ds, bodies := timeInterleaved(t, stores, u, warmup, rounds)
+		// A benchmark of wrong answers is worthless: compare every store with
+		// Loki. topk breaks ties by series order, which is undefined between
+		// the engines; compare it as a multiset of values instead.
+		for i := 1; i < len(stores); i++ {
+			name := "bench " + q.name + " (" + stores[i].name + ")"
+			if q.name == "topk" {
+				CompareMut(t, name, bodies[0], bodies[i], sortTopKValues)
+			} else {
+				Compare(t, name, bodies[0], bodies[i])
+			}
 		}
-		fmt.Fprintf(&out, "| %s | %s | %s | %s | %s |\n", q.name, pct(lt, 50), pct(lt, 95), pct(ht, 50), pct(ht, 95))
+		fmt.Fprintf(&out, "| %s |", q.name)
+		for i := range stores {
+			fmt.Fprintf(&out, " %s (%s) |", fmtDur(pct(ds[i], 50)), fmtDur(pct(ds[i], 90)))
+		}
+		fmt.Fprintf(&out, " %.2f |\n", float64(pct(ds[len(stores)-1], 50))/float64(max(pct(ds[0], 50), time.Microsecond)))
 	}
 	p := os.Getenv("LOKIHOUSE_BENCH_OUT")
 	if p == "" {
@@ -120,25 +147,56 @@ ruler_storage:
 	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	header := fmt.Sprintf("%d lines, %d streams, %d rounds per query, %s\n\n", lines, streams, rounds, time.Now().UTC().Format(time.RFC3339))
+	header := fmt.Sprintf("%d lines, %d streams, %d interleaved rounds per query after %d warm-up rounds, median (p90), %s\n\n", lines, streams, rounds, warmup, time.Now().UTC().Format(time.RFC3339))
 	if err := os.WriteFile(p, []byte(header+out.String()), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("results in %s\n%s", p, out.String())
 }
 
-// timeIt issues the query rounds times, returning the durations and the body
-// of the last response (for Compare).
-func timeIt(t *testing.T, u string, rounds int) ([]time.Duration, []byte) {
+// lokiDefaultQueryTemplate is the oracle's Loki config with Loki's default
+// query sharding and splitting restored.
+func lokiDefaultQueryTemplate() string {
+	s := strings.Replace(lokiConfigTemplate, "  parallelise_shardable_queries: false\n", "", 1)
+	return strings.Replace(s, "  split_queries_by_interval: 0\n", "", 1)
+}
+
+// timeInterleaved warms every store up, then times rounds rounds of the
+// query, rotating the order of the stores each round so that background work
+// (ClickHouse merges, Loki flushes) does not always land on the same store.
+// It returns the durations per store and each store's last response body
+// (for Compare).
+func timeInterleaved(t *testing.T, stores []benchStore, u func(string) string, warmup, rounds int) ([][]time.Duration, [][]byte) {
 	t.Helper()
-	var ds []time.Duration
-	var body []byte
-	for i := 0; i < rounds; i++ {
-		start := time.Now()
-		body = Get(t, u, "bench")
-		ds = append(ds, time.Since(start))
+	ds := make([][]time.Duration, len(stores))
+	bodies := make([][]byte, len(stores))
+	for _, s := range stores {
+		for range warmup {
+			Get(t, u(s.url), "bench")
+		}
 	}
-	return ds, body
+	for r := range rounds {
+		for i := range stores {
+			k := (r + i) % len(stores)
+			start := time.Now()
+			bodies[k] = Get(t, u(stores[k].url), "bench")
+			ds[k] = append(ds[k], time.Since(start))
+		}
+	}
+	return ds, bodies
+}
+
+// pct returns the p-th percentile of ds (nearest rank).
+func pct(ds []time.Duration, p int) time.Duration {
+	s := slices.Clone(ds)
+	slices.Sort(s)
+	return s[(len(s)-1)*p/100]
+}
+
+// fmtDur renders d at 0.1 ms resolution: the metadata endpoints answer in
+// well under a millisecond.
+func fmtDur(d time.Duration) string {
+	return fmt.Sprintf("%.1fms", float64(d)/float64(time.Millisecond))
 }
 
 // sortTopKValues reduces each topk result series to a single [ts=0, max-value]
@@ -189,15 +247,6 @@ func topKV(m map[string]any) float64 {
 		}
 	}
 	return mx
-}
-
-func pct(ds []time.Duration, p int) string {
-	s := append([]time.Duration(nil), ds...)
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
-	if len(s) == 0 {
-		return "n/a"
-	}
-	return s[(len(s)-1)*p/100].Round(time.Millisecond).String()
 }
 
 // waitBenchQueryable polls Loki until the instant query over a 2h window sees

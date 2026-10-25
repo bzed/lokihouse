@@ -87,10 +87,15 @@ func dirExists(p string) bool {
 // StartLoki builds (once) and starts Loki on free ports with the oracle config
 // plus the extra YAML appended.
 func StartLoki(t *testing.T, extra string) string {
+	return StartLokiConfig(t, lokiConfigTemplate, extra)
+}
+
+// StartLokiConfig is StartLoki with a config template other than the oracle's.
+func StartLokiConfig(t *testing.T, template, extra string) string {
 	bin := lokiBin(t)
 	dir := t.TempDir()
 	httpPort, grpcPort := freePort(t), freePort(t)
-	cfg := strings.ReplaceAll(lokiConfigTemplate, "${DIR}", dir)
+	cfg := strings.ReplaceAll(template, "${DIR}", dir)
 	cfg = strings.ReplaceAll(cfg, "${HTTP_PORT}", fmt.Sprintf("%d", httpPort))
 	cfg += extra
 	cfgPath := filepath.Join(dir, "loki-config.yaml")
