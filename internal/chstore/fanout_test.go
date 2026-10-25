@@ -538,11 +538,13 @@ func TestSelectSamples_FanoutMultiLegQueriesNeverDeadlockPool(t *testing.T) {
 
 	// A pool of four connections, and a budget far above it: every leg of
 	// every binary operation fans out (ten queries, two legs, two streams
-	// each — 40 units at most), so the test exercises the fan-out's lockstep
-	// legs, not the global read's lazy cursors. Those can hold the pool in
-	// their own lockstep cycle — a known limitation inherited from 0.12.0
-	// (see docs/operations.md). The drain makes a budget above the pool safe
-	// (see TestSelectSamples_FanoutBudgetAbovePoolSucceeds).
+	// each — 40 units at peak), with headroom above the peak so a query or
+	// a leg added later still fans out. The test therefore exercises the
+	// fan-out's lockstep legs, not the global read's lazy cursors. Those
+	// can hold the pool in their own lockstep cycle — a known limitation
+	// inherited from 0.12.0 (see docs/operations.md). The drain makes a
+	// budget above the pool safe (see
+	// TestSelectSamples_FanoutBudgetAbovePoolSucceeds).
 	opts := chtest.Options(db)
 	opts.MaxOpenConns, opts.MaxIdleConns = 4, 4
 	opts.DialTimeout = 10 * time.Second   // queueing on the pool must never time out; a regression (the streaming merge) still fails within one round
@@ -550,8 +552,9 @@ func TestSelectSamples_FanoutMultiLegQueriesNeverDeadlockPool(t *testing.T) {
 	pool, err := clickhouse.Open(opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = pool.Close() })
-	q := &chstore.Querier{Conn: pool, FanoutConns: 40}
+	q := &chstore.Querier{Conn: pool, FanoutConns: 64}
 
+	since := time.Now()
 	want := run(t, engine(t, q), qs, start, end, step, logproto.FORWARD, 0)
 	require.NotEmpty(t, want.Data)
 
@@ -579,6 +582,15 @@ func TestSelectSamples_FanoutMultiLegQueriesNeverDeadlockPool(t *testing.T) {
 			require.NoError(t, o.err)
 			require.Equal(t, want.Data, o.data.Data)
 		}
+	}
+
+	// Every leg fanned out: a leg that fell back to the global read would
+	// log a FINAL query, and would take part in the 0.12.0 lockstep cycle
+	// this test pins the absence of.
+	rows := queryStartsSince(t, conn, db, since, "FROM logs")
+	require.NotEmpty(t, rows)
+	for _, logged := range rows {
+		require.NotContains(t, logged, "FINAL", logged)
 	}
 }
 
