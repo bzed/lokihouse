@@ -1,0 +1,10 @@
+# Splitting: TestOracle runs lokihouse with split_queries_by_interval 15m, so
+# each range query below crosses at least 6 boundaries. unaligned: shifts start
+# by 17s and uses a 45s step; web is logfmt (bytes), api is JSON (latency_ms).
+unaligned:quantile_over_time(0.95, {app="api"} | json | unwrap latency_ms [5m]) by (app)
+unaligned:sum by (app) (count_over_time({app="web"} | logfmt [5m]))
+unaligned:count_over_time({app="web"} | logfmt [5m]) / count_over_time({app="api"} | json [5m])
+unaligned:topk(2, sum by (env) (rate({app="web"} | logfmt [1m])))
+unaligned:absent_over_time({app="nope"}[5m])
+range:max_over_time({app="web"} | logfmt | unwrap bytes [20m] offset 7m) by (app)
+range:avg_over_time({app="web"} | logfmt | unwrap bytes [30m])

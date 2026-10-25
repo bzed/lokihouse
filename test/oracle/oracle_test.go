@@ -23,7 +23,8 @@ import (
 func TestOracle(t *testing.T) {
 	lokiSinks, houseSinks := newRulerSinks(t), newRulerSinks(t)
 	loki := StartLoki(t, rulerYAML(t.TempDir(), lokiSinks))
-	house := StartLokihouse(t, rulerYAML(t.TempDir(), houseSinks))
+	// 15m legs: every 95-minute corpus range query is split into at least 6.
+	house := StartLokihouseLimits(t, rulerYAML(t.TempDir(), houseSinks), "  split_queries_by_interval: 15m\n")
 
 	// Get initial Tier A leaf count (if debug endpoint is available)
 	initialTierALeaves, hasDebug := getTierALeaves(t, house)
@@ -51,7 +52,7 @@ func TestOracle(t *testing.T) {
 				continue
 			}
 			kind, q := "range", line
-			if k, rest, ok := strings.Cut(line, ":"); ok && (k == "range" || k == "instant") {
+			if k, rest, ok := strings.Cut(line, ":"); ok && (k == "range" || k == "instant" || k == "unaligned") {
 				kind, q = k, rest
 			}
 			for _, tenant := range []string{"tenant-a", "tenant-b"} {
@@ -62,9 +63,13 @@ func TestOracle(t *testing.T) {
 						path = "/loki/api/v1/query"
 						v.Set("time", strconv.FormatInt(end.UnixNano(), 10))
 					} else {
-						v.Set("start", strconv.FormatInt(start.UnixNano(), 10))
+						qs, step := start, "60s"
+						if kind == "unaligned" {
+							qs, step = start.Add(17*time.Second), "45s"
+						}
+						v.Set("start", strconv.FormatInt(qs.UnixNano(), 10))
 						v.Set("end", strconv.FormatInt(end.UnixNano(), 10))
-						v.Set("step", "60s")
+						v.Set("step", step)
 					}
 					a := Get(t, loki+path+"?"+v.Encode(), tenant)
 					b := Get(t, house+path+"?"+v.Encode(), tenant)

@@ -37,12 +37,20 @@ decompressed, Loki's defaults); they are not configurable.
 | `query_timeout` | Loki engine `Eval` | A timed-out query is a `504`. |
 | `max_query_series` | Loki engine | `400` if the result would exceed the cap (default `500`). |
 | `max_query_range` | Loki engine | `400` if the range is wider than allowed. |
+| `split_queries_by_interval` | lokihouse engine | Metric range queries that lokihouse evaluates itself are cut into legs at wall-clock multiples of the interval, never finer than the largest `[range]`; `0` disables. Instant, log and multi-tenant queries are never split. |
+| `max_query_parallelism` | lokihouse engine | Legs of one request evaluated at once; further legs run on the request's own goroutine. |
 
 Metric queries that lokihouse evaluates itself (parsers, `unwrap`) parse lines on
 `min(GOMAXPROCS, matching streams)` goroutines *per query*, so concurrent queries
 multiply the goroutine count while `GOMAXPROCS` (Go follows the cgroup CPU quota)
 bounds the CPU they use together. Set the `GOMAXPROCS` environment variable to
 limit it.
+
+Pieces of a split query reserve ClickHouse connections from a budget of half of
+`clickhouse.max_open_conns` and never wait for it: when the budget or the
+request's `max_query_parallelism` is used up, the leg runs on the request's own
+goroutine. Under load, queries degrade to sequential evaluation instead of
+queueing.
 
 `limits_config` is the same for every tenant; there are no per-tenant
 overrides. Where a request names several tenants (multi-tenant queries), the

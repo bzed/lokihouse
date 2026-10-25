@@ -46,33 +46,63 @@ type Engine struct {
 	TierA  Leaf // nil until it is wired (Task 6)
 	Limits logql.Limits
 	Logger log.Logger
+	// Split, when set, runs single-tenant Tier B evaluations through the time
+	// splitter. It wraps TierB.
+	Split *Splitter
+}
+
+// tierB returns the Tier B query for p: split by time when a Splitter is set.
+func (e *Engine) tierB(p logql.Params) logql.Query {
+	if e.Split != nil {
+		return e.Split.Query(p)
+	}
+	return e.TierB.Query(p)
+}
+
+// slotQuery installs the request's slot semaphore before running q, so that
+// every splitter inside one request shares max_query_parallelism.
+type slotQuery struct {
+	logql.Query
+	limits parallelismLimits
+}
+
+func (q slotQuery) Exec(ctx context.Context) (logqlmodel.Result, error) {
+	return q.Query.Exec(withRequestSlots(ctx, q.limits))
 }
 
 // Query returns the query to execute for p: the mapped downstream query when the
 // mode and the expression allow it, otherwise TierB.Query(p).
 func (e *Engine) Query(ctx context.Context, p logql.Params) logql.Query {
+	q := e.query(ctx, p)
+	if e.Split != nil {
+		return slotQuery{Query: q, limits: e.Split.Limits}
+	}
+	return q
+}
+
+func (e *Engine) query(ctx context.Context, p logql.Params) logql.Query {
 	// Tier A SQL is single-tenant; multi-tenant queries run on Tier B, whose
 	// querier fans out per tenant (internal/multitenant).
 	if ids, err := tenant.TenantIDs(ctx); err == nil && len(ids) > 1 {
 		return e.TierB.Query(p)
 	}
 	if e.Mode == ModeOff {
-		return e.TierB.Query(p)
+		return e.tierB(p)
 	}
 	expr := p.GetExpression()
 	se, ok := expr.(syntax.SampleExpr)
 	if !ok {
 		// Log (non-sample) expression: no push-down.
-		return e.TierB.Query(p)
+		return e.tierB(p)
 	}
 	mapped, leaves, ok := Map(se)
 	if !ok || len(leaves) == 0 {
-		return e.TierB.Query(p)
+		return e.tierB(p)
 	}
 	// In "on" mode, only take the downstream path if at least one leaf is eligible
 	// for Tier A; otherwise run the original query on Tier B.
 	if e.Mode == ModeOn && !e.anyEligible(leaves) {
-		return e.TierB.Query(p)
+		return e.tierB(p)
 	}
 	down := logql.NewDownstreamEngine(logql.EngineOpts{}, e, e.Limits, e.Logger)
 	return down.Query(ctx, logql.ParamsWithExpressionOverride{Params: p, ExpressionOverride: mapped})
@@ -133,5 +163,5 @@ func (e *Engine) execOne(ctx context.Context, q logql.DownstreamQuery) (logqlmod
 			}
 		}
 	}
-	return e.TierB.Query(q.Params).Exec(ctx)
+	return e.tierB(q.Params).Exec(ctx)
 }

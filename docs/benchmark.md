@@ -162,5 +162,24 @@ in-memory chunks. The
 label-filter pushdown and windowed reads of 0.11.0 barely show here; they
 matter on larger data.
 
-Re-run with `make bench` to refresh; the tables are also written to
-`.cache/bench/results.md`.
+### With time-split engine queries
+
+Recorded 2026-10-25 on the same host, after metric range queries that run in
+lokihouse's own engine were split by `split_queries_by_interval` (default `1h`)
+and evaluated in parallel. 200 000 lines, 50 streams, 20 interleaved rounds,
+median (p90). Every store's answers were compared with Loki's.
+
+| `unwrap quantile` over | Loki | Loki (unsharded) | lokihouse | lokihouse ÷ Loki |
+|---|---:|---:|---:|---:|
+| 1 h (default) | 82.7ms (89.3ms) | 86.5ms (91.7ms) | 68.5ms (71.7ms) | 0.83 |
+| 6 h (`LOKIHOUSE_BENCH_SPAN=6h`) | 45.1ms (71.7ms) | 123.2ms (124.8ms) | 34.6ms (35.8ms) | 0.77 |
+
+A 1 h range is one split bucket, so lokihouse runs it as before (the 1.11 above
+became 0.83 only because Loki was slower in this session); the gain from
+splitting grows with the range, and the 6 h run is where the legs run in
+parallel. The 6 h run keeps the data in Loki's ingester (`max_chunk_age: 24h`),
+because flushed chunks drop out of its results after about 2 h 40 min.
+
+Re-run with `make bench` to refresh (`LOKIHOUSE_BENCH_SPAN` sets the data and
+query span); the tables are also written to `.cache/bench/results.md`.
+
