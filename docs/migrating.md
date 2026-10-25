@@ -118,13 +118,6 @@ need updating.
 index stats also count unprocessed deletes; after processing, Loki's
 rewritten chunks shrink while lokihouse's materialized view does not.)
 
-**Query-time delete visibility (subtle timing difference):** both systems
-hide matching rows via a query-time filter. Loki caches a tenant's delete
-list for 5 minutes from its first lookup, so a delete created *after* a query
-on that tenant is not visible for up to 5 minutes. lokihouse is authoritative
-per query (no cache), so a delete is visible immediately. If you have
-monitoring that assumes Loki's 5-minute lag, it will fire differently.
-
 **Rows written between delete submission and processing:** the processor
 re-resolves the request's selector at processing time, so rows that land
 inside the request's `[start, end]` window *after* the request was created
