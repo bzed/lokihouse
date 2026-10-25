@@ -72,8 +72,12 @@ cycle, because fanned-out legs no longer take part. On a cluster each per-stream
 the stream (`optimize_skip_unused_shards`), so a fanned-out query costs one
 shard query per stream, not one per shard per stream. Size
 `clickhouse.max_open_conns` (default `100`) and ClickHouse
-`max_concurrent_queries` with this multiplier in mind: dashboards and ruler
-evaluations can run many fanned-out queries at once.
+`max_concurrent_queries` with this multiplier in mind, and
+`clickhouse.dial_timeout` (default 5 s) for the queueing: dashboards and
+ruler evaluations can run many fanned-out queries at once, and each of a
+fan-out's streams has to acquire its connection within that timeout, so
+under sustained saturation its streams queue behind the pool's other
+transfers.
 
 `limits_config` is the same for every tenant; there are no per-tenant
 overrides. Where a request names several tenants (multi-tenant queries), the
