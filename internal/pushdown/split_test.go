@@ -205,3 +205,5 @@ func TestSplitter_ObservesPartitions(t *testing.T) {
 	require.EqualValues(t, 1, m.Histogram.GetSampleCount())
 	require.EqualValues(t, 4, m.Histogram.GetSampleSum())
 }
+
+func chstoreWriter(conn driver.Conn) *chstore.Writer { return &chstore.Writer{Conn: conn} }
