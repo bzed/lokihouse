@@ -1,13 +1,101 @@
-# Review: branch `perf/part-order-stream-fanout` (HEAD `9919600`)
+# Review: branch `perf/part-order-stream-fanout` (HEAD `697fdc3`)
 
 Reviewer: Claude Opus 5.5 (second pair of eyes)
-Date: 2026-10-24
+Date: 2026-10-25
 
-This file holds three passes, newest first. §00 re-reviews the commits
-`918a35c..9919600` against R1–R5. §0 is the re-review of the fix commits
-`de5cc68..8e5572a` against the first pass's findings. §1–§8 are the first
-pass at `8099b8e`. The older passes are kept unchanged so that the finding
-numbers stay stable.
+This file holds four passes, newest first. §000 re-reviews `7311613..697fdc3`
+against N1–N4. §00 re-reviews `918a35c..9919600` against R1–R5. §0 is the
+re-review of the fix commits `de5cc68..8e5572a` against the first pass's
+findings. §1–§8 are the first pass at `8099b8e`. The older passes are kept
+unchanged so that the finding numbers stay stable.
+
+## 000. Fourth pass: the N fixes (HEAD `697fdc3`)
+
+Commits: `7311613` (N1, N2, N3: docs), `f573397` (N4), `697fdc3` (N4: a
+follow-up after a CI failure). Method: as before. I read every changed
+line, then ran the new regression test against both the old and the new
+code, on a single node and on the 2×2 cluster, in worktrees under `/tmp`.
+The probe is not committed. A copy is at
+`/tmp/claude-1000/-home-bzed-workspace-vibe-lokihouse/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review5_test.go`.
+
+**Verdict: merge-ready.** All the fixes I claimed are verified. Two
+optional notes follow (N5, N6).
+
+| Finding | Claimed fix | Status |
+|---|---|---|
+| N1 package state | `Querier.FanoutMaxSamples` (0 = 2²⁰); `maxFanoutSamples` and `SetMaxFanoutSamples` removed; the over-cap test sets the field | **Fixed**. No reference left. `logChunkSize` stays, which I had only suggested as optional |
+| N2 over-cap double read / stats | documented in `operations.md` ("reads them twice … its query statistics count both reads") | **Addressed** by documentation, one of the two options I gave |
+| N3 memory figure | `operations.md` and the field doc: "up to about 100 MiB at the cap" | **Fixed** |
+| N4 flaky test, doc overclaim | budget 40 (every leg fans out), 20 000 rows per stream, 10 s `DialTimeout`; the CHANGELOG and `operations.md` narrowed to fanned-out legs; the global-read lockstep cycle recorded as a known limitation inherited from 0.12.0 | **Fixed**, verified below |
+
+### N4: verification
+
+| Check | Result |
+|---|---|
+| The test copied verbatim onto `8e5572a` (the streaming merge it guards against), single node | **red 3/3** (`acquire conn timeout`, ~11 s each), and red under `-race` too (13 s). The commit's "still reproduces" claim holds |
+| HEAD, cluster, `-count=10`, while the `internal/api`, `internal/pushdown` and `internal/deletes` tests load the cluster | **green 10/10**, 3.3–4.6 s per run (three rounds) |
+| HEAD, cluster, `-race -count=5`, same load | **green 5/5**, 7.0–7.6 s per run, so ≈2.5 s per round against the 10 s timeout |
+| Probe `TestReviewAllLegsFanOut`: the test's shape, counting the queries in `query_log` | **40 per-stream queries, 0 `FINAL` queries**, 3/3 runs: every leg fans out, so the 0.12.0 global-read cycle no longer takes part |
+| Full `test-cluster` | see the gates below |
+
+The docs are accurate now. `operations.md` says "Fanned-out legs therefore
+cannot deadlock the pool", and its known-limitation paragraph names the
+lazy global read correctly. The CHANGELOG says "the fanned-out legs of a
+request with several legs".
+
+### N5 (low): the regression test has no headroom and does not check that it fanned out
+
+The budget of 40 is exactly the peak demand (10 queries × 2 legs × 2
+streams). If the test ever gains a concurrent query, or a leg gains a
+stream, some legs fail `TryAcquire`, fall back to the lazy global read,
+and the N4 flake returns silently. It would then look like an R1
+regression again. Two cheap guards: give the budget headroom (for
+example 64), and assert after the rounds that `queryStartsSince(…,
+"FROM logs")` contains no `FINAL` query, the way
+`TestSelectSamples_FanoutConcurrentPool` already does. That is what the
+probe above measured.
+
+### N6 (info): queueing, not deadlock, is the remaining pool risk of a fan-out
+
+`697fdc3` records that CI failed the test at a 5 s `DialTimeout`: forty
+10 MB transfers queued on four connections, and on a contended runner a
+queued stream waited past the timeout. Raising the test's timeout to 10 s
+and shrinking the volume is the right fix for the *test*, because what it
+pins is the absence of a cycle. The same mechanism exists in production,
+though. Each stream of a fan-out takes its own pool connection, and each
+of those acquires has to succeed within `dial_timeout` (5 s by default). A
+saturated pool therefore turns a fanned-out query into an acquire timeout
+sooner than a one-query read, which needs one acquire. The budget cap at
+half the pool bounds this. `operations.md` already tells operators to size
+`max_open_conns` for the multiplier, and it could add "and `dial_timeout`
+for the queueing". Category: **derived**. Confidence: medium. It only
+matters under sustained pool saturation.
+
+### Gate results at `697fdc3`
+
+Single node (`localhost:9000`) and the 2×2 cluster through ch1. All gates
+pass.
+
+| Gate | Result |
+|---|---|
+| `make check` (single node) | PASS: golangci-lint 0 issues, govulncheck clean (allowlisted `GO-2026-5115` only), total coverage **88.1 %** |
+| `test-cluster` (`go test -count=1 ./...` on the cluster) | PASS: every package, chstore 383.9 s |
+| oracle `off` / `downstream` / `on` | PASS (109.4 s / 104.7 s / 108.7 s) |
+| oracle, cluster | PASS (57.4 s) |
+| soak, `LOKIHOUSE_SOAK_DURATION=4m` | PASS (242.6 s) |
+
+Not run: `make bench`, the full 10-minute soak.
+
+### Recommendations
+
+1. Nothing blocks the merge.
+2. N5: headroom in the test's budget and a no-`FINAL` assertion.
+3. N6: optionally one sentence on `dial_timeout` in `operations.md`.
+4. Still optional from earlier passes: R4 (keyset over-read), the global-read
+   lockstep cycle (a known limitation since 0.12.0), and moving
+   `logChunkSize` onto `Querier`.
+
+---
 
 ## 00. Third pass: the R fixes (HEAD `9919600`)
 
