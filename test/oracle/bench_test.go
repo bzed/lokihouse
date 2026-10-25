@@ -26,9 +26,23 @@ func envInt(k string, def int) int {
 	return def
 }
 
-// benchData pushes lines spread over streams and the last hour, in batches,
-// to both stores. Deterministic (seeded).
-func benchData(t *testing.T, urls []string, lines, streams int, end time.Time) {
+// envDuration reads a time.ParseDuration value from the environment.
+func envDuration(t *testing.T, k string, def time.Duration) time.Duration {
+	t.Helper()
+	v := os.Getenv(k)
+	if v == "" {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		t.Fatalf("%s=%q: want a positive duration", k, v)
+	}
+	return d
+}
+
+// benchData pushes lines spread over streams and the span before end, in
+// batches, to all stores. Deterministic (seeded).
+func benchData(t *testing.T, urls []string, lines, streams int, end time.Time, span time.Duration) {
 	t.Helper()
 	rnd := rand.New(rand.NewSource(7))
 	const batch = 5000
@@ -47,7 +61,7 @@ func benchData(t *testing.T, urls []string, lines, streams int, end time.Time) {
 					b.WriteString(",")
 				}
 				first = false
-				ts := end.Add(-time.Hour).Add(time.Duration(i) * time.Hour / time.Duration(lines))
+				ts := end.Add(-span).Add(time.Duration(i) * span / time.Duration(lines))
 				fmt.Fprintf(&b, `[%q,"level=%s status=%d duration=%dms msg=\"request %d\""]`,
 					strconv.FormatInt(ts.UnixNano(), 10), levels[rnd.Intn(4)], []int{200, 404, 500}[rnd.Intn(3)], rnd.Intn(900), i)
 			}
@@ -91,12 +105,19 @@ func TestBench(t *testing.T) {
 	lines := envInt("LOKIHOUSE_BENCH_LINES", 200000)
 	streams := envInt("LOKIHOUSE_BENCH_STREAMS", 50)
 	rounds := envInt("LOKIHOUSE_BENCH_ROUNDS", 20)
+	span := envDuration(t, "LOKIHOUSE_BENCH_SPAN", time.Hour)
 	const warmup = 2
 	// Loki's config template has no ruler storage; give it a local filesystem
 	// backend so it starts. The benchmark does not evaluate rules, so no
 	// remote_write/alertmanager is needed.
 	ruler := func() string {
-		return fmt.Sprintf("\nruler_storage:\n  backend: filesystem\n  filesystem: {dir: %s/rules}\n", t.TempDir())
+		extra := fmt.Sprintf("\nruler_storage:\n  backend: filesystem\n  filesystem: {dir: %s/rules}\n", t.TempDir())
+		if span > 2*time.Hour {
+			// Flushed chunks drop out of Loki's results after about 2h40m
+			// (see TestOracle); keep a long span in the ingester.
+			extra += "ingester: {max_chunk_age: 24h, chunk_idle_period: 24h}\n"
+		}
+		return extra
 	}
 	// The oracle's Loki turns query sharding and splitting off, so its answers
 	// are the plain engine's. The benchmark times Loki as deployed: its default
@@ -135,7 +156,7 @@ func TestBench(t *testing.T) {
 		urls[i] = s.url
 	}
 	end := time.Now().Truncate(time.Minute)
-	benchData(t, urls, lines, streams, end)
+	benchData(t, urls, lines, streams, end, span)
 	if lokiS3Reader != nil {
 		for i := range stores {
 			if stores[i].name == "Loki S3" {
@@ -147,7 +168,7 @@ func TestBench(t *testing.T) {
 	// scaled).
 	for _, s := range stores {
 		if strings.HasPrefix(s.name, "Loki") {
-			waitBenchQueryable(t, s.url, lines, end)
+			waitBenchQueryable(t, s.url, lines, end, span)
 		}
 	}
 
@@ -157,7 +178,7 @@ func TestBench(t *testing.T) {
 	}
 	for _, q := range benchQueries {
 		u := func(base string) string {
-			v := url.Values{"start": {strconv.FormatInt(end.Add(-time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
+			v := url.Values{"start": {strconv.FormatInt(end.Add(-span).UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
 			switch q.path {
 			case "query_range":
 				v.Set("query", q.query)
@@ -199,7 +220,7 @@ func TestBench(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out strings.Builder
-	fmt.Fprintf(&out, "%d lines, %d streams, %d interleaved rounds per query after %d warm-up rounds, median (p90), %s\n", lines, streams, rounds, warmup, time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(&out, "%d lines over %s, %d streams, %d interleaved rounds per query after %d warm-up rounds, median (p90), %s\n", lines, span, streams, rounds, warmup, time.Now().UTC().Format(time.RFC3339))
 	for i, tb := range tables {
 		fmt.Fprintf(&out, "\n### %s\n\n%s", tb.title, outs[i].String())
 	}
@@ -324,9 +345,9 @@ func topKV(m map[string]any) float64 {
 
 // waitBenchQueryable polls Loki until the instant query over a 2h window sees
 // all bench lines, or fails after a 10m deadline.
-func waitBenchQueryable(t *testing.T, loki string, lines int, end time.Time) {
+func waitBenchQueryable(t *testing.T, loki string, lines int, end time.Time, span time.Duration) {
 	t.Helper()
-	v := url.Values{"query": {`sum(count_over_time({env=~".+"}[2h]))`}, "time": {strconv.FormatInt(end.Add(time.Minute).UnixNano(), 10)}}
+	v := url.Values{"query": {fmt.Sprintf(`sum(count_over_time({env=~".+"}[%ds]))`, int(span.Seconds())+120)}, "time": {strconv.FormatInt(end.Add(time.Minute).UnixNano(), 10)}}
 	want := fmt.Sprintf(`"%d"`, lines)
 	deadline := time.Now().Add(10 * time.Minute)
 	for time.Now().Before(deadline) {
