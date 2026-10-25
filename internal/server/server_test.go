@@ -264,6 +264,22 @@ func TestRun_Metrics(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, push(t, r.addr, tenant, pushBody(time.Now(), "hello")))
 	require.Equal(t, http.StatusBadRequest, push(t, r.addr, tenant, `{"streams":[{"stream":{},"values":[["1","x"]]}]}`))
 
+	// A split-eligible range query gives loki_query_frontend_partitions a sample.
+	q := url.Values{
+		"query": {`count_over_time({app="x"} | logfmt [1m])`},
+		"start": {fmt.Sprint(time.Now().Add(-2 * time.Hour).UnixNano())},
+		"end":   {fmt.Sprint(time.Now().UnixNano())},
+		"step":  {"60"},
+	}
+	qreq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+r.addr+"/loki/api/v1/query_range?"+q.Encode(), nil)
+	require.NoError(t, err)
+	qreq.Header.Set("X-Scope-OrgID", tenant)
+	qresp, err := http.DefaultClient.Do(qreq)
+	require.NoError(t, err)
+	_, _ = io.Copy(io.Discard, qresp.Body)
+	require.NoError(t, qresp.Body.Close())
+	require.Equal(t, http.StatusOK, qresp.StatusCode)
+
 	resp, err := http.Get("http://" + r.addr + "/metrics")
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -276,6 +292,7 @@ func TestRun_Metrics(t *testing.T) {
 		`loki_discarded_samples_total{`,
 		`loki_ruler_sync_rules_total`,
 		`lokihouse_build_info{`,
+		`loki_query_frontend_partitions_bucket{le="1"}`,
 	} {
 		require.Contains(t, m, want)
 	}

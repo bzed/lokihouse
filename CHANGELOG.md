@@ -6,6 +6,10 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+### Added
+
+- Metric range queries that run in lokihouse's own engine (`| unwrap`, `quantile_over_time`, parsers) are split by `split_queries_by_interval` (default `1h`) and the pieces are evaluated in parallel, up to `max_query_parallelism` per request and half of `clickhouse.max_open_conns` across requests; `split_queries_by_interval: 0` turns it off. The histogram `loki_query_frontend_partitions` counts the pieces.
+
 ### Changed
 
 - Queries look up a tenant's pending delete requests through Loki's delete-requests cache, refreshed every 5 minutes, instead of querying ClickHouse every time: as in Loki, a new or cancelled delete request can take up to 5 minutes to change query results.

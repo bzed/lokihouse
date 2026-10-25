@@ -46,6 +46,12 @@ import (
 // the no-package-state rule.
 var deleteClientMetrics = deletion.NewDeleteRequestClientMetrics(prometheus.DefaultRegisterer)
 
+// splitMetrics is Loki's loki_query_frontend_partitions histogram, registered
+// once per process on the default registry; a second Run in one process
+// (tests) reuses it. A Prometheus-collector exception to the no-package-state
+// rule.
+var splitMetrics = pushdown.NewSplitMetrics(prometheus.DefaultRegisterer)
+
 // Options are the process-level hooks Run needs besides the config.
 type Options struct {
 	Logger log.Logger
@@ -236,11 +242,18 @@ func newAPI(cfg *config.Config, conn driver.Conn, store *deletes.Store, dels del
 		storeQuerier = mq
 		meta = mq
 	}
+	tierB := logql.NewEngine(logql.EngineOpts{}, storeQuerier, limits, logger)
 	a := &api.API{
 		Ready: conn.Ping,
 		Queries: &pushdown.Engine{
-			Mode:   pushdown.Mode(cfg.Query.Pushdown),
-			TierB:  logql.NewEngine(logql.EngineOpts{}, storeQuerier, limits, logger),
+			Mode:  pushdown.Mode(cfg.Query.Pushdown),
+			TierB: tierB,
+			Split: &pushdown.Splitter{
+				Engine:  tierB,
+				Limits:  limits,
+				Budget:  pushdown.NewConnBudget(cfg.ClickHouse.MaxOpenConns),
+				Metrics: splitMetrics,
+			},
 			TierA:  &pushdown.TierA{Conn: conn, Limits: limits, Deletes: dels},
 			Limits: limits,
 			Logger: logger,

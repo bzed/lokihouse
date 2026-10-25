@@ -13,11 +13,11 @@ import (
 // mergeLegResults joins the matrices of consecutive time legs into the matrix
 // of the whole range. Legs have disjoint timestamps, so points are only
 // concatenated per series in leg order; nothing is re-aggregated.
-func mergeLegResults(results []logqlmodel.Result) (logqlmodel.Result, error) {
+func mergeLegResults(ctx context.Context, results []logqlmodel.Result) (logqlmodel.Result, error) {
 	var out logqlmodel.Result
 	index := map[string]int{}
 	merged := make(promql.Matrix, 0, 16)
-	md, mdCtx := metadata.NewContext(context.Background())
+	md, mdCtx := metadata.NewContext(ctx)
 	for _, r := range results {
 		m, ok := r.Data.(promql.Matrix)
 		if !ok {

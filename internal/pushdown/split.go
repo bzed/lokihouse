@@ -120,7 +120,7 @@ func (q *splitQuery) Exec(ctx context.Context) (logqlmodel.Result, error) {
 	if err != nil {
 		return logqlmodel.Result{}, err
 	}
-	merged, err := mergeLegResults(results)
+	merged, err := mergeLegResults(ctx, results)
 	if err != nil {
 		return logqlmodel.Result{}, err
 	}
