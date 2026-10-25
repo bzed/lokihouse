@@ -1,0 +1,17 @@
+<!-- MergeTree tables on the RustFS bucket, no local cache. -->
+<clickhouse>
+  <storage_configuration>
+    <disks>
+      <s3>
+        <type>s3</type>
+        <endpoint>http://lhb-rustfs:9000/clickhouse/s3/</endpoint>
+        <access_key_id>rustfsadmin</access_key_id>
+        <secret_access_key>rustfsadmin</secret_access_key>
+      </s3>
+    </disks>
+    <policies>
+      <s3><volumes><main><disk>s3</disk></main></volumes></s3>
+    </policies>
+  </storage_configuration>
+  <merge_tree><storage_policy>s3</storage_policy></merge_tree>
+</clickhouse>

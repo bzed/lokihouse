@@ -21,8 +21,19 @@ oracle-all:
 	LOKIHOUSE_ORACLE_PUSHDOWN=downstream go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
 	@echo "=== Mode: on ==="
 	go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
-bench:
-	go test -tags oracle,bench -run TestBench -count=1 -timeout 60m -v ./test/oracle/
+# The benchmark's own servers (test/bench/up.sh): ClickHouse on local disk,
+# ClickHouse on S3 with and without its filesystem cache, and RustFS as the S3
+# store for those and for Loki.
+BENCH_ENV := LOKIHOUSE_TEST_CH_ADDR=localhost:19100 LOKIHOUSE_TEST_CH_CLUSTER= \
+	LOKIHOUSE_BENCH_S3=localhost:19900 LOKIHOUSE_BENCH_CH_S3=localhost:19101 \
+	LOKIHOUSE_BENCH_CH_S3_CACHE=localhost:19102
+.PHONY: bench-up bench-down
+bench-up:
+	sh test/bench/up.sh
+bench-down:
+	sh test/bench/down.sh
+bench: bench-up
+	$(BENCH_ENV) go test -tags oracle,bench -run TestBench -count=1 -timeout 60m -v ./test/oracle/
 soak:
 	go test -tags oracle,soak -run TestSoak -count=1 -timeout 90m -v ./test/oracle/
 

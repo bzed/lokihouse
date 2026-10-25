@@ -24,6 +24,12 @@ import (
 // database with the extra YAML appended to the generated config, and waits
 // for /ready.
 func StartLokihouse(t *testing.T, extra string) string {
+	return StartLokihouseOn(t, chAddr(), chtest.Topology(), extra)
+}
+
+// StartLokihouseOn is StartLokihouse against the ClickHouse server at addr
+// with topology topo instead of the test server.
+func StartLokihouseOn(t *testing.T, addr []string, topo chstore.Topology, extra string) string {
 	// Build the binary from the repository root (go run sets cwd to the package dir).
 	repo, err := repoRoot()
 	if err != nil {
@@ -43,8 +49,10 @@ func StartLokihouse(t *testing.T, extra string) string {
 	_, _ = rand.Read(b)
 	db := "lh_oracle_" + hex.EncodeToString(b)
 	ctx := context.Background()
-	topo := chtest.Topology()
-	admin, err := clickhouse.Open(chtest.Options("default"))
+	opts := chtest.Options("default")
+	opts.Addr = addr
+	opts.Settings = topo.Settings()
+	admin, err := clickhouse.Open(opts)
 	if err != nil {
 		t.Fatalf("open clickhouse: %v", err)
 	}
@@ -79,7 +87,7 @@ query:
 limits_config:
   max_query_series: 100000
   volume_enabled: true
-`, port, chAddr(), db, topo.Cluster, topo.Replicated, pushdown) + extra
+`, port, addr, db, topo.Cluster, topo.Replicated, pushdown) + extra
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
