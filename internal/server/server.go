@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/loki/v3/pkg/compactor/deletion"
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/querier/tail"
 	"github.com/grafana/loki/v3/pkg/validation"
@@ -38,6 +39,12 @@ import (
 	lhruler "github.com/bzed/lokihouse/internal/ruler"
 	lhtail "github.com/bzed/lokihouse/internal/tail"
 )
+
+// deleteClientMetrics are Loki's delete-request lookup counters, registered
+// once per process on the default registry as pkg/loki/loki.go does; a second
+// Run in one process (tests) reuses them. A Prometheus-collector exception to
+// the no-package-state rule.
+var deleteClientMetrics = deletion.NewDeleteRequestClientMetrics(prometheus.DefaultRegisterer)
 
 // Options are the process-level hooks Run needs besides the config.
 type Options struct {
@@ -76,13 +83,16 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 	// for /metrics. Both /metrics and /debug/pprof are gated on
 	// server.register_instrumentation (Loki/dskit default true).
 	rulerReg := prometheus.NewRegistry()
-	a, store, q := newAPI(cfg, conn, limits, logger, rulerReg)
+	store := &deletes.Store{Conn: conn}
+	dels := deletes.NewQueryClient(store, limits, deleteClientMetrics)
+	a, q := newAPI(cfg, conn, store, dels, limits, logger, rulerReg)
 	if cfg.Server.RegisterInstrumentation {
 		a.Pprof = true
 		a.Metrics = promhttp.HandlerFor(prometheus.Gatherers{prometheus.DefaultGatherer, rulerReg}, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError})
 		// A second Run in one process (tests) finds the collector registered.
 		if err := prometheus.Register(version.NewCollector("lokihouse")); err != nil {
 			if are := (prometheus.AlreadyRegisteredError{}); !errors.As(err, &are) {
+				dels.Stop()
 				closeConn()
 				return fmt.Errorf("register version collector: %w", err)
 			}
@@ -110,6 +120,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 		})
 	}
 	stopLoops := func() {
+		dels.Stop()
 		stopBG()
 		loops.Wait()
 		level.Info(logger).Log("msg", "stopped", "component", "deletes") //nolint:gosec // G104: logger Log error is not actionable (as in Loki)
@@ -211,9 +222,8 @@ func MigrateSchema(ctx context.Context, cfg *config.Config, logger log.Logger) e
 }
 
 // newAPI builds the HTTP API over conn (moved unchanged from cmd/lokihouse).
-func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, logger log.Logger, rulerReg prometheus.Registerer) (*api.API, *deletes.Store, *chstore.Querier) {
-	store := &deletes.Store{Conn: conn}
-	q := &chstore.Querier{Conn: conn, Deletes: store}
+func newAPI(cfg *config.Config, conn driver.Conn, store *deletes.Store, dels deletion.DeleteRequestsClient, limits *validation.Overrides, logger log.Logger, rulerReg prometheus.Registerer) (*api.API, *chstore.Querier) {
+	q := &chstore.Querier{Conn: conn, Deletes: dels}
 	// When multi-tenant queries are enabled, log/metric queries fan out per
 	// tenant through the multi-tenant querier; Tier A (SQL) is single-tenant
 	// and is bypassed for multi-tenant requests (pushdown engine guard).
@@ -231,7 +241,7 @@ func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, 
 		Queries: &pushdown.Engine{
 			Mode:   pushdown.Mode(cfg.Query.Pushdown),
 			TierB:  logql.NewEngine(logql.EngineOpts{}, storeQuerier, limits, logger),
-			TierA:  &pushdown.TierA{Conn: conn, Limits: limits, Deletes: store},
+			TierA:  &pushdown.TierA{Conn: conn, Limits: limits, Deletes: dels},
 			Limits: limits,
 			Logger: logger,
 		},
@@ -245,14 +255,14 @@ func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, 
 		AuthEnabled: cfg.AuthEnabled,
 	}
 	// tail.MaxDuration is Loki's -querier.tail-max-duration default (1h).
-	tq := tail.NewQuerier(&lhtail.Ingester{Q: q}, q, store, limits, time.Hour, tail.NewMetrics(nil), logger)
+	tq := tail.NewQuerier(&lhtail.Ingester{Q: q}, q, dels, limits, time.Hour, tail.NewMetrics(nil), logger)
 	// loghttp.ParseTailQuery reads the query via r.Form, which the net/http
 	// server does not populate automatically; parse it first.
 	a.Tail = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm() // ParseTailQuery reports a malformed query itself
 		tq.TailHandler(w, r)
 	})
-	return a, store, q
+	return a, q
 }
 
 // rulerService is Loki's ruler; a nil *rulerService is a disabled ruler.

@@ -52,7 +52,6 @@ reason. Entries are grouped by topic.
 *Implemented in [phase 3](https://github.com/bzed/lokihouse/blob/main/docs/phase3-status.md), [phase 6](https://github.com/bzed/lokihouse/blob/main/docs/phase6-status.md); see the status file for background.*
 
 - **Request IDs:** lokihouse uses 8 random hex characters; the format and the IDs differ from Loki.
-- **Query-time delete visibility (identical to Loki, but timing-sensitive):** both stores fetch a tenant's *pending* delete requests at query time and hide matching lines via Loki's `util/deletion` filter pipeline. Loki caches a tenant's delete list for 5 minutes from its first lookup, so a delete created after a query on that tenant is not visible for up to 5 minutes (Loki); lokihouse's store is authoritative per query (no such cache), so lokihouse can appear "fresher". The oracle works around the cache by using a fresh tenant that is never queried before the delete is created.
 - **Rows written between delete submission and processing:** the processor re-resolves the request's selector at processing time, so rows that land inside the request's `[start, end]` window *after* the request was created are also deleted. They were not hidden by the query-time filter before they existed, so this is a (narrow, intentional) difference from "exactly the rows query-time filtering hid"; it matches Loki's compactor, which also re-reads the index when processing.
 
 ## Ruler

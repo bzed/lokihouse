@@ -55,20 +55,20 @@ fails the run.
 ## Result
 
 Recorded 2026-10-25 on the environment above, with the unreleased query-path
-changes after 0.12.0. Two runs agreed within 0.5 ms per query; this is the
-second.
+changes after 0.12.0, including the delete-requests cache. Two runs agreed
+within 0.5 ms per query; this is the second.
 
 | query | Loki | Loki (unsharded) | lokihouse | lokihouse ÷ Loki |
 |---|---:|---:|---:|---:|
-| log filter | 6.7ms (8.1ms) | 6.9ms (8.2ms) | 8.7ms (9.4ms) | 1.30 |
-| logfmt filter | 66.7ms (68.1ms) | 66.8ms (68.7ms) | 28.9ms (31.1ms) | 0.43 |
-| count_over_time | 58.0ms (60.2ms) | 68.6ms (71.2ms) | 13.6ms (14.3ms) | 0.23 |
-| rate regex | 14.6ms (15.6ms) | 17.9ms (18.6ms) | 13.7ms (14.5ms) | 0.94 |
-| topk | 27.8ms (29.4ms) | 33.7ms (34.3ms) | 12.0ms (12.4ms) | 0.43 |
-| unwrap quantile | 57.0ms (58.3ms) | 68.3ms (73.7ms) | 69.8ms (71.6ms) | 1.23 |
-| bytes_over_time | 31.7ms (33.6ms) | 45.8ms (47.0ms) | 14.7ms (15.5ms) | 0.46 |
-| labels | 0.4ms (0.7ms) | 0.4ms (0.5ms) | 1.6ms (2.0ms) | 3.77 |
-| series | 1.5ms (2.0ms) | 0.5ms (0.8ms) | 1.8ms (2.2ms) | 1.16 |
+| log filter | 4.7ms (6.1ms) | 3.5ms (4.0ms) | 7.0ms (7.6ms) | 1.51 |
+| logfmt filter | 50.1ms (1360.1ms) | 37.5ms (38.5ms) | 29.7ms (31.4ms) | 0.59 |
+| count_over_time | 69.2ms (72.7ms) | 71.9ms (73.9ms) | 12.4ms (12.8ms) | 0.18 |
+| rate regex | 16.6ms (17.7ms) | 17.6ms (18.9ms) | 12.5ms (13.1ms) | 0.75 |
+| topk | 32.7ms (33.8ms) | 33.9ms (35.7ms) | 10.7ms (11.4ms) | 0.33 |
+| unwrap quantile | 61.8ms (64.7ms) | 68.6ms (70.7ms) | 68.5ms (69.5ms) | 1.11 |
+| bytes_over_time | 32.0ms (38.4ms) | 42.4ms (43.1ms) | 13.7ms (14.0ms) | 0.43 |
+| labels | 0.4ms (0.5ms) | 0.4ms (0.5ms) | 1.5ms (1.7ms) | 3.33 |
+| series | 1.6ms (1.9ms) | 0.6ms (0.7ms) | 1.8ms (2.2ms) | 1.14 |
 
 lokihouse is 2–4× faster than Loki on the five queries the SQL push-down
 answers (`logfmt filter`, `count_over_time`, `topk`, `bytes_over_time`, and
@@ -79,13 +79,15 @@ answers (`logfmt filter`, `count_over_time`, `topk`, `bytes_over_time`, and
   aggregation is about 38 ms of the 70 ms. Loki shards the query (each
   `by (app)` series lives in one shard) and evaluates the shards in
   parallel. Unsharded, Loki is level with lokihouse (68 ms against 70 ms).
-- **`log filter` (1.30×, +2 ms).** Before it reads a single row, lokihouse
-  makes two ClickHouse round trips in sequence: the tenant's delete requests
-  (≈2 ms, every query) and the stream resolution on `streams` (≈2 ms). Then
-  the 3 ms read follows. Loki caches delete requests for 5 minutes in its
-  querier (`deletion.NewDeleteRequestsClient`) and resolves streams from the
-  in-memory index. Every range query pays the delete-request round trip in
-  lokihouse; it only shows here because this query is otherwise short.
+- **`log filter` (1.51×, +2.3 ms).** lokihouse answers it in 7.0 ms, down
+  from 8.7 ms: the tenant's delete requests now come from Loki's
+  delete-requests cache (`deletion.NewDeleteRequestsClient`, refreshed every
+  5 minutes) and no longer cost a ClickHouse round trip per query. What
+  remains is the stream resolution on `streams` (≈2 ms) before the 3 ms read,
+  against Loki's in-memory index. The ratio is higher than before only because
+  Loki itself measured 4.7 ms in these runs against 6.7 ms in the earlier
+  ones (unsharded 3.5 ms against 6.9 ms); Loki's figure for this query varies
+  more between sessions than lokihouse's.
 - **`labels` (3.8×) and `series` (1.2×).** Each is one ClickHouse query of
   about 1 ms plus the round trip, against Loki's in-memory ingester index.
   The gap is about 1 ms in absolute terms.

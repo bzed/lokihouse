@@ -8,6 +8,7 @@ changelog (`debian/changelog`) carries the same releases.
 
 ### Changed
 
+- Queries look up a tenant's pending delete requests through Loki's delete-requests cache, refreshed every 5 minutes, instead of querying ClickHouse every time: as in Loki, a new or cancelled delete request can take up to 5 minutes to change query results.
 - Log queries whose selector matches a single stream read ClickHouse in the part's physical order instead of sorting the range by timestamp; their pagination continues from the last row with a keyset predicate the primary key can prune. On a cluster, a single-stream log query is routed to the shard that owns the stream.
 
 ## [0.12.0] - 2026-10-24

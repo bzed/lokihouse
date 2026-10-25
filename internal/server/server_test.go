@@ -260,9 +260,7 @@ func TestRun_Metrics(t *testing.T) {
 	r := start(t, cfg, log.NewNopLogger())
 	// A unique tenant keeps this test's exact values: distributor counters are
 	// process-global, so a fixed tenant would accumulate across -count runs.
-	tb := make([]byte, 3)
-	_, _ = rand.Read(tb)
-	tenant := "metrics-" + hex.EncodeToString(tb)
+	tenant := uniqueTenant("metrics")
 	require.Equal(t, http.StatusNoContent, push(t, r.addr, tenant, pushBody(time.Now(), "hello")))
 	require.Equal(t, http.StatusBadRequest, push(t, r.addr, tenant, `{"streams":[{"stream":{},"values":[["1","x"]]}]}`))
 
@@ -281,6 +279,57 @@ func TestRun_Metrics(t *testing.T) {
 	} {
 		require.Contains(t, m, want)
 	}
+}
+
+// uniqueTenant returns a tenant no earlier test used: Prometheus counters
+// are process-global, so a fixed tenant would accumulate across -count runs.
+func uniqueTenant(prefix string) string {
+	tb := make([]byte, 3)
+	_, _ = rand.Read(tb)
+	return prefix + "-" + hex.EncodeToString(tb)
+}
+
+// counterValue sums the named counter of the default registry.
+func counterValue(t *testing.T, name string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	var n float64
+	for _, mf := range families {
+		if mf.GetName() == name {
+			for _, m := range mf.GetMetric() {
+				n += m.GetCounter().GetValue()
+			}
+		}
+	}
+	return n
+}
+
+// queryRange runs a query_range over the last five minutes and requires 200.
+func queryRange(t *testing.T, addr, tenant, query string) {
+	t.Helper()
+	q := url.Values{"query": {query}, "start": {fmt.Sprint(time.Now().Add(-5 * time.Minute).UnixNano())}}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+addr+"/loki/api/v1/query_range?"+q.Encode(), nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Scope-OrgID", tenant)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// Two queries of one tenant look its delete requests up in ClickHouse once:
+// the second is served from Loki's delete-requests cache.
+func TestRun_DeleteLookupsAreCached(t *testing.T) {
+	cfg := testConfig(t, defaultServer, "")
+	r := start(t, cfg, log.NewNopLogger())
+	tenant := uniqueTenant("deletes")
+	require.Equal(t, http.StatusNoContent, push(t, r.addr, tenant, pushBody(time.Now(), "hello")))
+	before := counterValue(t, "loki_delete_request_lookups_total")
+	queryRange(t, r.addr, tenant, `{app="a"}`)
+	queryRange(t, r.addr, tenant, `{app="a"}`)
+	require.Equal(t, before+1, counterValue(t, "loki_delete_request_lookups_total"))
 }
 
 func TestRun_ListenError(t *testing.T) {
