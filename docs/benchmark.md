@@ -10,9 +10,12 @@ so a fast-but-wrong answer fails the run.
 ## Method
 
 - All three stores ingest the same deterministic, seeded data set: 200 000
-  lines over 50 streams (10 apps × dev/prod), spread over the final hour,
-  pushed in 5 000-line batches. Tweak with `LOKIHOUSE_BENCH_LINES`,
-  `LOKIHOUSE_BENCH_STREAMS` and `LOKIHOUSE_BENCH_ROUNDS`.
+  lines over 10 distinct streams, spread over the final hour, pushed in
+  5 000-line batches. Each batch carries 50 push-streams labelled
+  `app=s%10, env=s%2`, so the 50 collapse onto 10 label sets (even-numbered
+  apps dev, odd-numbered apps prod, 20 000 lines each). Tweak with
+  `LOKIHOUSE_BENCH_LINES`, `LOKIHOUSE_BENCH_STREAMS` and
+  `LOKIHOUSE_BENCH_ROUNDS`.
 - The three stores are Loki, lokihouse with the default configuration (the
   optimal settings for this hardware), and lokihouse in the fallback case:
   `clickhouse.max_open_conns = 2`, the smallest pool that can ingest (a push
@@ -77,21 +80,28 @@ defaults throughout — the optimal settings for this machine.
 ### Pre-release measurement (unreleased, after 0.12.0)
 
 Recorded 2026-10-25 on the environment above, with the unreleased query-path
-changes after 0.12.0 (200 000 lines, 50 streams, 5 rounds per query). This
-run is not a release measurement; it is re-run at every release.
+changes after 0.12.0 (200 000 lines, 10 distinct streams, 5 rounds per query).
+This run is not a release measurement; it is re-run at every release.
 lokihouse is faster than Loki on the five push-down queries (`logfmt filter`,
 `count_over_time`, `rate regex`, `topk`, `bytes_over_time`) and on par or a few
 milliseconds behind on `log filter`, `unwrap quantile`, `labels` and `series`.
 The single-connection fallback costs nothing measurable for a single
 sequential user: the fan-out's value is concurrency, which this benchmark does
-not exercise. The two query-path changes since 0.12.0 do not show on this
-benchmark's query shapes: `log filter` matches five streams, but the
-part-order read is single-stream, and `unwrap quantile` matches 25 streams,
-above the 16-stream fan-out limit — both sit at their 0.12.0 values within
-noise (`rate regex` matches 15 streams and does fan out, without a measurable
-difference here). `unwrap quantile` is the most expensive query in the set:
-the wall is the engine's own aggregation, which runs Loki's code. The data set
-is small and warm, so the label-filter pushdown and windowed reads of 0.11.0
+not exercise. The two query-path changes since 0.12.0 engage on only two of
+the nine queries, and neither shows measurably at this scale. `log filter`
+matches one stream, so it takes the single-stream part-order read in both
+columns — the fan-out is a sample-query path and never sees a log query.
+`unwrap quantile` matches five streams (the odd-numbered apps), so the optimal
+column fans out (five per-stream queries, no `FINAL`) while the
+single-connection column falls back to one global `FINAL` query; with 100 000
+warm lines and a single sequential user the wall is the engine's own
+aggregation, which runs Loki's code, so the two columns overlap within noise.
+The other sample queries — `count_over_time`, `rate regex`, `topk`,
+`bytes_over_time` — are answered by the SQL push-down and never reach the
+sample path, so their columns are identical by construction; `logfmt filter`
+is a log query over five streams and reads them in one query in both columns.
+`unwrap quantile` is the most expensive query in the set. The data set is
+small and warm, so the label-filter pushdown and windowed reads of 0.11.0
 barely show here; they matter on larger data.
 
 | query | Loki | lokihouse (optimal) | lokihouse (single connection) |
