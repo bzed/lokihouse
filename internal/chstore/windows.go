@@ -7,12 +7,21 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/grafana/loki/v3/pkg/logproto"
 )
 
 // defaultWindowRows is the row target of one read window: about 85 MiB of sort
 // state at the measured 340 B per row.
 const defaultWindowRows = 250_000
+
+// perStreamContext routes a query that reads exactly one stream to the shard
+// owning it: the Distributed table shards by cityHash64(tenant, stream_id),
+// and with the default optimize_skip_unused_shards = 0 the query still goes
+// to every shard, where the others read nothing.
+func perStreamContext(ctx context.Context) context.Context {
+	return clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{"optimize_skip_unused_shards": 1}))
+}
 
 const hourNs = int64(3600) * 1_000_000_000
 
@@ -93,6 +102,10 @@ type rowQuery struct {
 	// order: the engine and the limit need the newest rows overall, not per
 	// stream.
 	single bool
+	// streamID restricts the query to one stream by id (a single-stream read)
+	// instead of the external id set, so the shard analysis can route it to
+	// the owning shard (perStreamContext); nil reads the streams of the set.
+	streamID *uint64
 }
 
 // sql renders the query for w, without LIMIT. The ORDER BY comes last: the
@@ -104,9 +117,15 @@ func (q rowQuery) sql(w window) (string, []any) {
 	if q.final {
 		from = "logs FINAL"
 	}
-	s := "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM " + from + " WHERE tenant = ? AND " + streamIDsIn +
+	streams := streamIDsIn
+	args := []any{q.tenant}
+	if q.streamID != nil {
+		streams = "stream_id = ?"
+		args = append(args, *q.streamID)
+	}
+	s := "SELECT stream_id, ts, line, structured_metadata, entry_hash FROM " + from + " WHERE tenant = ? AND " + streams +
 		" AND ts >= fromUnixTimestamp64Nano(?, 'UTC') AND ts < fromUnixTimestamp64Nano(?, 'UTC')"
-	args := []any{q.tenant, w.lo, w.hi}
+	args = append(args, w.lo, w.hi)
 	if !q.filter.Empty() {
 		s += " AND " + q.filter.SQL
 		args = append(args, q.filter.Args...)

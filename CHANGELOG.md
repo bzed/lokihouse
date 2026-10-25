@@ -8,7 +8,7 @@ changelog (`debian/changelog`) carries the same releases.
 
 ### Changed
 
-- Log queries whose selector matches a single stream read ClickHouse in the part's physical order instead of sorting the range by timestamp; their pagination continues from the last row with a keyset predicate the primary key can prune.
+- Log queries whose selector matches a single stream read ClickHouse in the part's physical order instead of sorting the range by timestamp; their pagination continues from the last row with a keyset predicate the primary key can prune. On a cluster, a single-stream log query is routed to the shard that owns the stream.
 
 ## [0.12.0] - 2026-10-24
 

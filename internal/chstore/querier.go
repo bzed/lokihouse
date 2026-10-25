@@ -110,16 +110,26 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	if err != nil || len(r.byID) == 0 {
 		return iter.NoopEntryIterator, err
 	}
-	// One stream: read its rows in the part's physical order (rowQuery.single).
+	// One stream: read its rows in the part's physical order (rowQuery.single),
+	// restricted to the stream by id so the shard analysis can route the query
+	// to the owning shard (perStreamContext).
 	r.rq.single = len(r.ids) == 1
+	if r.rq.single {
+		r.rq.streamID = &r.ids[0]
+		ctx = perStreamContext(ctx)
+	}
 	ws, err := q.readWindows(ctx, r)
 	if err != nil {
 		return iter.NoopEntryIterator, err
 	}
 	// cancel the readers with the request context so a cancelled query stops the read
-	sctx, err := withStreamIDs(ctx, r.ids)
-	if err != nil {
-		return iter.NoopEntryIterator, err
+	sctx := ctx
+	if !r.rq.single {
+		// A multi-stream read restricts the query with the external id set.
+		sctx, err = withStreamIDs(ctx, r.ids)
+		if err != nil {
+			return iter.NoopEntryIterator, err
+		}
 	}
 	rctx, cancel := context.WithCancel(sctx)
 	wr := &windowReader{ws: ws, cancel: cancel, open: func(w window) (rowSource, error) {
