@@ -203,3 +203,21 @@ Replace the table with the second run. In the "slower on" list, rewrite the `log
 git add docs/benchmark.md
 git commit -m "docs: benchmark after caching delete requests"
 ```
+
+## Follow-ups (measured 2026-10-25, not tasks of this plan)
+
+Candidates from the same investigation. Each was measured against the
+benchmark data set (200 000 lines, 10 streams, local ClickHouse 26.9), and
+the measurement decided whether it belongs in a plan.
+
+| Gap to Loki (sharded) | Cause | Measured | Verdict |
+|---|---|---|---|
+| `unwrap quantile`, 70 ms against 57 ms | lokihouse's engine (Loki's code) runs single-threaded per query, ≈38 ms of the 70 ms; Loki shards the query and evaluates the shards in parallel. Unsharded Loki is level (68 ms) | CPU profile: engine ≈38 ms/query, Go read and extraction pipelined with it | **Worth its own design and plan.** Reuse Loki's `logql.NewShardMapper` + `logql.NewDownstreamEngine` with a local downstreamer that evaluates shard legs in parallel on lokihouse's querier. The querier must honour `SelectSampleParams` shards (it ignores them today) by filtering resolved streams by shard. Open questions for the design: the number of shards (Loki derives it from index stats); the connection budget for concurrent legs (legs are independent, so they can queue on the pool but not deadlock it, unlike the dropped fan-out, but each leg holds one connection); oracle coverage of sharded results. Estimate (derived, not measured): with 5 series the engine part drops to ≈8–10 ms, about 40 ms in total |
+| `log filter`, remaining ≈2 ms after this plan | stream resolution on `streams` before the read | client-side p50: `SELECT 1` 0.35 ms; resolution 1.43 ms as today, 1.44 ms with `LIMIT 1 BY`, 1.22 ms without `GROUP BY`; server reads 1 mark and 10 rows | **No query-level fix.** The SQL forms differ by ≤ 0.2 ms; the rest is ClickHouse's per-query floor. Only an in-process stream index would remove it, and lokihouse instances cannot see each other's new streams without a shared invalidation channel. Not worth it for ≈1 ms |
+| `labels` 1.6 ms against 0.4 ms; `series` 1.8 ms against 1.5 ms | one ClickHouse query against Loki's in-memory ingester index | the all-streams query: 1.10 ms client-side | **Leave.** Same floor as above; the absolute gap is ≈1 ms |
+| Go time between round trips | stream resolution → read start | ≈0.3 ms (query_log timeline) | **Leave** |
+
+Housekeeping found on the way: 14 `lh_test_*`, `lh_srv_*`, `lh_oracle_*` and
+`lh_prof` databases on the local ClickHouse are leftovers from interrupted
+test runs (October 11–24). The test cleanup only runs when the test process
+exits normally. Drop them by hand; a `make` target is optional.
