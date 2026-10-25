@@ -33,9 +33,10 @@ func freePort(t *testing.T) int {
 }
 
 // lokiBin returns the absolute path to the built loki binary, building it from
-// the pinned commit once.
+// the pinned commit once. The default path names the commit, so a binary built
+// before the pin moved is never reused.
 func lokiBin(t *testing.T) string {
-	bin := envOr("LOKIHOUSE_LOKI_BIN", filepath.Join(".cache", "loki-bin", "loki"))
+	bin := envOr("LOKIHOUSE_LOKI_BIN", filepath.Join(".cache", "loki-bin", "loki-"+lokiCommit[:12]))
 	if ab, err := filepath.Abs(bin); err == nil {
 		bin = ab
 	}
@@ -49,6 +50,7 @@ func lokiBin(t *testing.T) string {
 	if !dirExists(src) {
 		cloneLoki(t, src)
 	}
+	checkoutLoki(t, src)
 	_ = os.MkdirAll(filepath.Dir(bin), 0o755)
 	cmd := exec.Command("go", "build", "-o", bin, "./cmd/loki")
 	cmd.Dir = src
@@ -66,10 +68,22 @@ func cloneLoki(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatalf("cloning loki: %v\n%s", err, out)
 	}
-	cmd = exec.Command("git", "checkout", lokiCommit)
-	cmd.Dir = dir
-	out, err = cmd.CombinedOutput()
-	if err != nil {
+}
+
+// checkoutLoki checks out the pinned commit in the Loki clone at dir,
+// fetching first when an older clone does not have it yet.
+func checkoutLoki(t *testing.T, dir string) {
+	git := func(args ...string) ([]byte, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		return cmd.CombinedOutput()
+	}
+	if _, err := git("cat-file", "-e", lokiCommit+"^{commit}"); err != nil {
+		if out, err := git("fetch", "origin"); err != nil {
+			t.Fatalf("fetching loki: %v\n%s", err, out)
+		}
+	}
+	if out, err := git("checkout", "-q", lokiCommit); err != nil {
 		t.Fatalf("checking out %s: %v\n%s", lokiCommit, err, out)
 	}
 }
