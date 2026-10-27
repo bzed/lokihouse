@@ -123,33 +123,81 @@ func TestBench(t *testing.T) {
 	// are the plain engine's. The benchmark times Loki as deployed: its default
 	// query tuning (sharding and splitting on), results cache still off. The
 	// unsharded Loki is timed too, to show what the parallelism buys.
-	stores := []benchStore{
-		{"Loki", StartLokiConfig(t, lokiDefaultQueryTemplate(), ruler())},
-		{"Loki (unsharded)", StartLoki(t, ruler())},
-		{"lokihouse", StartLokihouse(t, "")},
+	// LOKIHOUSE_BENCH_S3_REMOTE=1 runs only the object-storage scenario, with
+	// Loki's data in the remote store named by S3_* and AWS_* (make bench-s3)
+	// and ClickHouse's (test/bench/up-remote.sh) on the same store.
+	remote := os.Getenv("LOKIHOUSE_BENCH_S3_REMOTE") != ""
+	var stores []benchStore
+	var tables []benchTable
+	if !remote {
+		stores = []benchStore{
+			{"Loki", StartLokiConfig(t, lokiDefaultQueryTemplate(), ruler())},
+			{"Loki (unsharded)", StartLoki(t, ruler())},
+			{"lokihouse", StartLokihouse(t, "")},
+		}
+		tables = []benchTable{{"Recent data, local disk", []int{0, 1, 2}, []benchRatio{{2, 0}}}}
 	}
-	tables := []benchTable{{"Recent data, local disk", []int{0, 1, 2}, []benchRatio{{2, 0}}}}
 	// The object-storage scenario (test/bench/up.sh): Loki with chunks and
 	// index in S3, flushed and queried from the store only, against lokihouse
 	// on ClickHouse servers whose MergeTree tables live in S3.
 	// lokiS3Reader, when set, replaces the S3 Loki's writer with its reader
 	// once the data is pushed.
 	var lokiS3Reader func() string
-	if s3 := os.Getenv("LOKIHOUSE_BENCH_S3"); s3 != "" {
+	if s3 := os.Getenv("LOKIHOUSE_BENCH_S3"); s3 != "" || remote {
+		// LOKIHOUSE_BENCH_STORES picks a subset of loki, lokihouse and
+		// lokihouse-cache (default all three; the remote scenario has no
+		// lokihouse without cache: its uncached reads measure the network
+		// latency to the store, which Loki's embedded cache hides).
+		want := func(k string) bool {
+			v := os.Getenv("LOKIHOUSE_BENCH_STORES")
+			return v == "" || slices.Contains(strings.Split(v, ","), k)
+		}
 		chS3, chS3Cache := os.Getenv("LOKIHOUSE_BENCH_CH_S3"), os.Getenv("LOKIHOUSE_BENCH_CH_S3_CACHE")
-		if chS3 == "" || chS3Cache == "" {
-			t.Fatal("LOKIHOUSE_BENCH_S3 needs LOKIHOUSE_BENCH_CH_S3 and LOKIHOUSE_BENCH_CH_S3_CACHE (make bench sets all three)")
+		if remote && want("lokihouse") && os.Getenv("LOKIHOUSE_BENCH_STORES") != "" {
+			t.Fatal("LOKIHOUSE_BENCH_STORES: the remote scenario runs loki and lokihouse-cache only")
+		}
+		if (!remote && want("lokihouse") && chS3 == "") || (want("lokihouse-cache") && chS3Cache == "") {
+			t.Fatal("the S3 scenario needs LOKIHOUSE_BENCH_CH_S3 and LOKIHOUSE_BENCH_CH_S3_CACHE (make bench and make bench-s3 set them)")
 		}
 		single := chstore.Topology{}
-		n := len(stores)
-		var writer string
-		writer, lokiS3Reader = startLokiS3(t, s3, ruler())
-		stores = append(stores,
-			benchStore{"Loki S3", writer},
-			benchStore{"lokihouse S3", StartLokihouseOn(t, []string{chS3}, single, "")},
-			benchStore{"lokihouse S3 + cache", StartLokihouseOn(t, []string{chS3Cache}, single, "")},
-		)
-		tables = append(tables, benchTable{"Object storage (S3 on RustFS), Loki flushed", []int{n, n + 1, n + 2}, []benchRatio{{n + 1, n}, {n + 2, n}}})
+		var idx []int
+		add := func(name, url string) int {
+			stores = append(stores, benchStore{name, url})
+			idx = append(idx, len(stores)-1)
+			return len(stores) - 1
+		}
+		loki, house, cached := -1, -1, -1
+		if want("loki") {
+			var s benchS3
+			if remote {
+				s = benchRemoteS3(t)
+			} else {
+				s = newBenchBucket(t, s3)
+			}
+			var writer string
+			writer, lokiS3Reader = startLokiS3(t, s, ruler())
+			loki = add("Loki S3", writer)
+		}
+		if !remote && want("lokihouse") {
+			house = add("lokihouse S3", StartLokihouseOn(t, []string{chS3}, single, ""))
+		}
+		if want("lokihouse-cache") {
+			cached = add("lokihouse S3 + cache", StartLokihouseOn(t, []string{chS3Cache}, single, ""))
+		}
+		var ratios []benchRatio
+		for _, h := range []int{house, cached} {
+			if h >= 0 && loki >= 0 {
+				ratios = append(ratios, benchRatio{h, loki})
+			}
+		}
+		title := "Object storage (S3 on RustFS), Loki flushed"
+		if remote {
+			title = "Object storage (remote S3), Loki flushed"
+		}
+		if len(idx) == 0 {
+			t.Fatalf("LOKIHOUSE_BENCH_STORES=%q selects none of loki, lokihouse, lokihouse-cache", os.Getenv("LOKIHOUSE_BENCH_STORES"))
+		}
+		tables = append(tables, benchTable{title, idx, ratios})
 	}
 	urls := make([]string, len(stores))
 	for i, s := range stores {
@@ -172,6 +220,15 @@ func TestBench(t *testing.T) {
 		}
 	}
 
+	// The reference every other store's answers are compared with: Loki, or
+	// the S3 Loki when the local stores are not run; none when no Loki runs.
+	ref := slices.IndexFunc(stores, func(s benchStore) bool { return s.name == "Loki" })
+	if ref < 0 {
+		ref = slices.IndexFunc(stores, func(s benchStore) bool { return s.name == "Loki S3" })
+	}
+
+	saturateCaches(t, stores, end, span)
+
 	outs := make([]strings.Builder, len(tables))
 	for i, tb := range tables {
 		outs[i].WriteString(tableHeader(stores, tb))
@@ -193,12 +250,15 @@ func TestBench(t *testing.T) {
 		// A benchmark of wrong answers is worthless: compare every store with
 		// Loki. topk breaks ties by series order, which is undefined between
 		// the engines; compare it as a multiset of values instead.
-		for i := 1; i < len(stores); i++ {
+		for i := range stores {
+			if ref < 0 || i == ref {
+				continue
+			}
 			name := "bench " + q.name + " (" + stores[i].name + ")"
 			if q.name == "topk" {
-				CompareMut(t, name, bodies[0], bodies[i], sortTopKValues)
+				CompareMut(t, name, bodies[ref], bodies[i], sortTopKValues)
 			} else {
-				Compare(t, name, bodies[0], bodies[i])
+				Compare(t, name, bodies[ref], bodies[i])
 			}
 		}
 		for i, tb := range tables {
@@ -357,4 +417,25 @@ func waitBenchQueryable(t *testing.T, loki string, lines int, end time.Time, spa
 		time.Sleep(2 * time.Second)
 	}
 	t.Fatalf("loki did not report %d lines within 10m", lines)
+}
+
+// saturateCaches reads all of every store's data, so that each cache (Loki's
+// embedded chunk cache, ClickHouse's filesystem cache) holds everything the
+// timed queries touch: once through the log lines, once through a parsed
+// field. Without it a query's first warm-up round fills the cache for just
+// that query's columns and time ranges.
+func saturateCaches(t *testing.T, stores []benchStore, end time.Time, span time.Duration) {
+	t.Helper()
+	w := fmt.Sprintf("%ds", int(span.Seconds())+60)
+	for _, q := range []string{
+		`sum(count_over_time({env=~".+"} |~ ".+" [` + w + `]))`,
+		`sum(sum_over_time({env=~".+"} | logfmt | unwrap duration(duration) [` + w + `]))`,
+	} {
+		v := url.Values{"query": {q}, "start": {strconv.FormatInt(end.Add(-span).UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"60"}}
+		for _, s := range stores {
+			for range 2 {
+				Get(t, s.url+"/loki/api/v1/query_range?"+v.Encode(), "bench")
+			}
+		}
+	}
 }

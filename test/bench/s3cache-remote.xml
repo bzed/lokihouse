@@ -1,0 +1,26 @@
+<!-- MergeTree tables on a remote S3 store behind ClickHouse's local filesystem
+     cache. The endpoint and credentials come from the environment
+     (up-remote.sh). -->
+<clickhouse>
+  <storage_configuration>
+    <disks>
+      <s3>
+        <type>s3</type>
+        <endpoint from_env="BENCH_S3_URL"/>
+        <access_key_id from_env="AWS_ACCESS_KEY_ID"/>
+        <secret_access_key from_env="AWS_SECRET_ACCESS_KEY"/>
+        <region from_env="S3_REGION"/>
+      </s3>
+      <s3_cache>
+        <type>cache</type>
+        <disk>s3</disk>
+        <path>/var/lib/clickhouse/s3_cache/</path>
+        <max_size>10Gi</max_size>
+      </s3_cache>
+    </disks>
+    <policies>
+      <s3><volumes><main><disk>s3_cache</disk></main></volumes></s3>
+    </policies>
+  </storage_configuration>
+  <merge_tree><storage_policy>s3</storage_policy></merge_tree>
+</clickhouse>

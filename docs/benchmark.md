@@ -45,6 +45,9 @@ fails the run.
   then runs nine representative LogQL queries: plain and regex log filters,
   `count_over_time`, `rate`, `topk`, `unwrap` + `quantile_over_time`,
   `bytes_over_time`, and the `labels` and `series` metadata endpoints.
+- Before timing, two full-span queries (a line scan and a parsed-field scan)
+  read all data from every store, so that Loki's chunk cache and ClickHouse's
+  filesystem cache hold everything the timed queries touch.
 - Each query gets two discarded warm-up rounds per store, then 20 timed rounds.
   Every round queries all stores and rotates their order, so background work
   (ClickHouse merges, Loki flushes) does not always land on the same store.
@@ -54,6 +57,21 @@ fails the run.
   `.cache/bench/results.md`) as Markdown tables. Without
   `LOKIHOUSE_BENCH_S3` (when the test is run directly, not through
   `make bench`) only the first table is produced.
+
+### Against a remote S3 store
+
+`make bench-s3` runs only the object-storage scenario against a remote S3
+bucket instead of RustFS. The store comes from `.secrets/s3.env` (gitignored;
+`S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`; override the file with `BENCH_S3_ENV`). Loki and the
+ClickHouse server (`test/bench/up-remote.sh`) each write under a fresh
+prefix in the bucket, and `s3cmd` removes what is left when the run ends.
+Only Loki and lokihouse with ClickHouse's filesystem cache run there:
+uncached ClickHouse reads would measure the network latency to the store,
+which Loki's embedded chunk cache hides, so the two are not comparable.
+`BENCH_STORES` picks `loki` or `lokihouse-cache` (default both); `LOKIHOUSE_BENCH_LINES`, `_ROUNDS` and `_SPAN` size the
+run. Answers are compared with Loki's only when Loki runs in the same
+invocation.
 
 ### Why RustFS
 

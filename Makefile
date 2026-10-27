@@ -34,6 +34,24 @@ bench-down:
 	sh test/bench/down.sh
 bench: bench-up
 	$(BENCH_ENV) go test -tags oracle,bench -run TestBench -count=1 -timeout 60m -v ./test/oracle/
+# make bench-s3 runs the object-storage scenario against the remote S3 store
+# of .secrets/s3.env (gitignored; S3_*/AWS_* variables, see
+# test/oracle/bench_s3_test.go). BENCH_STORES picks loki, lokihouse-cache or
+# both (default); LOKIHOUSE_BENCH_LINES, _ROUNDS and _SPAN in
+# the environment size the run.
+BENCH_S3_ENV ?= .secrets/s3.env
+BENCH_STORES ?=
+.PHONY: bench-s3 bench-s3-down
+bench-s3:
+	set -a; . ./$(BENCH_S3_ENV); set +a; \
+	trap 'sh test/bench/down-remote.sh' EXIT; \
+	sh test/bench/down-remote.sh; sh test/bench/up-remote.sh && \
+	LOKIHOUSE_TEST_CH_ADDR=localhost:19102 LOKIHOUSE_TEST_CH_CLUSTER= LOKIHOUSE_BENCH_S3_REMOTE=1 \
+	LOKIHOUSE_BENCH_CH_S3_CACHE=localhost:19102 \
+	LOKIHOUSE_BENCH_STORES=$(BENCH_STORES) \
+	go test -tags oracle,bench -run TestBench -count=1 -timeout 60m -v ./test/oracle/
+bench-s3-down:
+	set -a; . ./$(BENCH_S3_ENV); set +a; sh test/bench/down-remote.sh
 soak:
 	go test -tags oracle,soak -run TestSoak -count=1 -timeout 90m -v ./test/oracle/
 
