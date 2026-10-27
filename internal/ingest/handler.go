@@ -36,6 +36,11 @@ type Handler struct {
 	Limits      *validation.Overrides
 	Logger      log.Logger
 	RateLimiter *limiter.RateLimiter
+
+	// MaxRecvMsgSize and MaxDecompressedSize bound a push body; zero selects
+	// the package defaults.
+	MaxRecvMsgSize      int
+	MaxDecompressedSize int64
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +53,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/otlp/") {
 		parser, format = push.NewOTLPRequestParser(false), "otlp"
 	}
-	req, _, err := push.ParseRequest(h.Logger, tenantID, maxRecvMsgSize, maxDecompressedSize, r,
+	recvSize, decompSize := h.MaxRecvMsgSize, h.MaxDecompressedSize
+	if recvSize == 0 {
+		recvSize = maxRecvMsgSize
+	}
+	if decompSize == 0 {
+		decompSize = maxDecompressedSize
+	}
+	req, _, err := push.ParseRequest(h.Logger, tenantID, recvSize, decompSize, r,
 		h.Limits, nil, parser, nil, nil, "", format)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
