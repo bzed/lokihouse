@@ -188,6 +188,21 @@ func TestSplitter_ExhaustedBudgetRunsInline(t *testing.T) {
 	require.EqualValues(t, 4, got.Statistics.Summary.Splits)
 }
 
+func TestSplitter_PipelineErrorIsTheUnsplitQuerys(t *testing.T) {
+	conn, base := splitFixtureConn(t)
+	s, raw := newSplitter(t, conn, semaphore.NewWeighted(16), nil)
+	// The lines are not JSON: every leg with data fails, naming the series it
+	// saw first (early in hours 1-2, late in hours 4-5). The unsplit query
+	// names the one it reads first.
+	p := rangeParams(t, `count_over_time({app=~"early|late"} | json x="x" [1m])`, base.Add(time.Hour), base.Add(5*time.Hour), time.Minute)
+	_, wantErr := raw.Query(p).Exec(tctx())
+	require.Error(t, wantErr)
+	for range 10 {
+		_, err := s.Query(p).Exec(tctx())
+		require.EqualError(t, err, wantErr.Error())
+	}
+}
+
 func TestSplitter_QueryTimeoutCoversAllLegs(t *testing.T) {
 	conn, base := splitFixtureConn(t)
 	s, _ := newSplitter(t, conn, semaphore.NewWeighted(16), func(l *validation.Limits) { l.QueryTimeout = model.Duration(time.Nanosecond) })

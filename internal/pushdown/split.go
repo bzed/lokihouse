@@ -118,6 +118,11 @@ func (q *splitQuery) Exec(ctx context.Context) (logqlmodel.Result, error) {
 		return err
 	})
 	if err != nil {
+		if ctx.Err() == nil && runCtx.Err() == nil {
+			// Which leg fails first is a race, and the unsplit query names
+			// the error of the data it reads first: let it answer.
+			return unsplit()
+		}
 		return logqlmodel.Result{}, err
 	}
 	merged, err := mergeLegResults(ctx, results)
