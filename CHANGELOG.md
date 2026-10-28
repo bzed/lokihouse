@@ -20,6 +20,7 @@ changelog (`debian/changelog`) carries the same releases.
 
 ### Fixed
 
+- Security: the debug log of a parsed push request strips line breaks from the request path and `User-Agent`, so a client cannot forge log lines (CodeQL `go/log-injection`).
 - Metric queries with a `|=` or chain that has an empty operand, such as `count_over_time({app="web"} |= "" or "POST" [5m])`, counted every line instead of only those matching the non-empty operands. Like Loki, an empty operand is now ignored.
 
 ## [0.12.0] - 2026-10-24
