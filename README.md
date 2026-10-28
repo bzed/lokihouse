@@ -51,18 +51,37 @@ lifting.
 ## Speed
 
 Query latency against Loki on identical data and queries (200 000 lines, 50
-streams, one node each, p50, lokihouse 0.12.0; every answer is compared with
+streams, one node each, p50, lokihouse at main after 0.12.0; every answer is compared with
 Loki's before it counts):
 
 | query | Loki | lokihouse |
 |---|---:|---:|
-| `count_over_time` | 71 ms | **12 ms** |
-| `topk` | 34 ms | **12 ms** |
-| `bytes_over_time` | 33 ms | **14 ms** |
-| `logfmt` filter | 56 ms | **27 ms** |
-| `rate` with regex | 18 ms | **13 ms** |
-| `unwrap` + `quantile_over_time` | 69 ms | 72 ms |
-| plain log filter | 6 ms | 9 ms |
+| `count_over_time` | 59 ms | **13 ms** |
+| `topk` | 29 ms | **11 ms** |
+| `bytes_over_time` | 30 ms | **15 ms** |
+| `logfmt` filter | 41 ms | **30 ms** |
+| `rate` with regex | 16 ms | **13 ms** |
+| plain log filter | 10 ms | **8 ms** |
+| `unwrap` + `quantile_over_time` | 55 ms | 60 ms |
+
+On object storage (flushed Loki chunks against ClickHouse on S3 with its
+filesystem cache; p50, ms), on a local RustFS and on a remote S3 bucket
+(separate runs):
+
+| query | Loki, RustFS | lokihouse, RustFS | Loki, remote S3 | lokihouse, remote S3 |
+|---|---:|---:|---:|---:|
+| `count_over_time` | 57 | **13** | 65 | **12** |
+| `topk` | 28 | **12** | 32 | **11** |
+| `bytes_over_time` | 28 | **15** | 31 | **14** |
+| `rate` with regex | 15 | **13** | 17 | **13** |
+| `logfmt` filter | **26** | 32 | **26** | 33 |
+| plain log filter | **5** | 8 | **5** | 8 |
+| `unwrap` + `quantile_over_time` | **53** | 58 | **61** | 63 |
+
+lokihouse is 1.1–5× faster on the aggregations and 1.2–1.6× slower on
+line-returning queries (1–7 ms); `labels` (about 2 ms) and `series` (2–3 ms)
+are 1–2 ms slower than Loki's. Without ClickHouse's filesystem cache, S3 reads add
+2–17 ms.
 
 Method, environment and caveats: [`docs/benchmark.md`](docs/benchmark.md).
 
