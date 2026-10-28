@@ -21,8 +21,19 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// metricValue returns the value of an unlabelled metric from /metrics.
+// metricValue returns the value of a series (name, with its labels if any)
+// from /metrics and fails the test if it is absent.
 func metricValue(t *testing.T, base, name string) float64 {
+	t.Helper()
+	v, ok := findMetric(t, base, name)
+	if !ok {
+		t.Fatalf("metric %s not found", name)
+	}
+	return v
+}
+
+// findMetric returns the value of a series from /metrics and whether it exists.
+func findMetric(t *testing.T, base, name string) (float64, bool) {
 	t.Helper()
 	resp, err := http.Get(base + "/metrics")
 	if err != nil {
@@ -36,11 +47,10 @@ func metricValue(t *testing.T, base, name string) float64 {
 			if err != nil {
 				t.Fatal(err)
 			}
-			return v
+			return v, true
 		}
 	}
-	t.Fatalf("metric %s not found", name)
-	return 0
+	return 0, false
 }
 
 // saveProfile stores /debug/pprof/<name> (after a GC for heap) in dir. For a
@@ -137,6 +147,15 @@ func TestSoak(t *testing.T) {
 		}
 	}
 	wg.Wait()
+	// The soak must exercise the speculative stream read: the same selector
+	// repeats on one stable stream, so almost every log query is a hit.
+	spec := func(result string) float64 {
+		v, _ := findMetric(t, house, fmt.Sprintf(`lokihouse_query_stream_speculations_total{result=%q}`, result)) // a series never incremented is absent: 0
+		return v
+	}
+	if hits, mismatches := spec("hit"), spec("mismatch"); hits < 10*max(mismatches, 1) {
+		t.Errorf("speculative stream reads: %.0f hits, %.0f mismatches; the soak should mostly hit", hits, mismatches)
+	}
 	endHeap := saveProfile(t, house, "heap", out, "end")
 	saveProfile(t, house, "goroutine", out, "end")
 
