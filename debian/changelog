@@ -1,3 +1,12 @@
+lokihouse (0.14.0) trixie; urgency=medium
+
+  * Log queries whose stream set is already known start reading lines
+    while the stream lookup runs, instead of after it (about 2 ms less
+    per query; plain log filter now level with Loki). New metric
+    lokihouse_query_stream_speculations_total.
+
+ -- Bernd Zeimetz <bernd@bzed.de>  Wed, 28 Oct 2026 15:32:18 +0100
+
 lokihouse (0.13.0) trixie; urgency=medium
 
   * Metric range queries in lokihouse's own engine are split by

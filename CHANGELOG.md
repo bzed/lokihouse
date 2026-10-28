@@ -6,6 +6,8 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-28
+
 ### Changed
 
 - Log queries whose stream set is already known start reading lines while the stream lookup runs, instead of after it (about 2 ms less per query); new metric `lokihouse_query_stream_speculations_total`.
