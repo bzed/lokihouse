@@ -88,6 +88,15 @@ var benchQueries = []struct{ name, path, query string }{
 type benchStore struct {
 	name string
 	url  string
+	ch   []string // ClickHouse address and database of a lokihouse store; empty for Loki
+	db   string
+}
+
+// lokihouseStore starts a lokihouse on the ClickHouse at addr.
+func lokihouseStore(t *testing.T, name string, addr []string) benchStore {
+	t.Helper()
+	url, db := StartLokihouseDBOn(t, addr, chstore.Topology{}, "")
+	return benchStore{name: name, url: url, ch: addr, db: db}
 }
 
 // benchTable is one result table: a subset of the stores (indexes into the
@@ -131,9 +140,9 @@ func TestBench(t *testing.T) {
 	var tables []benchTable
 	if !remote {
 		stores = []benchStore{
-			{"Loki", StartLokiConfig(t, lokiDefaultQueryTemplate(), ruler())},
-			{"Loki (unsharded)", StartLoki(t, ruler())},
-			{"lokihouse", StartLokihouse(t, "")},
+			{name: "Loki", url: StartLokiConfig(t, lokiDefaultQueryTemplate(), ruler())},
+			{name: "Loki (unsharded)", url: StartLoki(t, ruler())},
+			lokihouseStore(t, "lokihouse", chAddr()),
 		}
 		tables = []benchTable{{"Recent data, local disk", []int{0, 1, 2}, []benchRatio{{2, 0}}}}
 	}
@@ -159,10 +168,9 @@ func TestBench(t *testing.T) {
 		if (!remote && want("lokihouse") && chS3 == "") || (want("lokihouse-cache") && chS3Cache == "") {
 			t.Fatal("the S3 scenario needs LOKIHOUSE_BENCH_CH_S3 and LOKIHOUSE_BENCH_CH_S3_CACHE (make bench and make bench-s3 set them)")
 		}
-		single := chstore.Topology{}
 		var idx []int
-		add := func(name, url string) int {
-			stores = append(stores, benchStore{name, url})
+		add := func(s benchStore) int {
+			stores = append(stores, s)
 			idx = append(idx, len(stores)-1)
 			return len(stores) - 1
 		}
@@ -176,13 +184,13 @@ func TestBench(t *testing.T) {
 			}
 			var writer string
 			writer, lokiS3Reader = startLokiS3(t, s, ruler())
-			loki = add("Loki S3", writer)
+			loki = add(benchStore{name: "Loki S3", url: writer})
 		}
 		if !remote && want("lokihouse") {
-			house = add("lokihouse S3", StartLokihouseOn(t, []string{chS3}, single, ""))
+			house = add(lokihouseStore(t, "lokihouse S3", []string{chS3}))
 		}
 		if want("lokihouse-cache") {
-			cached = add("lokihouse S3 + cache", StartLokihouseOn(t, []string{chS3Cache}, single, ""))
+			cached = add(lokihouseStore(t, "lokihouse S3 + cache", []string{chS3Cache}))
 		}
 		var ratios []benchRatio
 		for _, h := range []int{house, cached} {
@@ -225,6 +233,17 @@ func TestBench(t *testing.T) {
 	ref := slices.IndexFunc(stores, func(s benchStore) bool { return s.name == "Loki" })
 	if ref < 0 {
 		ref = slices.IndexFunc(stores, func(s benchStore) bool { return s.name == "Loki S3" })
+	}
+
+	// Let ClickHouse finish merging the parts the pushes created, so the timed
+	// rounds do not read ingest leftovers (on S3 every part x column is a GET).
+	settle := time.Duration(0)
+	if os.Getenv("LOKIHOUSE_BENCH_SETTLE") != "0" {
+		settle = envDuration(t, "LOKIHOUSE_BENCH_SETTLE", 2*time.Minute)
+	}
+	parts, settled := make([]uint64, len(stores)), make([]bool, len(stores))
+	for i, s := range stores {
+		parts[i], settled[i] = settleParts(t, s, settle)
 	}
 
 	saturateCaches(t, stores, end, span)
@@ -281,6 +300,9 @@ func TestBench(t *testing.T) {
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "%d lines over %s, %d streams, %d interleaved rounds per query after %d warm-up rounds, median (p90), %s\n", lines, span, streams, rounds, warmup, time.Now().UTC().Format(time.RFC3339))
+	if l := partsLine(stores, parts, settled); l != "" {
+		fmt.Fprintf(&out, "%s\n", l)
+	}
 	for i, tb := range tables {
 		fmt.Fprintf(&out, "\n### %s\n\n%s", tb.title, outs[i].String())
 	}

@@ -45,6 +45,12 @@ fails the run.
   then runs nine representative LogQL queries: plain and regex log filters,
   `count_over_time`, `rate`, `topk`, `unwrap` + `quantile_over_time`,
   `bytes_over_time`, and the `labels` and `series` metadata endpoints.
+- Before timing, the harness waits up to `LOKIHOUSE_BENCH_SETTLE` (default
+  `2m`, `0` to skip) until each ClickHouse store has no merge running and a
+  stable active part count for its `logs` table. The S3 Loki is fully
+  flushed, so settled parts are its counterpart. The results record each
+  store's active `logs` part count; a store that does not settle in time is
+  marked `(not settled)`.
 - Before timing, two full-span queries (a line scan and a parsed-field scan)
   read all data from every store, so that Loki's chunk cache and ClickHouse's
   filesystem cache hold everything the timed queries touch.
@@ -93,6 +99,10 @@ against it unchanged.
   trip, not the 10–50 ms of a real S3 GET. Remote object storage widens the
   gap between cached and uncached reads for both systems; Loki's chunk cache
   and ClickHouse's filesystem cache are what hide it in production.
+- On S3 without a cache, every part × column read is its own GET, so unmerged
+  parts cost requests. On this data set, 1 part against 22 unmerged parts was
+  15 against 35 GETs and 9.7 against 12.3 ms (p90 26 ms) for the `rate regex`
+  logs query. A run that is `(not settled)` measures ingest leftovers.
 - The data set (≈15 MB uncompressed) fits both caches, so the cached columns measure
   warm reads.
 - Latency is end-to-end (HTTP) and includes Loki's single-process querier plus

@@ -30,16 +30,24 @@ func StartLokihouse(t *testing.T, extra string) string {
 // StartLokihouseLimits is StartLokihouse with limits (indented YAML lines)
 // appended inside limits_config.
 func StartLokihouseLimits(t *testing.T, extra, limits string) string {
-	return startLokihouse(t, chAddr(), chtest.Topology(), extra, limits)
+	url, _ := startLokihouse(t, chAddr(), chtest.Topology(), extra, limits)
+	return url
 }
 
 // StartLokihouseOn is StartLokihouse against the ClickHouse server at addr
 // with topology topo instead of the test server.
 func StartLokihouseOn(t *testing.T, addr []string, topo chstore.Topology, extra string) string {
+	url, _ := StartLokihouseDBOn(t, addr, topo, extra)
+	return url
+}
+
+// StartLokihouseDBOn is StartLokihouseOn that also returns the name of the
+// database the instance runs on.
+func StartLokihouseDBOn(t *testing.T, addr []string, topo chstore.Topology, extra string) (url, db string) {
 	return startLokihouse(t, addr, topo, extra, "")
 }
 
-func startLokihouse(t *testing.T, addr []string, topo chstore.Topology, extra, limits string) string {
+func startLokihouse(t *testing.T, addr []string, topo chstore.Topology, extra, limits string) (string, string) {
 	// Build the binary from the repository root (go run sets cwd to the package dir).
 	repo, err := repoRoot()
 	if err != nil {
@@ -118,7 +126,7 @@ limits_config:
 		readLog(t, filepath.Join(dir, "lokihouse.log"))
 		t.Fatalf("lokihouse /ready: %v", err)
 	}
-	return url
+	return url, db
 }
 
 func chAddr() []string {
