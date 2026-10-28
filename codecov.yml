@@ -1,5 +1,10 @@
 coverage:
   status:
+    project:
+      default:
+        # Tolerate drops under 0.1 points: a few uncovered lines in a large
+        # change should not fail the check; make check enforces the 85 % floor.
+        threshold: 0.1%
     patch:
       default:
         # Informational only: code that needs a ClickHouse cluster is verified by
