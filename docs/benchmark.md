@@ -114,9 +114,11 @@ against it unchanged.
 
 ## Result
 
-Recorded 2026-10-28 on the environment above, from `main`: one run of
-`make bench`, 200 000 lines, 50 streams, 20 interleaved rounds, with 3 active
-ClickHouse parts per store at timing start.
+Recorded 2026-10-28 on the environment above, from `main` with growing keyset
+chunks: one run of `make bench`, 200 000 lines, 50 streams, 20 interleaved
+rounds, with 3 active ClickHouse parts per store at timing start. The remote
+S3 columns are from the earlier `make bench-s3` run (same day, before growing
+keyset chunks), not repeated here.
 
 Loki answering recent data from its ingester is the noisiest figure here: its
 `logfmt filter` median has ranged from 25 ms to 82 ms across sessions, with
@@ -128,29 +130,29 @@ Compare ratios within one table, not across sessions.
 
 | query | Loki | Loki (unsharded) | lokihouse | lokihouse ÷ Loki |
 |---|---:|---:|---:|---:|
-| log filter | 9.8ms (11.6ms) | 5.5ms (6.3ms) | 8.3ms (8.7ms) | 0.84 |
-| logfmt filter | 40.5ms (44.0ms) | 40.3ms (41.3ms) | 30.2ms (31.2ms) | 0.74 |
-| count_over_time | 59.3ms (62.6ms) | 77.1ms (79.8ms) | 12.8ms (14.1ms) | 0.22 |
-| rate regex | 15.7ms (16.4ms) | 19.7ms (21.0ms) | 12.7ms (14.2ms) | 0.81 |
-| topk | 29.1ms (30.8ms) | 38.0ms (38.9ms) | 11.1ms (12.1ms) | 0.38 |
-| unwrap quantile | 55.0ms (56.7ms) | 74.2ms (75.8ms) | 59.7ms (62.3ms) | 1.09 |
-| bytes_over_time | 30.0ms (32.7ms) | 38.1ms (39.7ms) | 14.6ms (16.0ms) | 0.49 |
-| labels | 0.6ms (0.9ms) | 0.6ms (0.7ms) | 1.7ms (2.5ms) | 2.85 |
-| series | 2.1ms (2.5ms) | 0.8ms (1.1ms) | 2.7ms (3.3ms) | 1.26 |
+| log filter | 5.1ms (6.3ms) | 5.7ms (6.4ms) | 8.1ms (8.9ms) | 1.57 |
+| logfmt filter | 43.2ms (46.2ms) | 44.3ms (49.7ms) | 21.1ms (23.0ms) | 0.49 |
+| count_over_time | 55.6ms (57.3ms) | 74.8ms (77.0ms) | 13.0ms (14.2ms) | 0.23 |
+| rate regex | 14.9ms (15.8ms) | 18.9ms (20.0ms) | 12.9ms (14.0ms) | 0.87 |
+| topk | 27.4ms (28.9ms) | 37.0ms (38.1ms) | 11.7ms (12.6ms) | 0.43 |
+| unwrap quantile | 57.3ms (58.9ms) | 80.5ms (84.5ms) | 57.5ms (60.2ms) | 1.00 |
+| bytes_over_time | 27.6ms (28.4ms) | 36.7ms (38.4ms) | 14.8ms (15.8ms) | 0.54 |
+| labels | 0.8ms (1.0ms) | 0.7ms (0.9ms) | 2.1ms (2.6ms) | 2.69 |
+| series | 2.0ms (2.8ms) | 0.8ms (1.1ms) | 2.8ms (3.3ms) | 1.36 |
 
 ### Object storage (S3 on RustFS and a remote S3 store), Loki flushed
 
 | query | Loki S3 | lokihouse S3 | lokihouse S3 + cache | S3 ÷ Loki | S3 + cache ÷ Loki | Loki, remote S3 | lokihouse + cache, remote S3 | ÷ Loki, remote |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| log filter | 5.3ms (6.4ms) | 15.3ms (17.6ms) | 8.3ms (9.0ms) | 2.89 | 1.56 | 4.9ms (5.9ms) | 7.8ms (9.1ms) | 1.59 |
-| logfmt filter | 26.1ms (27.9ms) | 49.5ms (54.4ms) | 32.3ms (34.0ms) | 1.90 | 1.24 | 26.1ms (27.3ms) | 33.4ms (34.9ms) | 1.28 |
-| count_over_time | 56.9ms (58.5ms) | 22.8ms (28.1ms) | 13.1ms (15.1ms) | 0.40 | 0.23 | 65.1ms (67.0ms) | 11.5ms (13.4ms) | 0.18 |
-| rate regex | 15.1ms (16.9ms) | 21.9ms (34.4ms) | 13.2ms (14.2ms) | 1.45 | 0.88 | 17.0ms (18.2ms) | 12.9ms (14.4ms) | 0.76 |
-| topk | 28.3ms (29.4ms) | 20.1ms (23.0ms) | 11.8ms (12.5ms) | 0.71 | 0.42 | 31.8ms (33.0ms) | 10.8ms (12.0ms) | 0.34 |
-| unwrap quantile | 53.0ms (55.0ms) | 65.6ms (68.8ms) | 58.2ms (59.6ms) | 1.24 | 1.10 | 60.5ms (62.7ms) | 62.7ms (65.4ms) | 1.04 |
-| bytes_over_time | 28.3ms (29.7ms) | 24.1ms (33.8ms) | 15.0ms (17.2ms) | 0.85 | 0.53 | 31.3ms (33.1ms) | 13.5ms (15.3ms) | 0.43 |
-| labels | 0.6ms (0.9ms) | 4.0ms (5.3ms) | 1.8ms (2.7ms) | 6.13 | 2.75 | 0.6ms (0.9ms) | 1.7ms (2.0ms) | 3.06 |
-| series | 1.9ms (3.5ms) | 6.0ms (7.5ms) | 3.1ms (3.5ms) | 3.17 | 1.61 | 1.8ms (2.1ms) | 2.5ms (3.1ms) | 1.37 |
+| log filter | 5.2ms (6.6ms) | 15.5ms (16.8ms) | 8.5ms (9.0ms) | 2.97 | 1.63 | 4.9ms (5.9ms) | 7.8ms (9.1ms) | 1.59 |
+| logfmt filter | 24.9ms (26.2ms) | 36.2ms (39.0ms) | 23.0ms (24.4ms) | 1.45 | 0.92 | 26.1ms (27.3ms) | 33.4ms (34.9ms) | 1.28 |
+| count_over_time | 52.6ms (54.1ms) | 22.3ms (32.1ms) | 13.4ms (15.5ms) | 0.42 | 0.26 | 65.1ms (67.0ms) | 11.5ms (13.4ms) | 0.18 |
+| rate regex | 14.1ms (15.3ms) | 21.5ms (53.0ms) | 13.0ms (13.8ms) | 1.52 | 0.92 | 17.0ms (18.2ms) | 12.9ms (14.4ms) | 0.76 |
+| topk | 26.2ms (27.2ms) | 19.1ms (20.6ms) | 11.9ms (13.2ms) | 0.73 | 0.45 | 31.8ms (33.0ms) | 10.8ms (12.0ms) | 0.34 |
+| unwrap quantile | 55.4ms (57.2ms) | 64.0ms (70.5ms) | 57.4ms (59.5ms) | 1.15 | 1.04 | 60.5ms (62.7ms) | 62.7ms (65.4ms) | 1.04 |
+| bytes_over_time | 25.9ms (28.1ms) | 24.4ms (29.4ms) | 14.9ms (16.2ms) | 0.94 | 0.57 | 31.3ms (33.1ms) | 13.5ms (15.3ms) | 0.43 |
+| labels | 0.7ms (0.9ms) | 4.6ms (5.8ms) | 2.2ms (2.5ms) | 6.96 | 3.26 | 0.6ms (0.9ms) | 1.7ms (2.0ms) | 3.06 |
+| series | 1.9ms (2.6ms) | 6.2ms (7.2ms) | 2.9ms (3.4ms) | 3.29 | 1.53 | 1.8ms (2.1ms) | 2.5ms (3.1ms) | 1.37 |
 
 The first five columns are RustFS on the same host (`make bench`); the last
 three are one separate run (same day, freshly generated data) against a remote S3
@@ -158,40 +160,46 @@ bucket (`make bench-s3`, see [Against a remote S3 store](#against-a-remote-s3-st
 The remote run measures only Loki and lokihouse with the filesystem cache,
 which is why it has no uncached column. The cache hides the store's latency
 for both systems, so the remote ratios land close to the RustFS ones
-(`count_over_time` 0.18× against 0.23×, `topk` 0.34× against 0.42×,
-`log filter` 1.59× against 1.56×); the remote figures say little about cold
+(`count_over_time` 0.18× against 0.26×, `topk` 0.34× against 0.45×,
+`log filter` 1.59× against 1.63×); the remote figures say little about cold
 reads. Compare ratios within a run, not absolute times across runs.
 
-**Recent data.** lokihouse is 1.4–4.5× faster than Loki on the queries the
+**Recent data.** lokihouse is 1.8–4.4× faster than Loki on the queries the
 SQL push-down answers (`logfmt filter`, `count_over_time`, `topk`,
-`bytes_over_time`), 1.2× on `rate regex`, 1.2× on `log filter`, and about
-level on `unwrap quantile`.
+`bytes_over_time`), 1.1× on `rate regex`, and level on `unwrap quantile`;
+it is 1.6× slower on `log filter`.
 
-- **`log filter` (0.84×).** The tenant's delete requests come from Loki's
+- **`logfmt filter` (0.49×).** The filter runs in Go, so most rows of a chunk
+  are dropped. Keyset chunks now grow 4× per round trip (1000, then 4000 rows),
+  so the query needs 2 chunk reads instead of 4, which took it from 30 ms to
+  21 ms.
+
+- **`log filter` (1.57×).** The tenant's delete requests come from Loki's
   delete-requests cache (`deletion.NewDeleteRequestsClient`, refreshed every
   5 minutes) and no longer cost a ClickHouse round trip per query. lokihouse
   resolves the stream on `streams` (≈2 ms) before the 3 ms read; Loki's
-  ingester answered in 9.8 ms in this run, but 5.5 ms unsharded, so the
-  unsharded Loki (5.5 ms) is faster than lokihouse.
-- **`unwrap quantile` (1.09×).** It runs in lokihouse's own copy of Loki's
+  ingester answered in 5.1 ms in this run (9.8 ms in the previous one), so
+  Loki is faster than lokihouse here.
+- **`unwrap quantile` (1.00×).** It runs in lokihouse's own copy of Loki's
   engine, single-threaded per query; Loki shards it and evaluates the shards
   in parallel.
-- **`labels` (2.9×) and `series` (1.3×).** Each is one ClickHouse query of
+- **`labels` (2.7×) and `series` (1.4×).** Each is one ClickHouse query of
   about 1 ms plus the round trip, against Loki's in-memory ingester index;
   about 1 ms in absolute terms.
 
 **Object storage.** With both sides reading from S3 and both caches warm,
 lokihouse (S3 + cache) runs within 2 ms of its local-disk numbers and keeps
-its lead on the aggregations (`count_over_time` 0.23×, `topk` 0.42×,
-`bytes_over_time` 0.53×, `rate regex` 0.88×). Loki, reading flushed chunks
+its lead on the aggregations (`count_over_time` 0.26×, `topk` 0.45×,
+`bytes_over_time` 0.57×, `rate regex` 0.92×) and edges ahead on
+`logfmt filter` (0.92×, 23 ms against 25 ms). Loki, reading flushed chunks
 through its chunk cache, is faster and steadier on the line-returning
-queries than from its own ingester (`logfmt filter` 26 ms against 41 ms), so
-lokihouse loses those (`logfmt filter` 1.24×, `log filter` 1.56×, +3 ms),
-`unwrap quantile` (1.10×), and the metadata endpoints, whose Loki answers
-come from the downloaded TSDB index in under 2 ms.
+queries than from its own ingester (`logfmt filter` 25 ms against 43 ms), so
+lokihouse still loses `log filter` (1.63×, +3 ms), `unwrap quantile`
+(1.04×), and the metadata endpoints, whose Loki answers come from the
+downloaded TSDB index in under 2 ms.
 
 Without its filesystem cache, ClickHouse fetches parts from S3 on every
-query and adds 2–17 ms; it still beats Loki on the three heaviest
+query and adds 2–13 ms; it still beats Loki on the three heaviest
 aggregations. Loki has no comparable uncached mode: its embedded chunk cache
 is always on unless another cache replaces it.
 
