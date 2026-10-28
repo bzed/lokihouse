@@ -4,6 +4,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -273,6 +276,39 @@ func TestKeyset_SubSecondTimestamps(t *testing.T) {
 // A single-stream log query reads its rows in the part's physical order; the
 // keyset chunks must still return exactly the same entries as one big chunk,
 // in both directions, duplicates counted once.
+// Chunks after the first grow 4x, so a read that drops most rows in Go needs
+// few round trips; a short chunk still ends the read.
+func TestKeyset_ChunksGrow(t *testing.T) {
+	conn, db := chtest.New(t)
+	var es []logproto.Entry
+	for i := range 100 {
+		line := fmt.Sprint("l", i)
+		if i == 0 {
+			line = "hit " + line
+		}
+		es = append(es, logproto.Entry{Timestamp: t0.Add(time.Duration(i) * time.Second), Line: line})
+	}
+	seed(t, &chstore.Writer{Conn: conn}, "t1", logproto.Stream{Labels: `{app="a"}`, Entries: es})
+	chstore.SetLogChunkSize(1)
+	t.Cleanup(func() { chstore.SetLogChunkSize(1000) })
+	since := time.Now()
+	res := run(t, engine(t, &chstore.Querier{Conn: conn}), `{app="a"} |~ "hit" or "zzz"`, t0, t0.Add(time.Hour), 0, logproto.BACKWARD, 1)
+	streams := res.Data.(logqlmodel.Streams)
+	require.Len(t, streams, 1)
+	require.Equal(t, []string{"hit l0"}, lines(streams[0]))
+	re := regexp.MustCompile(`LIMIT (\d+)\s*$`)
+	var limits []int
+	for _, q := range queriesSince(t, conn, db, since, "FROM logs") {
+		m := re.FindStringSubmatch(q)
+		require.NotNil(t, m, q)
+		n, err := strconv.Atoi(m[1])
+		require.NoError(t, err)
+		limits = append(limits, n)
+	}
+	slices.Sort(limits)
+	require.Equal(t, []int{1, 4, 16, 64, 256}, limits)
+}
+
 func TestKeyset_SingleStreamChunks(t *testing.T) {
 	conn, _ := chtest.New(t)
 	w := &chstore.Writer{Conn: conn}
@@ -481,20 +517,20 @@ func TestSelectLogs_SingleStreamKeysetPrunes(t *testing.T) {
 	chstore.SetLogChunkSize(2000)
 	t.Cleanup(func() { chstore.SetLogChunkSize(1000) })
 	since := time.Now()
-	// 5 000 matches, 500 per 5 000-row chunk: ten chunks to reach the limit.
+	// 5 000 matches, 500 per 5 000-row chunk: the chunks grow to 10 000 rows, so six to reach the limit.
 	res := run(t, engine(t, &chstore.Querier{Conn: conn}), `{app="a"} |~ "keep" or "zzz"`, t0, t0.Add(time.Hour), 0, logproto.FORWARD, 5000)
 	streams := res.Data.(logqlmodel.Streams)
 	require.Len(t, streams, 1)
 	require.Len(t, lines(streams[0]), 5000)
-	// Ten chunks of 5 000 rows. With pruning every chunk reads the one or
-	// two granules around its boundary (308 202 rows in total, at this data's
+	// Chunks of 5 000, 10 000, 10 000, 10 000, 10 000 and 10 000 rows (the last returns 5 000). With pruning every chunk reads the one or
+	// two granules around its boundary (217 232 rows in total, at this data's
 	// block and granule sizes); the row-tuple continuation prunes nothing,
 	// so the k-th chunk re-reads the k − 1 earlier chunks (496 618 rows).
 	require.Less(t, chtest.LogsRowsRead(t, conn, db, since), uint64(400000))
 	// The continuation is the prunable (ts, entry_hash) form, not the row
 	// tuple over (stream_id, ts, entry_hash) that filters rows but prunes no
 	// granules.
-	require.Len(t, queriesSince(t, conn, db, since, "entry_hash >"), 9, "chunks 2-10 continue from the last row")
+	require.Len(t, queriesSince(t, conn, db, since, "entry_hash >"), 5, "chunks 2-6 continue from the last row")
 }
 
 // A case-insensitive line filter is pushed to ClickHouse only when ILIKE and

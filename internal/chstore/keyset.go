@@ -12,12 +12,23 @@ import (
 // shrink it (SetLogChunkSize in export_test.go); production code never writes it.
 var logChunkSize = 1000
 
+// maxLogChunkSize caps chunk growth. It equals ClickHouse 26.9's default
+// query_plan_max_limit_for_lazy_materialization: above it ClickHouse reads
+// line and structured_metadata for every scanned row, not only the top N.
+const maxLogChunkSize = 10_000
+
+// nextChunkSize grows a chunk 4x up to maxLogChunkSize and never shrinks it,
+// so a limit above the cap keeps its size.
+func nextChunkSize(n int) int { return max(n, min(4*n, maxLogChunkSize)) }
+
 func chunkSize(limit uint32) int { return max(int(limit), logChunkSize) }
 
 // keysetReader reads rows in keyset chunks so ClickHouse can use top-N sorting
 // instead of sorting the whole range: each chunk is a LIMIT query continuing
 // from the last row's key. Rows with an identical key are unmerged exact
 // duplicates, so the strict key comparison at a chunk boundary dedups them.
+// Chunks after the first grow 4x up to maxLogChunkSize, so a read whose rows
+// are mostly dropped in Go needs few round trips.
 // It has the same shape as rowReader.
 type keysetReader struct {
 	ctx   context.Context
@@ -105,6 +116,7 @@ func (k *keysetReader) next() bool {
 		}
 		_ = k.rr.close()
 		k.rr = nil
+		k.chunk = nextChunkSize(k.chunk)
 	}
 }
 

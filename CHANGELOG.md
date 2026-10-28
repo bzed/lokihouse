@@ -12,6 +12,7 @@ changelog (`debian/changelog`) carries the same releases.
 
 ### Changed
 
+- Log queries whose lines are mostly dropped by filters evaluated in lokihouse (for example `| logfmt | status >= 500`) read ClickHouse in growing chunks (4× per chunk, up to 10 000 rows) instead of fixed chunks of the query limit, so they need fewer round trips.
 - Queries look up a tenant's pending delete requests through Loki's delete-requests cache, refreshed every 5 minutes, instead of querying ClickHouse every time: as in Loki, a new or cancelled delete request can take up to 5 minutes to change query results.
 - Log queries whose selector matches a single stream read ClickHouse in the part's physical order instead of sorting the range by timestamp; their pagination continues from the last row with a keyset predicate the primary key can prune. On a cluster, a single-stream log query is routed to the shard that owns the stream.
 - Pinned Loki commit bumped from `bc196286` to `39c256e5` (2026-10-27). Inherited from Loki: `sum`, `avg`, `sum_over_time`, `avg_over_time` and unwrapped `rate`/`bytes_rate` use Kahan summation (results can differ in the last digits); `|~ "a .*(bb|cc)"` no longer misses lines such as `a x bb`; `|~ ".*"` counts as no filter; stream-first metric queries stop at the first pipeline error; a parser after `| drop name` keeps `name` instead of `name_extracted`. Push metrics and responses are unchanged.
