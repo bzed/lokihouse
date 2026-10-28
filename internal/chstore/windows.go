@@ -177,9 +177,24 @@ type windowReader struct {
 	opened int
 	cursor rowSource
 	err    error
+	// primed is set by prime: the first next() already ran and its result,
+	// primedOK, is returned by the next call to next().
+	primed, primedOK bool
+}
+
+// prime runs the first next() ahead of time, so the first window's read starts
+// now, and remembers its result for the following next(). Call it at most
+// once, before any next().
+func (r *windowReader) prime() {
+	r.primedOK = r.next()
+	r.primed = true
 }
 
 func (r *windowReader) next() bool {
+	if r.primed {
+		r.primed = false
+		return r.primedOK
+	}
 	for r.err == nil {
 		if r.cursor == nil {
 			if r.opened >= len(r.ws) {

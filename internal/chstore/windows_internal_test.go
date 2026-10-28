@@ -1,6 +1,7 @@
 package chstore
 
 import (
+	"errors"
 	"math/rand"
 	"slices"
 	"strings"
@@ -106,4 +107,67 @@ func TestRowQuery_SingleStreamPartOrder(t *testing.T) {
 			require.Contains(t, sql, tc.want, sql)
 		})
 	}
+}
+
+// winRows is a rowSource over a fixed list of rows.
+type winRows struct {
+	rows []row
+	i    int
+}
+
+func (f *winRows) next() bool {
+	if f.i >= len(f.rows) {
+		return false
+	}
+	f.i++
+	return true
+}
+func (f *winRows) cur() row     { return f.rows[f.i-1] }
+func (f *winRows) errOf() error { return nil }
+func (f *winRows) close() error { return nil }
+
+func rowsOf(ids ...uint64) []row {
+	out := make([]row, len(ids))
+	for i, id := range ids {
+		out[i] = row{streamID: id}
+	}
+	return out
+}
+
+func TestWindowReader_PrimeSameRows(t *testing.T) {
+	windows := [][]row{rowsOf(1, 2), rowsOf(3)}
+	drain := func(prime bool) (ids []uint64, opened int) {
+		r := &windowReader{ws: []window{{0, 1}, {1, 2}}, open: func(w window) (rowSource, error) {
+			return &winRows{rows: windows[w.lo]}, nil
+		}}
+		if prime {
+			r.prime()
+			opened = r.opened
+		}
+		for r.next() {
+			ids = append(ids, r.cur().streamID)
+		}
+		require.NoError(t, r.errOf())
+		return ids, opened
+	}
+	plain, _ := drain(false)
+	primed, opened := drain(true)
+	require.Equal(t, []uint64{1, 2, 3}, plain)
+	require.Equal(t, plain, primed)
+	require.Equal(t, 1, opened)
+}
+
+func TestWindowReader_PrimeEmpty(t *testing.T) {
+	r := &windowReader{ws: []window{{0, 1}}, open: func(window) (rowSource, error) { return &winRows{}, nil }}
+	r.prime()
+	require.False(t, r.next())
+	require.NoError(t, r.errOf())
+}
+
+func TestWindowReader_PrimeError(t *testing.T) {
+	errBoom := errors.New("boom")
+	r := &windowReader{ws: []window{{0, 1}}, open: func(window) (rowSource, error) { return nil, errBoom }}
+	r.prime()
+	require.False(t, r.next())
+	require.ErrorIs(t, r.errOf(), errBoom)
 }
