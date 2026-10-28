@@ -61,3 +61,9 @@ func TestKeysetContinuation(t *testing.T) {
 		})
 	}
 }
+
+func TestNextChunkSize(t *testing.T) {
+	for n, want := range map[int]int{1: 4, 4: 16, 1000: 4000, 2500: 10000, 4000: 10000, 10000: 10000, 20000: 20000} {
+		require.Equal(t, want, nextChunkSize(n), "n=%d", n)
+	}
+}
