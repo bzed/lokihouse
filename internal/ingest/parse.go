@@ -80,6 +80,12 @@ func parsePush(r *http.Request, logger log.Logger, tenantID string, limits push.
 	return req, nil
 }
 
+// lineBreaks removes the characters that let a client-controlled value forge
+// additional log lines.
+var lineBreaks = strings.NewReplacer("\r", "", "\n", "")
+
+func logSafe(s string) string { return lineBreaks.Replace(s) }
+
 func recordParsedRequest(r *http.Request, logger log.Logger, tenantID, format string, req *logproto.InternalPushRequest, stats *push.Stats) {
 	// A parser need not populate req/stats on every error it returns.
 	if req == nil || stats == nil {
@@ -128,7 +134,7 @@ func recordParsedRequest(r *http.Request, logger log.Logger, tenantID, format st
 
 	logValues := []interface{}{
 		"msg", "push request parsed",
-		"path", r.URL.Path,
+		"path", logSafe(r.URL.Path),
 		"contentType", stats.ContentType,
 		"contentEncoding", stats.ContentEncoding,
 		"bodySize", humanize.Bytes(uint64(max(stats.BodySize, 0))),
@@ -140,7 +146,7 @@ func recordParsedRequest(r *http.Request, logger log.Logger, tenantID, format st
 	// label values.
 	userAgent := strings.ToValidUTF8(r.Header.Get("User-Agent"), "")
 	if userAgent != "" {
-		logValues = append(logValues, "userAgent", strings.TrimSpace(userAgent))
+		logValues = append(logValues, "userAgent", logSafe(strings.TrimSpace(userAgent)))
 	}
 	// Negative lag (timestamps in the future) says nothing about ingestion
 	// falling behind, and values over 1e9 come from misbehaving OTLP clients.
