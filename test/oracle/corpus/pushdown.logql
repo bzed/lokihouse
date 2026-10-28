@@ -49,7 +49,8 @@ range:bytes_over_time({app="web"} |~ "GET|POST|DELETE"[10m])
 range:count_over_time({app="web"} |= "" or "POST"[5m])
 range:sum by (app) (rate({app=~"web|api"} |= "DELETE" or ""[1m]))
 
-# Regex filters that fail the gate (should run in Tier B)
+# Regex filters Loki reduces to literal substrings: pushed down as LIKE, not
+# match() (GET|.* reproduces Loki dropping the match-all leg, grafana/loki#25828)
 range:count_over_time({app="web"} |~ ".*error.*"[5m])
 range:rate({app="api"} |~ "level=(error|warn)"[1m])
 range:count_over_time({app="api"} !~ "level=(error|warn)"[5m])
