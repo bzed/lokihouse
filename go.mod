@@ -42,6 +42,7 @@ require (
 	github.com/grafana/dskit v0.0.0-20261020024919-08fe193cb625
 	github.com/grafana/loki/v3 v3.0.0-20261027220337-39c256e50a80
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/prometheus/client_golang v1.25.0
@@ -199,7 +200,6 @@ require (
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
-	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/memberlist v0.7.0 // indirect
 	github.com/hashicorp/serf v0.11.0 // indirect
 	github.com/huandu/xstrings v1.6.3 // indirect
