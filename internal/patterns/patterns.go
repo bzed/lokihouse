@@ -46,7 +46,7 @@ func (p *Querier) logger() log.Logger {
 	return p.Logger
 }
 
-// Copied from grafana/loki@bc196286 pkg/pattern/ingester_querier.go (minClusterSize, maxPatterns).
+// Copied from grafana/loki@39c256e5 pkg/pattern/ingester_querier.go (minClusterSize, maxPatterns).
 const (
 	minClusterSize = 30
 	maxPatterns    = 300
@@ -153,7 +153,7 @@ func (p *Querier) Query(ctx context.Context, req *logproto.QueryPatternsRequest)
 	return querierpattern.MergePatternResponses([]*logproto.QueryPatternsResponse{prunePatterns(resp)}), nil
 }
 
-// Copied from grafana/loki@bc196286 pkg/pattern/ingester_querier.go (prunePatterns);
+// Copied from grafana/loki@39c256e5 pkg/pattern/ingester_querier.go (prunePatterns);
 // modifications: the metrics parameter is dropped (lokihouse has no pattern metrics).
 func prunePatterns(resp *logproto.QueryPatternsResponse) *logproto.QueryPatternsResponse {
 	total := make([]int64, len(resp.Series))

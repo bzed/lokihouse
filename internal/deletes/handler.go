@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-// Copied from grafana/loki@bc196286 pkg/compactor/deletion/request_handler.go and
+// Copied from grafana/loki@39c256e5 pkg/compactor/deletion/request_handler.go and
 // tenant_request_handler.go (handler methods, interval, query, startTime, endTime,
 // parseTime, timeFromInt, TenantMiddleware, validDeletionLimit, deleteModeFromLimits)
 // and util.go (parseDeletionQuery); modifications:

@@ -1,4 +1,4 @@
-// Copied from grafana/loki@bc196286 pkg/distributor/field_detection_test.go
+// Copied from grafana/loki@39c256e5 pkg/distributor/field_detection_test.go
 // (the tests of the functions in field_detection.go); modifications: package
 // distcopy; Distributor-based tests dropped; validationContext built with
 // lokihouse's copy.

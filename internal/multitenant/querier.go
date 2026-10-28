@@ -3,7 +3,7 @@
 // result labelled with __tenant_id__, merged the way Loki's multi-tenant
 // querier does.
 //
-// Copied from grafana/loki@bc196286 pkg/querier/multi_tenant_querier.go
+// Copied from grafana/loki@39c256e5 pkg/querier/multi_tenant_querier.go
 // (SelectLogs, SelectSamples, Label, Series, removeTenantSelector,
 // replaceMatchers, filterValuesByMatchers, sliceToSet, relabel and the
 // defaultTenantLabel/retainExistingPrefix constants); modifications: wraps

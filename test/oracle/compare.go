@@ -18,7 +18,7 @@ import (
 )
 
 // Compare normalises and diffs two Loki JSON responses, failing t on any
-// difference. data.stats and data.encodingFlags are dropped. Within each stream,
+// difference. data.stats, the top-level stats of detected_fields and data.encodingFlags are dropped. Within each stream,
 // entries sharing a timestamp are sorted (spec §7.1: tie order inside one stream
 // is undefined).
 func Compare(t *testing.T, name string, a, b []byte) {
@@ -153,6 +153,10 @@ func normalise(raw []byte) ([]byte, error) {
 		// Unmarshal returned nil root (should not happen after Valid), return raw
 		return []byte(strings.TrimSpace(string(raw))), nil
 	}
+	// detected_fields and detected_field/*/values carry the scan statistics
+	// at the top level since Loki 39c256e5; like data.stats they are
+	// store-specific.
+	delete(root, "stats")
 	data, _ := root["data"].(map[string]any)
 	if data != nil {
 		delete(data, "stats")

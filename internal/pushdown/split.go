@@ -33,7 +33,7 @@ type SplitMetrics struct{ partitions prometheus.Histogram }
 
 // NewSplitMetrics registers loki_query_frontend_partitions on r.
 //
-// Copied from grafana/loki@bc1962860a1607eccb7e0c8ee206970b292b9e80 pkg/querier/queryrange/split_by_interval.go;
+// Copied from grafana/loki@39c256e50a804c045d5eb4e3c817a31653b535fe pkg/querier/queryrange/split_by_interval.go;
 // modifications: type and field names, registered by the caller's registerer.
 func NewSplitMetrics(r prometheus.Registerer) *SplitMetrics {
 	return &SplitMetrics{
@@ -74,7 +74,7 @@ type splitQuery struct {
 // seriesLimitPartialResultsWarning returns the warning of a query that returns partial results
 // because it reached the series limit.
 //
-// Copied from grafana/loki@bc1962860a1607eccb7e0c8ee206970b292b9e80 pkg/logql/engine.go; modifications: none.
+// Copied from grafana/loki@39c256e50a804c045d5eb4e3c817a31653b535fe pkg/logql/engine.go; modifications: none.
 func seriesLimitPartialResultsWarning(maxSeries int) string {
 	return fmt.Sprintf("maximum number of series (%d) reached for a single query; returning partial results", maxSeries)
 }

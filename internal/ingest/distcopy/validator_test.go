@@ -1,4 +1,4 @@
-// Copied from grafana/loki@bc196286 pkg/distributor/validator_test.go
+// Copied from grafana/loki@39c256e5 pkg/distributor/validator_test.go
 // (the tests of the functions in validator.go); modifications: package
 // distcopy; validationContext built with lokihouse's copy.
 

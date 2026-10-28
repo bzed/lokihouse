@@ -1,6 +1,6 @@
 package multitenant
 
-// Copied from grafana/loki@bc196286 pkg/querier/multi_tenant_querier.go
+// Copied from grafana/loki@39c256e5 pkg/querier/multi_tenant_querier.go
 // (IndexStats, Volume, Patterns, DetectedLabels); modifications: wraps
 // lokihouse's IndexStore instead of Loki's querier.Querier, and IndexStats
 // takes the codec's *logproto.IndexStatsRequest instead of *loghttp.RangeQuery.

@@ -1,4 +1,4 @@
-// Copied from grafana/loki@bc196286 pkg/distributor/distributor.go
+// Copied from grafana/loki@39c256e5 pkg/distributor/distributor.go
 // (processStreamEntries, normalizeMetadataGroup, normalizeStructuredMetadata,
 // parseStreamLabels, truncateLines, missingEnforcedLabels, metadataGroup,
 // newMetadataGroup, duplicateTimestampTracker and the push request loop);

@@ -1,4 +1,4 @@
-LOKI_COMMIT := bc1962860a1607eccb7e0c8ee206970b292b9e80
+LOKI_COMMIT := 39c256e50a804c045d5eb4e3c817a31653b535fe
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
 REVISION   ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null)
 BRANCH     ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)

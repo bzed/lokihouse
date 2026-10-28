@@ -1,6 +1,6 @@
 # One OSV ID per line, each with a reason. Reviewed entries only.
 # GO-2026-5115: false positive. The advisory covers grafana/loki/v3 < v3.6.4;
-# the pinned pseudo-version v3.0.0-20261012182635-bc1962860a16 sorts below it,
+# the pinned pseudo-version v3.0.0-20261027220337-39c256e50a80 sorts below it,
 # but the commit is newer and rejects namespace path traversal
 # (pkg/ruler/base/api.go parseNamespace: filepath.IsLocal).
 # Proven by internal/ruler TestRules_PathTraversalRejected.

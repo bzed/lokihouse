@@ -60,8 +60,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if decompSize == 0 {
 		decompSize = maxDecompressedSize
 	}
-	req, _, err := push.ParseRequest(h.Logger, tenantID, recvSize, decompSize, r,
-		h.Limits, nil, parser, nil, nil, "", format)
+	req, err := parsePush(r, h.Logger, tenantID, h.Limits, parser, format, recvSize, decompSize)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
