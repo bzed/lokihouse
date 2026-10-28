@@ -257,35 +257,76 @@ func waitPatternsReady(t *testing.T, loki string, tenant string, query string, s
 	t.Fatalf("patterns did not become ready within %v", timeout)
 }
 
-// waitStatsReady forces a flush of Loki's ingester chunks and then polls
-// index/stats until it returns non-zero entries, or until the timeout is
-// reached. This is needed because Loki's index/stats reads from the TSDB
-// index, which is built asynchronously after the ingester flushes chunks.
+// lokiTSDBRotation is the period at which Loki's ingester rotates its TSDB
+// head (defaultRotationPeriod in pkg/storage/stores/shipper/indexshipper/tsdb
+// head_manager.go), aligned to the Unix epoch.
+const lokiTSDBRotation = 15 * time.Minute
+
+// waitStatsReady flushes Loki's ingester and polls index/stats until it counts
+// exactly the entries Loki's own count_over_time finds for query, or fails at
+// the timeout. Loki's index/stats only sees flushed chunks, and the flush is
+// asynchronous, so the first non-zero answer can be partial. After a TSDB head
+// rotation Loki also counts the chunks of the rotated head and of the shipped
+// index file again (874 entries became 1748, then 2622, within 3 minutes of a
+// boundary). The flush therefore waits out a rotation boundary that is less
+// than two minutes away, so the flush and the comparisons that follow it run
+// in one rotation period.
 func waitStatsReady(t *testing.T, loki string, tenant string, query string, start, end time.Time, timeout time.Duration) {
 	t.Helper()
-	// Force the ingester to flush all chunks.
-	req, _ := http.NewRequest(http.MethodPost, loki+"/flush", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err == nil {
-		_, _ = io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Logf("flush triggered: status %d", resp.StatusCode)
+	if next := time.Now().Truncate(lokiTSDBRotation).Add(lokiTSDBRotation); time.Until(next) < 2*time.Minute {
+		t.Logf("waiting for Loki's TSDB head rotation at %s before flushing", next.Format(time.TimeOnly))
+		time.Sleep(time.Until(next) + 5*time.Second) // a wall-clock boundary, not a state to poll
 	}
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	want := lokiCount(t, loki, tenant, query, start, end)
+	req, err := http.NewRequest(http.MethodPost, loki+"/flush", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	_, _ = io.ReadAll(resp.Body) // drained only to reuse the connection
+	_ = resp.Body.Close()        // read-only body
+	var got uint64
+	for deadline := time.Now().Add(timeout); time.Now().Before(deadline); time.Sleep(time.Second) {
 		a := Get(t, loki+"/loki/api/v1/index/stats?"+url.Values{
 			"query": {query},
 			"start": {strconv.FormatInt(start.UnixNano(), 10)},
 			"end":   {strconv.FormatInt(end.UnixNano(), 10)},
 		}.Encode(), tenant)
 		var stats struct{ Entries uint64 }
-		if err := json.Unmarshal(a, &stats); err == nil && stats.Entries > 0 {
-			t.Logf("index/stats ready after waiting")
-			return
+		if err := json.Unmarshal(a, &stats); err == nil {
+			got = stats.Entries
+			if got == want {
+				t.Logf("index/stats counts all %d entries", want)
+				return
+			}
 		}
-		time.Sleep(5 * time.Second)
 	}
-	t.Fatalf("index/stats did not become ready within %v", timeout)
+	t.Fatalf("index/stats counted %d of %d entries within %v", got, want, timeout)
+}
+
+// lokiCount returns the number of entries Loki's query engine finds for query
+// in [start, end].
+func lokiCount(t *testing.T, loki, tenant, query string, start, end time.Time) uint64 {
+	t.Helper()
+	q := fmt.Sprintf("sum(count_over_time(%s[%ds]))", query, int64(end.Sub(start).Seconds()))
+	b := Get(t, loki+"/loki/api/v1/query?"+url.Values{"query": {q}, "time": {strconv.FormatInt(end.UnixNano(), 10)}}.Encode(), tenant)
+	var r struct {
+		Data struct {
+			Result []struct{ Value []any }
+		}
+	}
+	if err := json.Unmarshal(b, &r); err != nil || len(r.Data.Result) != 1 || len(r.Data.Result[0].Value) != 2 {
+		t.Fatalf("count %s: unexpected response %s", q, b)
+	}
+	v, _ := r.Data.Result[0].Value[1].(string)
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil || n < 0 || n > math.MaxUint32 {
+		t.Fatalf("count %s: bad value %q", q, v)
+	}
+	return uint64(n)
 }
 
 // deletesOracle exercises the delete API end-to-end: push a stream, delete a
