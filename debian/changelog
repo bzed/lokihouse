@@ -1,3 +1,16 @@
+lokihouse (0.13.0) trixie; urgency=medium
+
+  * Metric range queries in lokihouse's own engine are split by
+    split_queries_by_interval and evaluated in parallel.
+  * Log queries filtered in Go read ClickHouse in growing chunks (4x, up
+    to 10000 rows), needing fewer round trips. Single-stream log queries
+    read in the part's physical order; delete requests come from Loki's
+    cache; pinned Loki commit bumped to 39c256e5. Security: strip line
+    breaks from client values in the push debug log (CodeQL go/log-
+    injection).
+
+ -- Bernd Zeimetz <bernd@bzed.de>  Wed, 28 Oct 2026 13:21:01 +0100
+
 lokihouse (0.12.0) trixie; urgency=medium
 
   * Metric queries in lokihouse's own engine (unwrap,
