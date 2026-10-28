@@ -44,6 +44,11 @@ range:count_over_time({app="web"} |~ "status=(4|5)\d\d"[5m])
 range:rate({app="api"} |~ "level=error"[1m])
 range:bytes_over_time({app="web"} |~ "GET|POST|DELETE"[10m])
 
+# Or chains with an empty operand: Loki drops the empty operand instead of
+# keeping every line (grafana/loki#25828)
+range:count_over_time({app="web"} |= "" or "POST"[5m])
+range:sum by (app) (rate({app=~"web|api"} |= "DELETE" or ""[1m]))
+
 # Regex filters that fail the gate (should run in Tier B)
 range:count_over_time({app="web"} |~ ".*error.*"[5m])
 range:rate({app="api"} |~ "level=(error|warn)"[1m])

@@ -238,14 +238,23 @@ func containsFragment(s string) Fragment {
 	return Fragment{"line LIKE ?", []any{"%" + escapedLike(s) + "%"}}
 }
 
-// containsAny is true for lines containing any of the alternatives' matches.
+// containsAny is true for lines containing any of the alternatives' matches. Like
+// Loki's newOrFilter, it drops empty alternatives instead of matching every line
+// (|= "" or "x" keeps only lines containing x); with no alternative left it is
+// empty, as Loki keeps every line.
 func containsAny(alts []*syntax.LineFilterExpr) Fragment {
 	sqls := make([]string, 0, len(alts))
 	args := make([]any, 0, len(alts))
 	for _, a := range alts {
+		if a.Match == "" {
+			continue
+		}
 		f := containsFragment(a.Match)
 		sqls = append(sqls, f.SQL)
 		args = append(args, f.Args...)
+	}
+	if len(sqls) == 0 {
+		return Fragment{}
 	}
 	return Fragment{"(" + strings.Join(sqls, " OR ") + ")", args}
 }

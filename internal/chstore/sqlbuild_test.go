@@ -90,12 +90,16 @@ func TestLeadingLineFilterSQL(t *testing.T) {
 
 func TestExactFilterSQL(t *testing.T) {
 	exact := map[string]Fragment{
-		`{a="b"}`:                    {},
-		`{a="b"} |= "x" or "y"`:      {SQL: "(line LIKE ? OR line LIKE ?)", Args: []any{"%x%", "%y%"}},
-		`{a="b"} != "x"`:             {SQL: "position(line, ?) = 0", Args: []any{"x"}},
-		`{a="b"} |~ "ab(c|d)"`:       {SQL: "line LIKE ? AND match(line, ?)", Args: []any{"%ab%", "ab(c|d)"}},
-		`{a="b"} !~ "ab"`:            {SQL: "NOT match(line, ?)", Args: []any{"ab"}},
-		`{a="b"} |= "50%_\\" |= "y"`: {SQL: "(line LIKE ?) AND (line LIKE ?)", Args: []any{`%50\%\_\\%`, "%y%"}},
+		`{a="b"}`:               {},
+		`{a="b"} |= "x" or "y"`: {SQL: "(line LIKE ? OR line LIKE ?)", Args: []any{"%x%", "%y%"}},
+		// Loki drops an empty operand of an or chain instead of keeping every line.
+		`{a="b"} |= "" or "x"`:        {SQL: "(line LIKE ?)", Args: []any{"%x%"}},
+		`{a="b"} |= "x" or "" or "y"`: {SQL: "(line LIKE ? OR line LIKE ?)", Args: []any{"%x%", "%y%"}},
+		`{a="b"} |= "" or ""`:         {},
+		`{a="b"} != "x"`:              {SQL: "position(line, ?) = 0", Args: []any{"x"}},
+		`{a="b"} |~ "ab(c|d)"`:        {SQL: "line LIKE ? AND match(line, ?)", Args: []any{"%ab%", "ab(c|d)"}},
+		`{a="b"} !~ "ab"`:             {SQL: "NOT match(line, ?)", Args: []any{"ab"}},
+		`{a="b"} |= "50%_\\" |= "y"`:  {SQL: "(line LIKE ?) AND (line LIKE ?)", Args: []any{`%50\%\_\\%`, "%y%"}},
 	}
 	for q, want := range exact {
 		e, err := syntax.ParseLogSelector(q, true)

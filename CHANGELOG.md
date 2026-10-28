@@ -16,6 +16,10 @@ changelog (`debian/changelog`) carries the same releases.
 - Log queries whose selector matches a single stream read ClickHouse in the part's physical order instead of sorting the range by timestamp; their pagination continues from the last row with a keyset predicate the primary key can prune. On a cluster, a single-stream log query is routed to the shard that owns the stream.
 - Pinned Loki commit bumped from `bc196286` to `39c256e5` (2026-10-27). Inherited from Loki: `sum`, `avg`, `sum_over_time`, `avg_over_time` and unwrapped `rate`/`bytes_rate` use Kahan summation (results can differ in the last digits); `|~ "a .*(bb|cc)"` no longer misses lines such as `a x bb`; `|~ ".*"` counts as no filter; stream-first metric queries stop at the first pipeline error; a parser after `| drop name` keeps `name` instead of `name_extracted`. Push metrics and responses are unchanged.
 
+### Fixed
+
+- Metric queries with a `|=` or chain that has an empty operand, such as `count_over_time({app="web"} |= "" or "POST" [5m])`, counted every line instead of only those matching the non-empty operands. Like Loki, an empty operand is now ignored.
+
 ## [0.12.0] - 2026-10-24
 
 ### Changed
