@@ -229,7 +229,7 @@ func MigrateSchema(ctx context.Context, cfg *config.Config, logger log.Logger) e
 
 // newAPI builds the HTTP API over conn (moved unchanged from cmd/lokihouse).
 func newAPI(cfg *config.Config, conn driver.Conn, store *deletes.Store, dels deletion.DeleteRequestsClient, limits *validation.Overrides, logger log.Logger, rulerReg prometheus.Registerer) (*api.API, *chstore.Querier) {
-	q := &chstore.Querier{Conn: conn, Deletes: dels}
+	q := &chstore.Querier{Conn: conn, Deletes: dels, StreamCache: chstore.NewStreamSetCache()}
 	// When multi-tenant queries are enabled, log/metric queries fan out per
 	// tenant through the multi-tenant querier; Tier A (SQL) is single-tenant
 	// and is bypassed for multi-tenant requests (pushdown engine guard).

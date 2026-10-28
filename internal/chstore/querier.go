@@ -33,6 +33,10 @@ type Querier struct {
 	// 0 means runtime.GOMAXPROCS(0) read at query time. The effective count is
 	// capped at the number of matching streams.
 	Workers int
+	// StreamCache, when set, lets SelectLogs start reading lines while the
+	// stream lookup of a repeated selector runs (speculateLogs). Nil disables
+	// speculation.
+	StreamCache *StreamSetCache
 }
 
 var _ logql.Querier = (*Querier)(nil)
@@ -69,6 +73,14 @@ func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req 
 	if err != nil || len(streams) == 0 {
 		return resolved{}, err
 	}
+	return q.resolvedFor(tenantID, sel, req, dir, streams), nil
+}
+
+// resolvedFor builds the row query for the selector over a non-empty stream set.
+func (q *Querier) resolvedFor(tenantID string, sel syntax.LogSelectorExpr, req interface {
+	GetStart() time.Time
+	GetEnd() time.Time
+}, dir logproto.Direction, streams []Stream) resolved {
 	ids := sortedIDs(streams)
 	byID := make(map[uint64]Stream, len(streams))
 	for _, s := range streams {
@@ -77,7 +89,7 @@ func (q *Querier) openRows(ctx context.Context, sel syntax.LogSelectorExpr, req 
 	return resolved{
 		byID: byID, ids: ids, from: req.GetStart(), until: req.GetEnd(),
 		rq: rowQuery{tenant: tenantID, filter: and([]Fragment{LeadingLineFilterSQL(sel), MetadataFilterSQL(sel, streams), ParsedFilterSQL(sel, streams)}), dir: dir},
-	}, nil
+	}
 }
 
 // readWindows renders the read windows of a resolved query.
@@ -106,10 +118,37 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	if pipeline, err = utildeletion.SetupPipeline(p, pipeline); err != nil {
 		return nil, err
 	}
-	r, err := q.openRows(ctx, sel, p.QueryRequest, p.Direction)
-	if err != nil || len(r.byID) == 0 {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if q.StreamCache == nil {
+		streams, err := ResolveStreams(ctx, q.Conn, tenantID, sel.Matchers(), p.Start, p.End)
+		if err != nil {
+			return iter.NoopEntryIterator, err
+		}
+		return q.logIter(ctx, sel, p, pipeline, tenantID, streams, false)
+	}
+	key := streamSetKey(tenantID, sel.Matchers(), p.Start, p.End)
+	if cached, ok := q.StreamCache.get(key); ok {
+		return q.speculateLogs(ctx, sel, p, pipeline, tenantID, key, cached)
+	}
+	streamSpeculations.WithLabelValues("miss").Inc()
+	streams, err := ResolveStreams(ctx, q.Conn, tenantID, sel.Matchers(), p.Start, p.End)
+	if err != nil {
 		return iter.NoopEntryIterator, err
 	}
+	q.StreamCache.put(key, streams)
+	return q.logIter(ctx, sel, p, pipeline, tenantID, streams, false)
+}
+
+// logIter builds the log iterator over streams. With prime, the first read
+// window is opened (its first chunk query runs) before it returns.
+func (q *Querier) logIter(ctx context.Context, sel syntax.LogSelectorExpr, p logql.SelectLogParams, pipeline log.Pipeline, tenantID string, streams []Stream, prime bool) (iter.EntryIterator, error) {
+	if len(streams) == 0 {
+		return iter.NoopEntryIterator, nil
+	}
+	r := q.resolvedFor(tenantID, sel, p.QueryRequest, p.Direction, streams)
 	// One stream: read its rows in the part's physical order (rowQuery.single),
 	// restricted to the stream by id so the shard analysis can route the query
 	// to the owning shard (perStreamContext).
@@ -135,6 +174,9 @@ func (q *Querier) SelectLogs(ctx context.Context, p logql.SelectLogParams) (iter
 	wr := &windowReader{ws: ws, cancel: cancel, open: func(w window) (rowSource, error) {
 		return &keysetReader{ctx: rctx, conn: q.Conn, rq: r.rq, w: w, chunk: chunkSize(p.Limit)}, nil
 	}}
+	if prime {
+		wr.prime()
+	}
 	return &entryIter{rr: wr, byID: r.byID, pipeline: pipeline, sp: map[uint64]log.StreamPipeline{}, stats: stats.FromContext(ctx)}, nil
 }
 

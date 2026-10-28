@@ -117,6 +117,7 @@ registry plus the ruler's private registry (when the ruler is enabled).
 | `loki_discarded_samples_total` | counter | `tenant`, `reason` | Samples discarded by push validation. |
 | `go_goroutines`, `process_*`, etc. | — | — | Standard Go runtime metrics from the default registry. |
 | `lokihouse_build_info` | gauge | `version` | Build version string. |
+| `lokihouse_query_stream_speculations_total` | counter | `result` | Log queries by outcome of the speculative read on a cached stream set. `hit`: the cached stream set was still current, the read started without waiting for the stream lookup; `mismatch`: it was stale and the read was redone; `miss`: no cached set. |
 
 Ruler metrics (when enabled): `loki_ruler_*` series collected in a private
 registry and exposed through the same `/metrics` endpoint.
