@@ -6,6 +6,8 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-28
+
 ### Added
 
 - Metric range queries that run in lokihouse's own engine (`| unwrap`, `quantile_over_time`, parsers) are split by `split_queries_by_interval` (default `1h`) and the pieces are evaluated in parallel, up to `max_query_parallelism` per request and half of `clickhouse.max_open_conns` across requests; `split_queries_by_interval: 0` turns it off. The histogram `loki_query_frontend_partitions` counts the pieces.
