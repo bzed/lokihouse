@@ -5,6 +5,9 @@
 {app="web"} != "GET" |= "status=500"
 {app="web"} |= "POST" or "DELETE"
 {app="web"} |~ "status=(4|5)\d\d"
+{app="api"} |~ "level=(error|warn)"
+{app="web"} !~ "GET|POST"
+{app="web"} |~ "GET|.*"
 {app="legacy"} |= ip("10.0.0.0/8")
 {app="legacy"} | decolorize
 # parsers and formatting

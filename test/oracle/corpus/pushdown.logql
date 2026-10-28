@@ -52,6 +52,9 @@ range:sum by (app) (rate({app=~"web|api"} |= "DELETE" or ""[1m]))
 # Regex filters that fail the gate (should run in Tier B)
 range:count_over_time({app="web"} |~ ".*error.*"[5m])
 range:rate({app="api"} |~ "level=(error|warn)"[1m])
+range:count_over_time({app="api"} !~ "level=(error|warn)"[5m])
+range:rate({app="web"} |~ "GET|POST"[1m])
+range:count_over_time({app="web"} |~ "GET|.*"[5m])
 
 # Wrappers
 range:sum by (app) (count_over_time({app=~".+"}[5m]))

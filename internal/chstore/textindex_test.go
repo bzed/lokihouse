@@ -37,7 +37,7 @@ func TestLineFilterSQL_UsesTextIndex(t *testing.T) {
 		count(f)
 		require.Less(t, chtest.LogsRowsRead(t, conn, db, since), uint64(rows/2), q)
 	}
-	for _, q := range []string{`{a="b"} |= "needle"`, `{a="b"} |~ "needle"`, `{a="b"} |~ "needle(s|d)?"`, `{a="b"} |= "needle" or "haystack"`, `{a="b"} |~ "(?i)needle"`} {
+	for _, q := range []string{`{a="b"} |= "needle"`, `{a="b"} |~ "needle"`, `{a="b"} |~ "needle(s|d)?"`, `{a="b"} |~ "needle|haystack"`, `{a="b"} |= "needle" or "haystack"`, `{a="b"} |~ "(?i)needle"`} {
 		sel, err := syntax.ParseLogSelector(q, true)
 		require.NoError(t, err)
 		check("leading: "+q, chstore.LeadingLineFilterSQL(sel))

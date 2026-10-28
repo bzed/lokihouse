@@ -9,14 +9,14 @@ import (
 
 func TestLeadingLineFilterSQL_RegexAndPattern(t *testing.T) {
 	for q, want := range map[string]string{
-		`{a="b"} |~ "error"`:              "line LIKE ?",
+		`{a="b"} |~ "error"`:              "(line LIKE ?)",
 		`{a="b"} |~ "err(or)?: timeout"`:  "line LIKE ? AND line LIKE ?",
 		`{a="b"} |~ "error|warn"`:         "(line LIKE ? OR line LIKE ?)",
 		`{a="b"} |~ "e.r"`:                "",
 		`{a="b"} !~ "error"`:              "",
 		`{a="b"} |> "<_> GET <path> 200"`: "line LIKE ?",
 		`{a="b"} |> "<_>"`:                "",
-		`{a="b"} |= "x" or "y" |~ "z.*"`:  "(line LIKE ? OR line LIKE ?)",
+		`{a="b"} |= "x" or "y" |~ "z.*"`:  "(line LIKE ? OR line LIKE ?) AND (line LIKE ?)",
 	} {
 		sel, err := syntax.ParseLogSelector(q, true)
 		require.NoError(t, err)
@@ -73,11 +73,11 @@ func TestLeadingLineFilterSQL(t *testing.T) {
 		`{a="b"} |= "x" != "y"`:        {SQL: "line LIKE ? AND position(line, ?) = 0", Args: []any{"%x%", "y"}},
 		`{a="b"} |= "x" or "z"`:        {SQL: "(line LIKE ? OR line LIKE ?)", Args: []any{"%x%", "%z%"}},
 		`{a="b"} != "x" or "z"`:        {SQL: "position(line, ?) = 0 AND position(line, ?) = 0", Args: []any{"x", "z"}},
-		`{a="b"} |~ "x"`:               {}, // regex never pushed in Phase 1
+		`{a="b"} |~ "x"`:               {SQL: "(line LIKE ?)", Args: []any{"%x%"}}, // a literal regex is what Loki runs as contains
 		`{a="b"} |= "x" | json |= "y"`: {SQL: "line LIKE ?", Args: []any{"%x%"}},
 		`{a="b"} | json |= "y"`:        {},
 		`{a="b"} |= ip("10.0.0.0/8")`:  {},
-		`{a="b"} |= "x" |~ "r" |= "y"`: {SQL: "line LIKE ? AND line LIKE ?", Args: []any{"%x%", "%y%"}},
+		`{a="b"} |= "x" |~ "r" |= "y"`: {SQL: "line LIKE ? AND (line LIKE ?) AND line LIKE ?", Args: []any{"%x%", "%r%", "%y%"}},
 	}
 	for q, want := range cases {
 		t.Run(q, func(t *testing.T) {
@@ -98,7 +98,9 @@ func TestExactFilterSQL(t *testing.T) {
 		`{a="b"} |= "" or ""`:         {},
 		`{a="b"} != "x"`:              {SQL: "position(line, ?) = 0", Args: []any{"x"}},
 		`{a="b"} |~ "ab(c|d)"`:        {SQL: "line LIKE ? AND match(line, ?)", Args: []any{"%ab%", "ab(c|d)"}},
-		`{a="b"} !~ "ab"`:             {SQL: "NOT match(line, ?)", Args: []any{"ab"}},
+		`{a="b"} |~ "ab(cc|dd)"`:      {SQL: "(line LIKE ? OR line LIKE ?)", Args: []any{"%abcc%", "%abdd%"}},
+		`{a="b"} !~ "ab"`:             {SQL: "NOT (line LIKE ?)", Args: []any{"%ab%"}},
+		`{a="b"} |~ "fehler|ä"`:       {SQL: "(line LIKE ? OR line LIKE ?)", Args: []any{"%fehler%", "%ä%"}},
 		`{a="b"} |= "50%_\\" |= "y"`:  {SQL: "(line LIKE ?) AND (line LIKE ?)", Args: []any{`%50\%\_\\%`, "%y%"}},
 	}
 	for q, want := range exact {
@@ -134,6 +136,7 @@ func TestExactFilterSQL(t *testing.T) {
 		`{a="b"} |~ "x" or "y"`,
 		`{a="b"} |~ "e.r"`,
 		`{a="b"} !~ "e.r"`,
+		`{a="b"} |~ "a .*(bb|cc)"`,
 		`{a="b"} |> "<_> x"`,
 		`{a="b"} | level=~"w.*"`,
 		`{a="b"} | level!="x"`,

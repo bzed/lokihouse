@@ -133,6 +133,10 @@ func lineFilterSQL(f *syntax.LineFilterExpr) Fragment {
 // regexNecessary returns a necessary SQL condition for a |~ regex: every line the
 // regex matches must satisfy it. It is NOT exact (Loki re-applies the real filter).
 func regexNecessary(re string) Fragment {
+	// What Loki reduces to literals is exact, and an exact condition is also necessary.
+	if f, ok := simplifiedRegexSQL(re, true); ok {
+		return f
+	}
 	n, err := regexpSyntax.Parse(re, regexpSyntax.Perl)
 	if err != nil {
 		return Fragment{}
@@ -322,7 +326,8 @@ func unwrap(n *regexpSyntax.Regexp) *regexpSyntax.Regexp {
 
 // ExactFilterSQL returns SQL accepting exactly the entries the pipeline's filters accept,
 // or ok=false if the pipeline has any stage other than line filters that are literal
-// (|=, !=, with or-chains) or regex passing RegexExact (|~, !~), and label filters that
+// (|=, !=, with or-chains) or regex that Loki simplifies to literals or that passes
+// RegexExact (|~, !~), and label filters that
 // compare a label to a non-empty string with = (alone or combined with and/or), which
 // map to structured_metadata. labelNames lists the names of those label filters (each
 // once, in source order; for name_extracted also name): the SQL is exact only if no
@@ -438,6 +443,9 @@ func exactLineFilterSQL(f *syntax.LineFilterExpr) (Fragment, bool) {
 		if len(alts) > 1 {
 			return Fragment{}, false
 		}
+		if sf, ok := simplifiedRegexSQL(f.Match, true); ok {
+			return sf, true
+		}
 		if !RegexExact(f.Match) {
 			return Fragment{}, false
 		}
@@ -446,6 +454,9 @@ func exactLineFilterSQL(f *syntax.LineFilterExpr) (Fragment, bool) {
 	case log.LineMatchNotRegexp:
 		if len(alts) > 1 {
 			return Fragment{}, false
+		}
+		if sf, ok := simplifiedRegexSQL(f.Match, false); ok {
+			return sf, true
 		}
 		if !RegexExact(f.Match) {
 			return Fragment{}, false
