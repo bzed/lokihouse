@@ -116,9 +116,21 @@ limits_config:
 	if err := run.Start(); err != nil {
 		t.Fatalf("start lokihouse: %v", err)
 	}
+	exited := make(chan struct{})
+	var state *os.ProcessState // set before exited is closed
+	go func() {
+		state, _ = run.Process.Wait()
+		close(exited)
+	}()
 	t.Cleanup(func() {
+		select {
+		case <-exited:
+			t.Errorf("lokihouse exited unexpectedly: %v", state)
+			readLog(t, filepath.Join(dir, "lokihouse.log"))
+		default:
+		}
 		_ = run.Process.Kill()
-		_, _ = run.Process.Wait()
+		<-exited
 	})
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
