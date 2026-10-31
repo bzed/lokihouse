@@ -20,6 +20,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/go-kit/log"
 	"github.com/gorilla/websocket"
+	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
@@ -382,7 +383,17 @@ func TestRun_TailOutlivesWriteTimeout(t *testing.T) {
 	defer ws.Close()
 
 	time.Sleep(1500 * time.Millisecond) // 3× the write timeout
-	require.Equal(t, http.StatusNoContent, push(t, r.addr, "t1", pushBody(time.Now(), "late line")))
+	// Write the line straight to ClickHouse (tail polls it): a push through this
+	// server is itself bound by the 500ms write timeout, which an async insert
+	// on a loaded cluster can exceed (EOF).
+	conn, err := clickhouse.Open(chtest.Options(cfg.ClickHouse.Database))
+	require.NoError(t, err)
+	defer conn.Close()
+	w := &chstore.Writer{Conn: conn}
+	require.NoError(t, w.Write(t.Context(), "t1", []logproto.Stream{{
+		Labels:  `{app="a"}`,
+		Entries: []logproto.Entry{{Timestamp: time.Now(), Line: "late line"}},
+	}}))
 	require.NoError(t, ws.SetReadDeadline(time.Now().Add(10*time.Second)))
 	_, msg, err := ws.ReadMessage()
 	require.NoError(t, err)
