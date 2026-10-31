@@ -142,16 +142,29 @@ func StartLokiStoppable(t *testing.T, template, extra string) (string, func()) {
 	cmd.Stdout, cmd.Stderr = logf, logf
 	require(cmd.Start(), "start loki")
 	exited := make(chan struct{})
+	var state *os.ProcessState // set before exited is closed
 	go func() {
-		_, _ = cmd.Process.Wait()
+		state, _ = cmd.Process.Wait()
 		close(exited)
 	}()
+	var stopped bool // set by stop; read in cleanup, both on the test goroutine
 	t.Cleanup(func() {
+		select {
+		case <-exited:
+			if !stopped {
+				// Loki died on its own: without its log the failure is a wall
+				// of "connection refused" with no cause.
+				t.Errorf("loki exited unexpectedly: %v", state)
+				readLog(t, filepath.Join(dir, "loki.log"))
+			}
+		default:
+		}
 		_ = cmd.Process.Kill()
 		<-exited
 	})
 	stop := func() {
 		t.Helper()
+		stopped = true
 		_ = cmd.Process.Signal(syscall.SIGTERM)
 		select {
 		case <-exited:
@@ -172,7 +185,7 @@ func StartLokiStoppable(t *testing.T, template, extra string) (string, func()) {
 func readLog(t *testing.T, p string) {
 	b, err := os.ReadFile(p)
 	if err == nil {
-		t.Logf("loki log tail:\n%s", tail(string(b), 3000))
+		t.Logf("%s tail:\n%s", filepath.Base(p), tail(string(b), 3000))
 	}
 }
 
