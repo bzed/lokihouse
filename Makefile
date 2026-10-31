@@ -49,7 +49,7 @@ bench-s3:
 	LOKIHOUSE_TEST_CH_ADDR=localhost:19102 LOKIHOUSE_TEST_CH_CLUSTER= LOKIHOUSE_BENCH_S3_REMOTE=1 \
 	LOKIHOUSE_BENCH_CH_S3_CACHE=localhost:19102 \
 	LOKIHOUSE_BENCH_STORES=$(BENCH_STORES) \
-	go test -tags oracle,bench -run TestBench -count=1 -timeout 60m -v ./test/oracle/
+	go test -tags oracle,bench -run TestBench -count=1 -timeout 120m -v ./test/oracle/
 bench-s3-down:
 	set -a; . ./$(BENCH_S3_ENV); set +a; sh test/bench/down-remote.sh
 soak:

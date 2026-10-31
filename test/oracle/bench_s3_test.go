@@ -130,7 +130,14 @@ func lokiS3Template(t *testing.T, s benchS3) string {
 func startLokiS3(t *testing.T, s benchS3, extra string) (string, func() string) {
 	t.Helper()
 	tmpl := lokiS3Template(t, s)
-	writer, stop := StartLokiStoppable(t, tmpl, "\ningester: {wal: {flush_on_shutdown: true}}\n"+extra)
+	// extra may carry its own ingester block (a long span); YAML forbids a
+	// second key, so the writer's flush setting goes into that block.
+	const flush = "wal: {flush_on_shutdown: true}"
+	writerExtra := "\ningester: {" + flush + "}\n" + extra
+	if strings.Contains(extra, "ingester: {") {
+		writerExtra = "\n" + strings.Replace(extra, "ingester: {", "ingester: {"+flush+", ", 1)
+	}
+	writer, stop := StartLokiStoppable(t, tmpl, writerExtra)
 	return writer, func() string {
 		stop()
 		return StartLokiConfig(t, tmpl, extra)
