@@ -9,11 +9,12 @@ Loki®'s HTTP API but stores and processes logs in ClickHouse®.
 
 ## The name
 
-Rúnakefli (ASCII: `runakefli`) is Icelandic for a stick carved with runes, an
-old way of keeping records on wood. Until version 0.14.0 the project was called
-lokihouse; it was renamed as a precaution to avoid trademark issues with
-Grafana Labs' Loki mark. Rúnakefli is an independent project, not affiliated
-with or endorsed by Grafana Labs.
+Rúnakefli (ASCII: `runakefli`) is Old Norse for a *rune stick*, one of the
+wooden sticks medieval Scandinavians cut runes into for everyday notes; the
+[story is on the home page](index.md#where-the-name-comes-from). Until version
+0.14.0 the project was called lokihouse; it was renamed as a precaution to avoid
+trademark issues with Grafana Labs' Loki mark. Rúnakefli is an independent
+project, not affiliated with or endorsed by Grafana Labs.
 
 ## License
 

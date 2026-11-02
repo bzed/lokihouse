@@ -293,6 +293,46 @@ distributor packages. See [About](about.md).
 
 No. Rúnakefli is an independent project.
 
+### Why is it called Rúnakefli?
+
+A *rúnakefli* is a rune stick, one of the wooden sticks that medieval
+Scandinavians cut runes into for everyday notes. A log server keeps the same
+kind of thing. See [where the name comes from](#where-the-name-comes-from).
+
+## Where the name comes from
+
+**Rúnakefli** is Old Norse for a *rune stick*: *rún*, a rune, and *kefli*, a
+stick or short piece of wood. On the command line, in package names and in
+paths it is spelled `runakefli`.
+
+In medieval Scandinavia, writing was not reserved for kings, monks and poets.
+Runes were an everyday script. They are made of straight strokes that are easy
+to cut with a knife, and a stick of wood was the most ordinary notebook there
+was. The best evidence comes from Bergen in Norway. After a fire destroyed part
+of the old Bryggen waterfront in 1955, archaeologists dug there and found some
+670 medieval runic inscriptions, most of them on wood (mostly pine) and some on
+bone, kept in the damp ground for centuries. They date from the twelfth to the
+fourteenth century.
+
+What makes them remarkable is how ordinary they are. They are not sagas. They
+are the small, practical things people needed to say or keep track of:
+ownership marks (*Eysteinn á mik*, "Eystein owns me"), business letters and
+orders, receipts and tallies, prayers (*Ave Maria*), love notes (*Ást mín, kyss
+mik*, "my love, kiss me"), a verse, a secret message urging someone to change
+sides in a civil war, and *Gyða tells you to go home*. Some of it is rude, and
+some of it is very human.
+
+That is why the name fits a log server. A log is a piece of wood and a record
+of what happened. A rune stick is both: a small, durable object covered in
+short lines, one after the other, written by many different hands for many
+different reasons, kept, and read again later by someone who needs to know what
+was said, who owned what, and what went wrong. Rúnakefli does the same for the
+log lines of your systems, and the logo shows them as rows of short strokes,
+like cuts in a stick, in the shape of a heart.
+
+See the [Bryggen inscriptions](https://en.wikipedia.org/wiki/Bryggen_inscriptions)
+for the finds and their translations.
+
 ## Source and license
 
 The source code, the design spec and the detailed divergences list live in the
