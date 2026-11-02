@@ -12,7 +12,7 @@ changelog (`debian/changelog`) carries the same releases.
 
 ### Changed
 
-- The website's landing page is rewritten from the README (features, speed, quick start, FAQ), with search and social metadata (Open Graph, JSON-LD, `robots.txt`, a social card, a description per page), a light/dark theme and no Google Fonts. The Development page is part of the site; the per-phase status files are removed, and stale text in the operations and about pages is fixed.
+- The website's landing page is rewritten from the README (features, speed, quick start, FAQ), with search and social metadata (Open Graph, JSON-LD, `robots.txt`, a social card, a description per page), a conservative petrol-blue light/dark theme with self-hosted Source fonts (no Google Fonts). The logo drops its purple for a dark petrol heart with Loki's orange-to-yellow accents. The Development page is part of the site; the per-phase status files are removed, and stale text in the operations and about pages is fixed.
 - The documentation and the apt repository moved to <https://lokihouse.dev/> (README, man page, systemd unit, install instructions, example configs); the apt URI changes from `https://bzed.github.io/lokihouse/apt` to `https://lokihouse.dev/apt`, so existing installs must update their `lokihouse.sources`.
 
 ## [0.14.0] - 2026-10-28

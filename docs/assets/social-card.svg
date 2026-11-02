@@ -5,21 +5,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 630" width="1200" height="630">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#1d1b3a"/>
-      <stop offset="1" stop-color="#2d1f5e"/>
+      <stop offset="0" stop-color="#12303a"/>
+      <stop offset="1" stop-color="#1e4d5c"/>
     </linearGradient>
     <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#ff5d73"/>
-      <stop offset="1" stop-color="#ff8a5c"/>
+      <stop offset="0" stop-color="#9c5a09"/>
+      <stop offset="1" stop-color="#e3a64a"/>
     </linearGradient>
   </defs>
   <rect width="1200" height="630" fill="url(#bg)"/>
   <rect y="618" width="1200" height="12" fill="url(#bar)"/>
-  <image x="90" y="145" width="340" height="340" xlink:href="logo.svg"/>
-  <g font-family="DejaVu Sans, Helvetica, Arial, sans-serif" fill="#e9e6ff">
+  <image x="80" y="176" width="360" height="295" xlink:href="logo-icon.svg"/>
+  <g font-family="Source Serif 4, DejaVu Serif, Georgia, serif" fill="#f2f5f6">
     <text x="480" y="270" font-size="112" font-weight="700">lokihouse</text>
-    <text x="484" y="350" font-size="38" fill="#ffd166">Grafana Loki's HTTP API,</text>
-    <text x="484" y="400" font-size="38" fill="#ffd166">with logs stored in ClickHouse.</text>
-    <text x="484" y="490" font-size="28" opacity="0.85">One Go binary · same LogQL · lokihouse.dev</text>
+    <text x="484" y="350" font-size="38" fill="#e3a64a">Grafana Loki's HTTP API,</text>
+    <text x="484" y="400" font-size="38" fill="#e3a64a">with logs stored in ClickHouse.</text>
+    <text x="484" y="490" font-size="28" opacity="0.85" font-family="Source Sans 3, DejaVu Sans, sans-serif">One Go binary · same LogQL · lokihouse.dev</text>
   </g>
 </svg>

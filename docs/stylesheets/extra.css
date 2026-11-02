@@ -1,32 +1,500 @@
-/* Landing page */
-.lh-hero {
-  text-align: center;
-  padding: 1rem 0 0.5rem;
+/* lokihouse site theme.
+ *
+ * An operations manual, not a product page: cool paper, ink, one petrol blue
+ * for structure and one amber that is used only where attention is needed.
+ * Source Serif 4 for headings, Source Sans 3 for text, Source Code Pro for
+ * code, all self-hosted (docs/assets/fonts, SIL OFL; licences next to them).
+ */
+
+/* --- fonts ------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Source Sans 3";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/source-sans-3-latin-400-normal.woff2") format("woff2");
 }
-.lh-hero img {
-  width: 160px;
-  height: 160px;
+@font-face {
+  font-family: "Source Sans 3";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/source-sans-3-latin-400-italic.woff2") format("woff2");
 }
-.lh-hero h1 {
+@font-face {
+  font-family: "Source Sans 3";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/source-sans-3-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/source-serif-4-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/source-serif-4-latin-700-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Source Code Pro";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/source-code-pro-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Source Code Pro";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/source-code-pro-latin-600-normal.woff2") format("woff2");
+}
+
+/* --- palette ----------------------------------------------------------- */
+
+:root {
+  --md-text-font: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --md-code-font: "Source Code Pro", ui-monospace, "DejaVu Sans Mono", monospace;
+  --lh-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+}
+
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: #1e4d5c;
+  --md-primary-fg-color--light: #3f7284;
+  --md-primary-fg-color--dark: #153742;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.72);
+}
+[data-md-color-accent="custom"] {
+  --md-accent-fg-color: #9c5a09;
+  --md-accent-fg-color--transparent: rgba(156, 90, 9, 0.1);
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: rgba(255, 255, 255, 0.7);
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #f6f8f9;
+  --md-default-fg-color: #1a262e;
+  --md-default-fg-color--light: #4a5a64;
+  --md-default-fg-color--lighter: #8796a0;
+  --md-default-fg-color--lightest: #d3dce1;
+  --md-typeset-color: #1a262e;
+  --md-typeset-a-color: #1a5f78;
+  --md-code-bg-color: #e9eef1;
+  --md-code-fg-color: #1a262e;
+  --md-typeset-table-color: #d3dce1;
+  --md-footer-bg-color: #153742;
+  --md-footer-bg-color--dark: #102c35;
+  --lh-rule: #d3dce1;
+  --lh-surface: #ffffff;
+  --md-code-hl-number-color: #9c5a09;
+  --md-code-hl-special-color: #8a3b2c;
+  --md-code-hl-function-color: #1a5f78;
+  --md-code-hl-constant-color: #1a5f78;
+  --md-code-hl-keyword-color: #24608a;
+  --md-code-hl-string-color: #2f6f4f;
+  --md-code-hl-name-color: #1a262e;
+  --md-code-hl-operator-color: #4a5a64;
+  --md-code-hl-punctuation-color: #4a5a64;
+  --md-code-hl-comment-color: #667781;
+  --md-code-hl-generic-color: #4a5a64;
+  --md-code-hl-variable-color: #1a262e;
+  --lh-add-bg: rgba(30, 110, 80, 0.14);
+  --lh-del-bg: rgba(170, 50, 40, 0.12);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #11181d;
+  --md-default-bg-color--light: rgba(17, 24, 29, 0.54);
+  --md-default-fg-color: #d8e0e5;
+  --md-default-fg-color--light: #a9b7c0;
+  --md-default-fg-color--lighter: #6f808b;
+  --md-default-fg-color--lightest: #26333b;
+  --md-typeset-color: #d8e0e5;
+  --md-typeset-a-color: #7dbcd1;
+  --md-code-bg-color: #1a242b;
+  --md-code-fg-color: #d8e0e5;
+  --md-typeset-table-color: #26333b;
+  --md-primary-fg-color: #16323c;
+  --md-primary-fg-color--light: #2c5a6a;
+  --md-primary-fg-color--dark: #0f2229;
+  --md-accent-fg-color: #e3a64a;
+  --md-accent-fg-color--transparent: rgba(227, 166, 74, 0.1);
+  --md-footer-bg-color: #0d1418;
+  --md-footer-bg-color--dark: #0a1013;
+  --lh-rule: #26333b;
+  --lh-surface: #182128;
+  --md-code-hl-number-color: #e3a64a;
+  --md-code-hl-special-color: #e08a7a;
+  --md-code-hl-function-color: #7dbcd1;
+  --md-code-hl-constant-color: #7dbcd1;
+  --md-code-hl-keyword-color: #8fb4e6;
+  --md-code-hl-string-color: #8cc9a3;
+  --md-code-hl-name-color: #d8e0e5;
+  --md-code-hl-operator-color: #a9b7c0;
+  --md-code-hl-punctuation-color: #a9b7c0;
+  --md-code-hl-comment-color: #7d8e99;
+  --md-code-hl-generic-color: #a9b7c0;
+  --md-code-hl-variable-color: #d8e0e5;
+  --lh-add-bg: rgba(80, 190, 140, 0.16);
+  --lh-del-bg: rgba(230, 100, 90, 0.16);
+}
+
+/* --- typography -------------------------------------------------------- */
+
+.md-typeset {
+  font-size: 0.85rem; /* ~17 px */
+  line-height: 1.65;
+}
+.md-typeset strong {
+  font-weight: 600;
+}
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4 {
+  font-family: var(--lh-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--md-default-fg-color);
-  margin: 0.4rem 0 0;
-  font-size: 2.6rem;
 }
-.lh-hero .lh-tagline {
-  font-size: 1.25rem;
-  margin: 0.2rem auto 1.2rem;
-  max-width: 36rem;
+.md-typeset h1 {
+  font-size: 2.1em;
+  line-height: 1.15;
+  margin-bottom: 0.8em;
+}
+.md-typeset h2 {
+  font-size: 1.5em;
+  line-height: 1.25;
+  margin-top: 2.2em;
+  padding-top: 0.7em;
+  border-top: 1px solid var(--lh-rule);
+}
+.md-typeset h3 {
+  font-size: 1.2em;
+  line-height: 1.3;
+}
+.md-typeset code,
+.md-typeset pre {
+  font-size: 0.82em;
+}
+/* line length: under 80 characters for running text */
+.md-typeset p,
+.md-typeset ul:not(.contents),
+.md-typeset ol {
+  max-width: 68ch;
+}
+.md-typeset .highlight,
+.md-typeset table:not([class]),
+.md-typeset .admonition,
+.md-typeset .admonition p {
+  max-width: none;
+}
+.md-typeset table:not([class]) {
+  font-size: 0.85em;
+  background: var(--lh-surface);
+  border: 1px solid var(--lh-rule);
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+}
+.md-typeset table:not([class]) th {
+  font-weight: 600;
+  background: var(--md-code-bg-color);
+}
+
+/* --- chrome ------------------------------------------------------------ */
+
+.md-header {
+  box-shadow: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.md-tabs,
+.md-header[data-md-state="shadow"] {
+  box-shadow: none;
+}
+.md-nav__title,
+.md-nav__item--section > .md-nav__link {
+  font-weight: 600;
+}
+.md-typeset code {
+  border-radius: 2px;
+}
+.md-typeset pre > code {
+  border-radius: 2px;
+}
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 2px;
+  box-shadow: none;
+}
+/* the release-candidate notice is the one place amber is used for a block */
+.md-typeset .admonition.note,
+.md-typeset details.note {
+  border-color: #9c5a09;
+  background: var(--lh-surface);
+}
+.md-typeset .note > .admonition-title,
+.md-typeset .note > summary {
+  background: rgba(156, 90, 9, 0.12);
+}
+.md-typeset .note > .admonition-title::before,
+.md-typeset .note > summary::before {
+  background-color: #9c5a09;
+}
+[data-md-color-scheme="slate"] .md-typeset .admonition.note {
+  border-color: #e3a64a;
+}
+[data-md-color-scheme="slate"] .md-typeset .note > .admonition-title {
+  background: rgba(227, 166, 74, 0.12);
+}
+[data-md-color-scheme="slate"] .md-typeset .note > .admonition-title::before {
+  background-color: #e3a64a;
+}
+
+/* buttons */
+.md-typeset .md-button {
+  border-radius: 2px;
+  font-weight: 600;
+  border-width: 1.5px;
+  color: var(--md-typeset-a-color);
+  border-color: var(--md-typeset-a-color);
+}
+.md-typeset .md-button--primary {
+  background-color: var(--md-primary-fg-color);
+  border-color: var(--md-primary-fg-color);
+  color: #fff;
+}
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  background-color: #7dbcd1;
+  border-color: #7dbcd1;
+  color: #0f2229;
+}
+.md-typeset .md-button:hover,
+.md-typeset .md-button:focus-visible {
+  background-color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+  color: #fff;
+}
+[data-md-color-scheme="slate"] .md-typeset .md-button:hover,
+[data-md-color-scheme="slate"] .md-typeset .md-button:focus-visible {
+  color: #11181d;
+}
+:focus-visible {
+  outline: 2px solid var(--md-accent-fg-color);
+  outline-offset: 2px;
+}
+
+/* --- landing page ------------------------------------------------------ */
+
+.lh-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: center;
+  padding: 1.2rem 0 1.6rem;
+}
+.lh-hero__text > :first-child {
+  margin-top: 0;
+}
+.md-typeset .lh-hero h1 {
+  font-size: 3.1em;
+  line-height: 1.05;
+  margin: 0 0 0.35em;
+  padding-bottom: 0.35em;
+  border-bottom: 3px solid var(--md-accent-fg-color);
+  display: inline-block;
+}
+.lh-tagline {
+  font-size: 1.2em;
+  line-height: 1.4;
+  margin: 0 0 0.6em;
+}
+.lh-lede {
+  color: var(--md-default-fg-color--light);
+  margin: 0 0 1.4em;
 }
 .lh-hero .md-button {
-  margin: 0.2rem;
+  margin: 0 0.3rem 0.4rem 0;
+  padding: 0.5em 1.1em;
 }
+
+/* the one memorable thing: the change a migrator actually makes */
+.lh-swap {
+  min-width: 0;
+}
+.lh-swap__caption {
+  font-size: 0.85em;
+  color: var(--md-default-fg-color--light);
+  margin: 0 0 0.5rem;
+}
+.lh-swap pre {
+  margin: 0;
+}
+.md-typeset .lh-swap .highlight {
+  margin: 0;
+}
+.md-typeset .lh-swap pre.lh-diff {
+  margin: 0;
+  background: var(--md-code-bg-color);
+  border-left: 3px solid var(--md-accent-fg-color);
+  border-radius: 2px;
+  overflow-x: auto;
+}
+.md-typeset .lh-swap pre.lh-diff > code {
+  display: block;
+  padding: 0.5rem 0;
+  font-size: 0.95em;
+  line-height: 2;
+  background: none;
+  overflow: visible;
+}
+.lh-diff .lh-del,
+.lh-diff .lh-add {
+  display: block;
+  padding: 0 1.1rem;
+  white-space: pre;
+}
+.lh-diff .lh-del {
+  background: var(--lh-del-bg);
+}
+.lh-diff .lh-add {
+  background: var(--lh-add-bg);
+}
+.lh-swap__note {
+  font-size: 0.8em;
+  color: var(--md-default-fg-color--light);
+  margin: 0.5rem 0 0;
+}
+
 .lh-badges {
-  text-align: center;
-  margin-bottom: 1.5rem;
+  margin: 0 0 1.4rem;
 }
 .lh-badges img {
-  margin: 0 0.1rem;
+  margin: 0 0.15rem 0.2rem 0;
+  vertical-align: middle;
+}
+
+/* the data path, as a real graphic instead of ASCII art */
+.md-typeset ol.lh-flow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: stretch;
+  gap: 0;
+  margin: 1.2rem 0;
+  list-style: none;
+  padding: 0;
+  max-width: none;
+}
+.md-typeset ol.lh-flow > li.lh-flow__node,
+.md-typeset ol.lh-flow > li.lh-flow__link {
+  margin: 0;
+}
+.lh-flow__node {
+  background: var(--lh-surface);
+  border: 1px solid var(--lh-rule);
+  padding: 0.8rem 1rem;
+}
+.lh-flow__node--core {
+  border-color: var(--md-primary-fg-color);
+  border-width: 2px;
+}
+.lh-flow__node strong {
+  display: block;
+  font-family: var(--lh-serif);
+  font-size: 1.1em;
+}
+.lh-flow__node span {
+  font-size: 0.85em;
+  color: var(--md-default-fg-color--light);
+}
+.lh-flow__link {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 0 0.6rem;
+  font-size: 0.75em;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--md-default-fg-color--light);
+  min-width: 6.5rem;
+}
+.lh-flow__link::after {
+  content: "\2192";
+  font-size: 2em;
+  line-height: 1;
+  margin-top: 0.1rem;
+  color: var(--md-default-fg-color--lighter);
+}
+
+/* lists of items with a rule on top instead of boxed cards */
+.md-typeset .grid.cards > ul {
+  gap: 0 2.2rem;
+  max-width: none;
 }
 .md-typeset .grid.cards > ul > li {
-  border-radius: 0.3rem;
+  border: 0;
+  border-top: 2px solid var(--md-primary-fg-color);
+  border-radius: 0;
+  box-shadow: none;
+  background: none;
+  padding: 0.7rem 0 0.4rem;
+  margin: 0 0 0.8rem;
+  transition: none;
+}
+.md-typeset .grid.cards > ul > li:hover {
+  box-shadow: none;
+  border-color: var(--md-accent-fg-color);
+}
+.md-typeset .grid.cards > ul > li > hr {
+  display: none;
+}
+.md-typeset .grid.cards > ul > li > p:first-child {
+  font-family: var(--lh-serif);
+  font-size: 1.12em;
+  margin: 0 0 0.3em;
+}
+.md-typeset .grid.cards > ul > li > p {
+  max-width: none;
+}
+
+/* tabs */
+.md-typeset .tabbed-labels > label {
+  font-weight: 600;
+}
+
+@media (max-width: 52em) {
+  .lh-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+  .md-typeset .lh-hero h1 {
+    font-size: 2.5em;
+  }
+  .md-typeset ol.lh-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lh-flow__link {
+    padding: 0.5rem 0;
+    min-width: 0;
+  }
+  .lh-flow__link::after {
+    content: "\2193";
+    margin: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }

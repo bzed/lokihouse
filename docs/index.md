@@ -6,25 +6,33 @@ hide:
 ---
 
 <div class="lh-hero" markdown>
-
-<img src="assets/logo.svg" alt="lokihouse logo: a heart made of log lines" width="160" height="160">
+<div class="lh-hero__text" markdown>
 
 # lokihouse
 
-<p class="lh-tagline"><strong>Grafana Loki's HTTP API, with logs stored in ClickHouse.</strong><br>
-Point Grafana, Alloy or Promtail at it as if it were Loki.</p>
+<p class="lh-tagline"><strong>Grafana Loki's HTTP API, with logs stored in ClickHouse.</strong></p>
+<p class="lh-lede">Point Grafana, Alloy or Promtail at it as if it were Loki.</p>
 
 [Install lokihouse](install/index.md){ .md-button .md-button--primary }
 [Migrate from Loki](migrating.md){ .md-button }
-[View on GitHub](https://github.com/bzed/lokihouse){ .md-button }
 
+</div>
+<div class="lh-swap" markdown>
+
+<p class="lh-swap__caption">Moving from Loki starts with one line in your Grafana data source:</p>
+
+<pre class="lh-diff" aria-label="Change the data source URL from http://loki:3100 to http://lokihouse:3100"><code><span class="lh-del">- url: http://loki:3100</span><span class="lh-add">+ url: http://lokihouse:3100</span></code></pre>
+
+<p class="lh-swap__note">The push and query endpoints and LogQL stay the same. Alloy and Promtail change their client URL in the same way.</p>
+
+</div>
 </div>
 
 <p class="lh-badges">
 <a href="https://github.com/bzed/lokihouse/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/bzed/lokihouse/actions/workflows/ci.yml/badge.svg?branch=main"></a>
 <a href="https://codecov.io/gh/bzed/lokihouse"><img alt="Code coverage" src="https://codecov.io/gh/bzed/lokihouse/branch/main/graph/badge.svg"></a>
-<a href="https://github.com/bzed/lokihouse/blob/main/LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg"></a>
-<a href="roadmap.md"><img alt="Status: release candidate" src="https://img.shields.io/badge/status-release%20candidate-yellowgreen"></a>
+<a href="https://github.com/bzed/lokihouse/blob/main/LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-1e4d5c.svg"></a>
+<a href="roadmap/"><img alt="Status: release candidate" src="https://img.shields.io/badge/status-release%20candidate-9c5a09"></a>
 </p>
 
 !!! note "Release candidate"
@@ -51,7 +59,7 @@ any other ClickHouse data.
 
 <div class="grid cards" markdown>
 
--   :material-api: **Loki's API, unchanged**
+-   **Loki's API, unchanged**
 
     ---
 
@@ -59,7 +67,7 @@ any other ClickHouse data.
     configuration keys wherever Loki has them. Loki's own parser, engine and
     ruler code is reused rather than re-implemented, at one pinned Loki commit.
 
--   :material-check-decagram: **Proven equality**
+-   **Proven equality**
 
     ---
 
@@ -67,28 +75,28 @@ any other ClickHouse data.
     against real Loki and compares the answers. Every accepted difference is
     listed, with its reason, in the [divergences](reference/divergences.md).
 
--   :material-database: **ClickHouse underneath**
+-   **ClickHouse underneath**
 
     ---
 
     A single server, or a cluster with replicated and distributed tables.
     ClickHouse credentials can come from a `password_file`.
 
--   :material-package-variant-closed: **One binary**
+-   **One binary**
 
     ---
 
     Static (`CGO_ENABLED=0`), with no runtime dependency besides a ClickHouse
     server. Signed Debian packages and container images for amd64 and arm64.
 
--   :material-speedometer: **Fast**
+-   **Fast**
 
     ---
 
     1.7–4× faster than Loki on aggregations and `logfmt` filters on identical
     data, with every answer checked against Loki's. See [the numbers](#speed).
 
--   :material-shield-lock: **Built for operations**
+-   **Built for operations**
 
     ---
 
@@ -99,17 +107,13 @@ any other ClickHouse data.
 
 ## How it works
 
-```text
- Grafana · Alloy · Promtail · logcli · any Loki client
-                          │  Loki HTTP API: push, LogQL, labels, series, tail, ruler
-                          ▼
-                    ┌────────────┐
-                    │ lokihouse  │  one static Go binary
-                    └─────┬──────┘
-                          │  ClickHouse native protocol
-                          ▼
-           ClickHouse (single server or cluster)
-```
+<ol class="lh-flow">
+  <li class="lh-flow__node"><strong>Your log clients</strong><span>Grafana, Alloy, Promtail, logcli</span></li>
+  <li class="lh-flow__link">Loki HTTP API</li>
+  <li class="lh-flow__node lh-flow__node--core"><strong>lokihouse</strong><span>one static Go binary</span></li>
+  <li class="lh-flow__link">ClickHouse protocol</li>
+  <li class="lh-flow__node"><strong>ClickHouse</strong><span>single server or cluster</span></li>
+</ol>
 
 ## Speed
 
@@ -192,51 +196,51 @@ details, including systemd.
 
 <div class="grid cards" markdown>
 
--   :material-download: **[Install lokihouse](install/index.md)**
+-   **[Install lokihouse](install/index.md)**
 
     ---
 
     For a sysadmin who has never run lokihouse and wants one running on a bare
     machine.
 
--   :material-swap-horizontal: **[Migrating from Loki](migrating.md)**
+-   **[Migrating from Loki](migrating.md)**
 
     ---
 
     A full cutover runbook, the behavioural differences to know about, and a
     verification checklist.
 
--   :material-cog: **[Configuration](reference/configuration.md)**
+-   **[Configuration](reference/configuration.md)**
 
     ---
 
     Every config key, with defaults.
 
--   :material-web: **[HTTP API](reference/http-api.md)**
+-   **[HTTP API](reference/http-api.md)**
 
     ---
 
     Every endpoint lokihouse serves.
 
--   :material-wrench: **[Operations](operations.md)**
+-   **[Operations](operations.md)**
 
     ---
 
     Limits, retention, deletes and disk space, metrics, health checks and profiling.
 
--   :material-map-marker-path: **[Roadmap](roadmap.md)**
+-   **[Roadmap](roadmap.md)**
 
     ---
 
     What is deferred or still open.
 
--   :material-timer-sand: **[Benchmark](benchmark.md)**
+-   **[Benchmark](benchmark.md)**
 
     ---
 
     Method, environment and results of the comparison with Loki.
 
--   :material-source-branch: **[Development](development.md)**
+-   **[Development](development.md)**
 
     ---
 
