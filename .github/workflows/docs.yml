@@ -201,7 +201,12 @@ jobs:
           host_bucket = %(bucket)s.$S3_ENDPOINT
           use_https = True
           EOF
-          # upload first, delete the stale objects afterwards
-          s3cmd -c "$cfg" sync --guess-mime-type --no-mime-magic --delete-after --delete-removed \
+          # Upload everything first, then delete the stale objects. Not a plain
+          # `s3cmd sync`: it copies files with identical content (the font
+          # licences) server-side, and that copy request is signed with the V2
+          # scheme, which Backblaze rejects with a 400.
+          s3cmd -c "$cfg" put --recursive --guess-mime-type --no-mime-magic \
+            site/ "s3://$S3_BUCKET/"
+          s3cmd -c "$cfg" sync --skip-existing --no-mime-magic --delete-removed \
             site/ "s3://$S3_BUCKET/"
           rm -f "$cfg"
