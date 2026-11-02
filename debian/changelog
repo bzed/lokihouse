@@ -7,8 +7,10 @@ runakefli (0.15.0) trixie; urgency=medium
     database (runakefli) change; Loki's own names do not.
   * The package replaces, breaks and conflicts with lokihouse (<< 0.15.0).
   * The documentation and apt repository moved to https://runakefli.app/.
+  * The apt repository no longer carries the old lokihouse package: the
+    trixie suite holds runakefli packages only.
 
- -- Bernd Zeimetz <bernd@bzed.de>  Mon, 02 Nov 2026 16:52:22 +0100
+ -- Bernd Zeimetz <bernd@bzed.de>  Mon, 02 Nov 2026 18:30:00 +0100
 
 lokihouse (0.14.0) trixie; urgency=medium
 

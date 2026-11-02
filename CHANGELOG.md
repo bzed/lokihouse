@@ -6,6 +6,8 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-02
+
 ### Added
 
 - CI: the `docs` workflow mirrors the published site (docs and apt repository) to an S3 bucket and deletes stale objects (secrets `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`).
