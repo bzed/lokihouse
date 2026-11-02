@@ -1,15 +1,15 @@
 ---
-description: Install lokihouse on Debian 13 from the signed apt repository, as a container image, or from source, with ClickHouse credentials and a systemd unit.
+description: Install Rúnakefli on Debian 13 from the signed apt repository, as a container image, or from source, with ClickHouse® credentials and a systemd unit.
 ---
 
-# Installing lokihouse
+# Installing Rúnakefli
 
-> **Release candidate.** lokihouse is feature complete but not yet proven in production. CI builds the packages and
+> **Release candidate.** Rúnakefli is feature complete but not yet proven in production. CI builds the packages and
 > images below for every release; the apt suite `trixie-snapshot` follows
 > `main`.
 
-There are three ways to run lokihouse. All of them need a running
-[ClickHouse](https://clickhouse.com/) server (26.9 or later).
+There are three ways to run Rúnakefli. All of them need a running
+[ClickHouse®](https://clickhouse.com/) server (26.9 or later).
 
 1. [Debian package](#debian-package-apt-repository) (Debian 13 "trixie",
    amd64 and arm64): the easiest, with a hardened systemd unit.
@@ -25,26 +25,26 @@ Packages are built for amd64 and arm64.
 
 ```sh
 sudo install -d -m 0755 /etc/apt/keyrings
-sudo curl -fsSLo /etc/apt/keyrings/lokihouse-archive-keyring.asc \
-    https://lokihouse.dev/apt/lokihouse-archive-keyring.asc
+sudo curl -fsSLo /etc/apt/keyrings/runakefli-archive-keyring.asc \
+    https://runakefli.app/apt/runakefli-archive-keyring.asc
 # compare the fingerprint with the one below
-gpg --show-keys --with-fingerprint /etc/apt/keyrings/lokihouse-archive-keyring.asc
-sudo tee /etc/apt/sources.list.d/lokihouse.sources <<'EOF'
+gpg --show-keys --with-fingerprint /etc/apt/keyrings/runakefli-archive-keyring.asc
+sudo tee /etc/apt/sources.list.d/runakefli.sources <<'EOF'
 Types: deb
-URIs: https://lokihouse.dev/apt
+URIs: https://runakefli.app/apt
 Suites: trixie
 Components: main
-Signed-By: /etc/apt/keyrings/lokihouse-archive-keyring.asc
+Signed-By: /etc/apt/keyrings/runakefli-archive-keyring.asc
 EOF
-sudo apt update && sudo apt install lokihouse
+sudo apt update && sudo apt install runakefli
 ```
 
 The key's fingerprint is `74E9 21AC B040 DCC7 2C02  A144 1193 7B6E A8AF C649`.
 Use `Suites: trixie-snapshot` to follow `main` instead of the releases.
 
-The package installs `/usr/bin/lokihouse`, the man page, a hardened systemd
-unit (dynamic user, state in `/var/lib/lokihouse`) and
-`/etc/lokihouse/lokihouse.yaml`. It does **not** start the service: edit the
+The package installs `/usr/bin/runakefli`, the man page, a hardened systemd
+unit (dynamic user, state in `/var/lib/runakefli`) and
+`/etc/runakefli/runakefli.yaml`. It does **not** start the service: edit the
 config first (at least `clickhouse.addr`; see
 [the configuration reference](../reference/configuration.md)). The file lists
 every option with its default, commented out; uncomment and change what you
@@ -52,54 +52,54 @@ need, for example `limits_config.retention_period` (data is kept forever by
 default). Then:
 
 ```sh
-sudo systemctl enable --now lokihouse
+sudo systemctl enable --now runakefli
 curl -fsS http://localhost:3100/ready
 ```
 
 The default listen address is `127.0.0.1`; change `server.http_listen_address`
 to accept remote clients. Put the ClickHouse password in a systemd credential
-as described in `/usr/share/doc/lokihouse/README.Debian`. `apt upgrade` keeps
-lokihouse current; each release also has its `.deb` files and a `SHA256SUMS`
-file on the [GitHub releases page](https://github.com/bzed/lokihouse/releases).
+as described in `/usr/share/doc/runakefli/README.Debian`. `apt upgrade` keeps
+Rúnakefli current; each release also has its `.deb` files and a `SHA256SUMS`
+file on the [GitHub releases page](https://github.com/bzed/runakefli/releases).
 Then continue with [Step 5: first push and query](#step-5-first-push-and-query).
 
 ## Container image
 
 ```sh
-podman run -d --name lokihouse -p 3100:3100 \
-    -e LOKIHOUSE_CLICKHOUSE_ADDR=clickhouse.example.org:9000 \
-    ghcr.io/bzed/lokihouse:latest
+podman run -d --name runakefli -p 3100:3100 \
+    -e RUNAKEFLI_CLICKHOUSE_ADDR=clickhouse.example.org:9000 \
+    ghcr.io/bzed/runakefli:latest
 ```
 
 (`docker run` works the same.) The image is based on distroless `static`, runs
 as a non-root user and listens on `0.0.0.0:3100`. To reach it on another host
 port, just map it (`-p 8080:3100`). To change the port inside the container,
-set `LOKIHOUSE_HTTP_LISTEN_PORT` and map that port (`-e
-LOKIHOUSE_HTTP_LISTEN_PORT=8080 -p 8080:8080`); it must be above 1023, as the
+set `RUNAKEFLI_HTTP_LISTEN_PORT` and map that port (`-e
+RUNAKEFLI_HTTP_LISTEN_PORT=8080 -p 8080:8080`); it must be above 1023, as the
 container runs as non-root. The built-in config reads these variables:
-`LOKIHOUSE_HTTP_LISTEN_PORT` (default `3100`), `LOKIHOUSE_CLICKHOUSE_ADDR` (default `clickhouse:9000`),
-`LOKIHOUSE_CLICKHOUSE_DATABASE` (`lokihouse`), `LOKIHOUSE_CLICKHOUSE_USER`
-(`default`), `LOKIHOUSE_CLICKHOUSE_PASSWORD` and `LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE`
+`RUNAKEFLI_HTTP_LISTEN_PORT` (default `3100`), `RUNAKEFLI_CLICKHOUSE_ADDR` (default `clickhouse:9000`),
+`RUNAKEFLI_CLICKHOUSE_DATABASE` (`runakefli`), `RUNAKEFLI_CLICKHOUSE_USER`
+(`default`), `RUNAKEFLI_CLICKHOUSE_PASSWORD` and `RUNAKEFLI_CLICKHOUSE_PASSWORD_FILE`
 (both unset: no password).
 
 ### ClickHouse password
 
-The quick way is `-e LOKIHOUSE_CLICKHOUSE_PASSWORD=secret`. Environment
+The quick way is `-e RUNAKEFLI_CLICKHOUSE_PASSWORD=secret`. Environment
 variables show up in `docker inspect` and `/proc`, and the value must not
 contain a single quote, so prefer a file: mount it read-only and point
-`LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE` at it. Set only one of the two; setting
+`RUNAKEFLI_CLICKHOUSE_PASSWORD_FILE` at it. Set only one of the two; setting
 both is a startup error.
 
 ```sh
 install -m 0600 /dev/null clickhouse-password
 printf '%s' 'secret' > clickhouse-password   # a trailing newline is stripped
 
-podman run -d --name lokihouse -p 3100:3100 \
-    -e LOKIHOUSE_CLICKHOUSE_ADDR=clickhouse.example.org:9000 \
-    -e LOKIHOUSE_CLICKHOUSE_USER=lokihouse \
-    -e LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE=/run/secrets/clickhouse-password \
+podman run -d --name runakefli -p 3100:3100 \
+    -e RUNAKEFLI_CLICKHOUSE_ADDR=clickhouse.example.org:9000 \
+    -e RUNAKEFLI_CLICKHOUSE_USER=runakefli \
+    -e RUNAKEFLI_CLICKHOUSE_PASSWORD_FILE=/run/secrets/clickhouse-password \
     -v ./clickhouse-password:/run/secrets/clickhouse-password:ro \
-    ghcr.io/bzed/lokihouse:latest
+    ghcr.io/bzed/runakefli:latest
 ```
 
 The container runs as `nonroot` (uid 65532), so the file must be readable by
@@ -112,9 +112,9 @@ For anything else, mount your own config file (the image runs with
 
 ```sh
 podman run -d -p 3100:3100 \
-    -v ./lokihouse.yaml:/etc/lokihouse/lokihouse.yaml:ro \
+    -v ./runakefli.yaml:/etc/runakefli/runakefli.yaml:ro \
     -v ./clickhouse-password:/run/secrets/clickhouse-password:ro \
-    ghcr.io/bzed/lokihouse:latest
+    ghcr.io/bzed/runakefli:latest
 ```
 
 Tags: `X.Y.Z` and `X.Y` for each release, and `latest`. Build it yourself with
@@ -146,19 +146,19 @@ From the repository root:
 make build
 ```
 
-This produces `bin/lokihouse`, a static binary. The `Makefile` adds
-version/revision/date `ldflags` so `lokihouse -version` reports the build.
+This produces `bin/runakefli`, a static binary. The `Makefile` adds
+version/revision/date `ldflags` so `runakefli -version` reports the build.
 An equivalent one-liner:
 
 ```sh
-CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/lokihouse ./cmd/lokihouse
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/runakefli ./cmd/runakefli
 ```
 
-Copy `bin/lokihouse` to its final location, e.g. `/usr/local/bin/lokihouse`.
+Copy `bin/runakefli` to its final location, e.g. `/usr/local/bin/runakefli`.
 
 ### Step 2 — Write the config
 
-Create `/etc/lokihouse/lokihouse.yaml`. A minimal working config for a
+Create `/etc/runakefli/runakefli.yaml`. A minimal working config for a
 single ClickHouse server on `localhost:9000` with the default `default`
 user (no password):
 
@@ -167,7 +167,7 @@ server:
   http_listen_port: 3100
 clickhouse:
   addr: ["localhost:9000"]
-  database: lokihouse
+  database: runakefli
   username: default
 ```
 
@@ -178,9 +178,9 @@ config (not recommended for production) or, better, write the password to a
 ```yaml
 clickhouse:
   addr: ["localhost:9000"]
-  database: lokihouse
+  database: runakefli
   username: default
-  password_file: /run/credentials/lokihouse.service/lokihouse.clickhouse-password
+  password_file: /run/credentials/runakefli.service/runakefli.clickhouse-password
 ```
 
 The full key-by-key reference is in
@@ -188,18 +188,18 @@ The full key-by-key reference is in
 
 ### Step 3 — Create the systemd unit
 
-Create `/etc/systemd/system/lokihouse.service`:
+Create `/etc/systemd/system/runakefli.service`:
 
 ```ini
 [Unit]
-Description=lokihouse — Loki HTTP API on ClickHouse
+Description=runakefli — Loki HTTP API on ClickHouse
 After=network.target clickhouse.service
 
 [Service]
 Type=exec
-User=lokihouse
-Group=lokihouse
-ExecStart=/usr/local/bin/lokihouse -config.file=/etc/lokihouse/lokihouse.yaml
+User=runakefli
+Group=runakefli
+ExecStart=/usr/local/bin/runakefli -config.file=/etc/runakefli/runakefli.yaml
 Restart=on-failure
 RestartSec=5
 
@@ -210,24 +210,24 @@ ProtectHome=true
 ProtectSystem=full
 NoNewPrivileges=true
 # If you use password_file with a systemd-credentials path, uncomment:
-# LoadCredentialEncrypted=lokihouse.clickhouse-password:/run/credentials/lokihouse.service/lokihouse.clickhouse-password
+# LoadCredentialEncrypted=runakefli.clickhouse-password:/run/credentials/runakefli.service/runakefli.clickhouse-password
 ```
 
 Create the service user (no login):
 
 ```sh
-sudo useradd --system --user-group --home-dir /var/lib/lokihouse \
-    --no-create-home --shell /usr/sbin/nologin lokihouse
-sudo mkdir -p /etc/lokihouse /var/lib/lokihouse
-sudo chown lokihouse:lokihouse /etc/lokihouse /var/lib/lokihouse
+sudo useradd --system --user-group --home-dir /var/lib/runakefli \
+    --no-create-home --shell /usr/sbin/nologin runakefli
+sudo mkdir -p /etc/runakefli /var/lib/runakefli
+sudo chown runakefli:runakefli /etc/runakefli /var/lib/runakefli
 ```
 
 If you use `password_file` with a plain file (the default in the config
 above), create it with the right owner and mode:
 
 ```sh
-sudo install -m 600 -o lokihouse -g lokihouse /dev/null \
-    /run/credentials/lokihouse.service/lokihouse.clickhouse-password
+sudo install -m 600 -o runakefli -g runakefli /dev/null \
+    /run/credentials/runakefli.service/runakefli.clickhouse-password
 # then write the password into that file
 ```
 
@@ -239,11 +239,11 @@ the same either way.)
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable --now lokihouse
-systemctl status lokihouse
+sudo systemctl enable --now runakefli
+systemctl status runakefli
 ```
 
-Health checks (both are served by lokihouse, both are Loki-identical paths
+Health checks (both are served by Rúnakefli, both are Loki®-identical paths
 where applicable):
 
 ```sh
@@ -265,7 +265,7 @@ curl -fsS -X POST http://localhost:3100/loki/api/v1/push \
     "streams": [
       {
         "stream": {"app": "demo", "env": "dev"},
-        "values": [["1700000000000000000", "hello from lokihouse"]]
+        "values": [["1700000000000000000", "hello from runakefli"]]
       }
     ]
   }'
@@ -290,7 +290,7 @@ Expected response shape (Loki's `loghttp` JSON, served unchanged):
     "result": [
       {
         "stream": {"app": "demo", "env": "dev"},
-        "values": [["1700000000000000000", "hello from lokihouse"]]
+        "values": [["1700000000000000000", "hello from runakefli"]]
       }
     ]
   }
@@ -302,25 +302,25 @@ Expected response shape (Loki's `loghttp` JSON, served unchanged):
 Rebuild the binary, stop the unit, replace the binary, restart:
 
 ```sh
-sudo systemctl stop lokihouse
-sudo install -m 755 -o root -g root bin/lokihouse /usr/local/bin/lokihouse
-sudo systemctl start lokihouse
+sudo systemctl stop runakefli
+sudo install -m 755 -o root -g root bin/runakefli /usr/local/bin/runakefli
+sudo systemctl start runakefli
 ```
 
 > **Note:** schema changes ship with a migration (`-schema.migrate`, see
 > below; from schema version 2 it only alters `logs`: no copy, no extra disk
-> space, and existing data is not re-indexed). lokihouse is a release candidate: back up the ClickHouse database
+> space, and existing data is not re-indexed). Rúnakefli is a release candidate: back up the ClickHouse database
 > before upgrading if your data matters.
 
 ### Uninstall
 
 ```sh
-sudo systemctl disable --now lokihouse
-sudo rm /etc/systemd/system/lokihouse.service
+sudo systemctl disable --now runakefli
+sudo rm /etc/systemd/system/runakefli.service
 sudo systemctl daemon-reload
-sudo rm /usr/local/bin/lokihouse
+sudo rm /usr/local/bin/runakefli
 # drop the ClickHouse database (irreversible):
-#   clickhouse client --query "DROP DATABASE lokihouse"
+#   clickhouse client --query "DROP DATABASE runakefli"
 ```
 
 ## Upgrading to 0.9
@@ -330,22 +330,22 @@ sudo rm /usr/local/bin/lokihouse
 against a database of an older version and exits 1 with a message naming the
 migration. Migrate once:
 
-1. Stop every lokihouse instance.
+1. Stop every Rúnakefli instance.
 2. Run the migration:
 
     ```sh
-    lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -schema.migrate
+    runakefli -config.file /etc/runakefli/runakefli.yaml -config.expand-env -schema.migrate
     ```
 
     If the ClickHouse password is a systemd credential
-    (`password_file: ${CREDENTIALS_DIRECTORY}/lokihouse.clickhouse-password`), a
+    (`password_file: ${CREDENTIALS_DIRECTORY}/runakefli.clickhouse-password`), a
     shell has no `CREDENTIALS_DIRECTORY` and the command fails with
     `open ${CREDENTIALS_DIRECTORY}/...: no such file or directory`. Run it as a
-    transient unit that imports the credentials, as `lokihouse.service` does:
+    transient unit that imports the credentials, as `runakefli.service` does:
 
     ```sh
-    systemd-run --pty --wait --collect -p ImportCredential='lokihouse.*' \
-      /usr/bin/lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -schema.migrate
+    systemd-run --pty --wait --collect -p ImportCredential='runakefli.*' \
+      /usr/bin/runakefli -config.file /etc/runakefli/runakefli.yaml -config.expand-env -schema.migrate
     ```
 
     (`-config.expand-env` is needed in both forms: it expands the
@@ -376,13 +376,13 @@ set these in the `clickhouse:` block:
 ```yaml
 clickhouse:
   addr: ["ch1:9000", "ch2:9000", "ch3:9000", "ch4:9000"]
-  database: lokihouse
+  database: runakefli
   username: default
-  cluster: lokihouse      # the remote_servers name in ClickHouse
+  cluster: runakefli      # the remote_servers name in ClickHouse
   replicated: true        # Replicated*MergeTree; false = shard without replication
 ```
 
-lokihouse creates `logs_local` / `streams_local` `Replicated*MergeTree`
+Rúnakefli creates `logs_local` / `streams_local` `Replicated*MergeTree`
 tables `ON CLUSTER` and `Distributed` `logs` / `streams` tables over them,
 sharded by `(tenant, stream_id)`. Inserts use `distributed_foreground_insert`
 and (when replicated) `insert_quorum`, so a push is acknowledged only when
@@ -390,7 +390,7 @@ the rows are on a majority of replicas. Full cluster setup (Keeper,
 `remote_servers`, replica paths) is a ClickHouse operations task; see the
 [ClickHouse documentation](https://clickhouse.com/docs/en/enables/high-availability/overview)
 and the [configuration reference](../reference/configuration.md#clickhouse)
-for the lokihouse-side keys.
+for the Rúnakefli-side keys.
 
 On a cluster the ClickHouse user needs a few extra grants (`CLUSTER`, `REMOTE`,
 `TABLE ENGINE ON Distributed`); see

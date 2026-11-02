@@ -1,10 +1,10 @@
-# Lokihouse — Loki API on ClickHouse: Analysis & Design
+# Runakefli — Loki API on ClickHouse: Analysis & Design
 
 Date: 2026-10-10 · Loki analysed at commit `fbc3f0770b8c56ebec56fbd0fb16dc3b606822d1` (main, 2026-10-10) · ClickHouse 26.9
 
 ## 1. Goal
 
-A single service ("lokihouse") that is wire-compatible with Grafana Loki for everything a client
+A single service ("runakefli") that is wire-compatible with Loki for everything a client
 can observe (push APIs, LogQL query APIs, metadata APIs, tail, ruler, deletes, retention), but
 stores and processes logs in ClickHouse. Wherever ClickHouse can do the work natively (indexing,
 filtering, aggregation, retention, deduplication, pre-aggregation), it does. Feature equality is
@@ -63,7 +63,7 @@ rewrite would trade a measurable speed gain for equality risk that cannot be bou
 Rust only if profiling shows the Go fallback pipeline is the bottleneck. Even then, a Rust
 *sidecar for specific stages* beats a rewrite.
 
-**License:** `pkg/logql/**` and `pkg/distributor` are AGPL-3.0-only, so lokihouse is
+**License:** `pkg/logql/**` and `pkg/distributor` are AGPL-3.0-only, so runakefli is
 **AGPL-3.0-only**. The project owner accepted this on 2026-10-10. It also lets us copy
 unexported Loki code verbatim (distributor validation and field detection) with attribution.
 
@@ -78,7 +78,7 @@ deliberate, each gated by the differential suite.
 ## 4. Architecture
 
 ```
-            ┌──────────────────────── lokihouse (one Go binary) ────────────────────────┐
+            ┌──────────────────────── runakefli (one Go binary) ────────────────────────┐
  push ────► │ ingest: Loki push.ParseRequest (proto/JSON/OTLP) → validate → canonical    │
  (HTTP)     │ labels → stream_id = labels.StableHash → async_insert into ClickHouse       │
             │                                                                             │
@@ -217,7 +217,7 @@ Phase 3 adds `stream_stats_hourly`, an AggregatingMergeTree fed by a materialize
    Loki's own tests already cover them.
 2. **Differential suite against real Loki** (`test/oracle`): build `cmd/loki` from the pinned
    commit (no container needed). Run it single-binary with filesystem storage next to
-   lokihouse. Push the same deterministic fixture to both, run a corpus of LogQL queries and
+   runakefli. Push the same deterministic fixture to both, run a corpus of LogQL queries and
    API calls against both, and compare normalised JSON. The corpus is seeded from Loki's docs
    and `parser_test.go`/`engine_test.go` query strings, and every bug found becomes a corpus
    entry.
@@ -257,7 +257,7 @@ For comparison, the Rust route comes to ~100+ tasks, ~50k LoC and $1.5–3k, plu
 tail with no upper bound.
 
 Each phase gets its own detailed implementation plan when it starts. Phase 1 is in
-`docs/superpowers/plans/2026-10-10-lokihouse-phase1-foundation.md`.
+`docs/superpowers/plans/2026-10-10-runakefli-phase1-foundation.md`.
 
 ## 9. Risks
 

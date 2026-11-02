@@ -1,18 +1,18 @@
-% lokihouse 1 "October 2026" "lokihouse" "User Commands"
+% runakefli 1 "October 2026" "runakefli" "User Commands"
 
 # NAME
 
-lokihouse - Loki-compatible log store on ClickHouse
+runakefli - Loki®-compatible log store on ClickHouse®
 
 # SYNOPSIS
 
-**lokihouse** [**-config.file** *path*] [**-config.expand-env**] [**-schema.migrate**] [**-version**]
+**runakefli** [**-config.file** *path*] [**-config.expand-env**] [**-schema.migrate**] [**-version**]
 
 # DESCRIPTION
 
-**lokihouse** serves Grafana Loki's HTTP API (push, LogQL queries, labels,
+**runakefli** serves Loki's HTTP API (push, LogQL queries, labels,
 series, tail, index statistics, deletes and the ruler) and stores the logs in
-ClickHouse. Clients such as Grafana, Promtail, Alloy and logcli talk to it as
+ClickHouse. Clients such as Grafana®, Promtail, Alloy and logcli talk to it as
 they would to Loki.
 
 On start it creates the database and tables it needs, then listens on
@@ -21,7 +21,7 @@ On start it creates the database and tables it needs, then listens on
 # OPTIONS
 
 **-config.file** *path*
-:   YAML configuration file (default *lokihouse.yaml*). Unknown keys are an error.
+:   YAML configuration file (default *runakefli.yaml*). Unknown keys are an error.
 
 **-config.expand-env**
 :   Expand *${VAR}* and *${VAR:-default}* in the configuration file before
@@ -30,7 +30,7 @@ On start it creates the database and tables it needs, then listens on
 **-schema.migrate**
 :   Migrate the ClickHouse schema to the current version and exit (0 on success,
     1 on error). Needed once after upgrading from a release with schema
-    version 1 (before 0.9) or 2 (before 0.11): stop every lokihouse instance
+    version 1 (before 0.9) or 2 (before 0.11): stop every runakefli instance
     first. From version 1 the disks need free space for a copy of the largest
     table; from version 2 the migration only alters *logs* (no copy, no extra
     disk space) and does not re-index existing data. A normal start
@@ -39,8 +39,8 @@ On start it creates the database and tables it needs, then listens on
     option does nothing.
     A configuration that reads the password from a systemd credential needs
     *CREDENTIALS_DIRECTORY*, which only a unit provides: run
-    *systemd-run --pty --wait --collect -p ImportCredential='lokihouse.\*'
-    /usr/bin/lokihouse -config.file ... -config.expand-env -schema.migrate*.
+    *systemd-run --pty --wait --collect -p ImportCredential='runakefli.\*'
+    /usr/bin/runakefli -config.file ... -config.expand-env -schema.migrate*.
 
 **-version**
 :   Print version, revision, branch, build date and Go version, then exit.
@@ -60,29 +60,29 @@ command line.
 
 # FILES
 
-*/etc/lokihouse/lokihouse.yaml*
-:   Configuration used by the Debian package's *lokihouse.service*. It lists
+*/etc/runakefli/runakefli.yaml*
+:   Configuration used by the Debian package's *runakefli.service*. It lists
     every option with its default, commented out.
 
-*/usr/share/doc/lokihouse/examples/lokihouse.example.yaml*
+*/usr/share/doc/runakefli/examples/runakefli.example.yaml*
 :   An unmodified copy of the shipped configuration.
 
-*/var/lib/lokihouse*
+*/var/lib/runakefli*
 :   Working directory of the service: temporary rule files and the ruler WAL.
 
 # ENVIRONMENT
 
 **NOTIFY_SOCKET**
-:   Set by systemd for *Type=notify* services; lokihouse reports readiness and
+:   Set by systemd for *Type=notify* services; runakefli reports readiness and
     shutdown on it.
 
 **CREDENTIALS_DIRECTORY**
 :   Set by systemd when credentials are imported; reference it from the
     configuration with **-config.expand-env**, for example
-    *password_file: ${CREDENTIALS_DIRECTORY}/lokihouse.clickhouse-password*.
+    *password_file: ${CREDENTIALS_DIRECTORY}/runakefli.clickhouse-password*.
 
 # SEE ALSO
 
-Documentation: <https://lokihouse.dev/>; Loki configuration
+Documentation: <https://runakefli.app/>; Loki configuration
 reference for the *ruler*, *ruler_storage* and *limits_config* blocks:
 <https://grafana.com/docs/loki/latest/configure/>.

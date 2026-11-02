@@ -1,8 +1,8 @@
-# Lokihouse Phase 5 (Hardening and Release) Implementation Plan
+# Runakefli Phase 5 (Hardening and Release) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make lokihouse a releasable service. It shuts down cleanly on signals and enforces lint, vulnerability and ≥ 85 % coverage gates. CI builds a hardened Debian trixie package with a systemd unit. It ships Markdown docs, a GitHub Pages site and a manpage. It enforces Loki's ingestion and query limits, answers multi-tenant queries, exposes Prometheus metrics and query stats, is benchmarked against Loki, and is checked for memory and goroutine leaks.
+**Goal:** Make runakefli a releasable service. It shuts down cleanly on signals and enforces lint, vulnerability and ≥ 85 % coverage gates. CI builds a hardened Debian trixie package with a systemd unit. It ships Markdown docs, a GitHub Pages site and a manpage. It enforces Loki's ingestion and query limits, answers multi-tenant queries, exposes Prometheus metrics and query stats, is benchmarked against Loki, and is checked for memory and goroutine leaks.
 
 **Architecture:** The plan has two parts.
 - **Part A (Tasks 1–8)** builds the safety net first:
@@ -67,13 +67,13 @@ In addition:
 - **Gates:** from the end of Task 4, `make check` passes at every commit: fmt-check, vet, lint, vuln, and the coverage gate at the current `COVERAGE_MIN`. From the end of Task 5, `COVERAGE_MIN` is 85 and never lowered.
 - **Coverage definition:** statement coverage from `go test -race -covermode=atomic -coverpkg=<pkgs>` over every package in `go list ./...` except `internal/chstore/chtest` (a test helper) and `test/...` (oracle, build-tagged). It is computed by `scripts/coverage.sh`.
 - **govulncheck:** zero findings, except IDs listed with a reason in `scripts/govulncheck-ignore.txt`. The only allowed entry is `GO-2026-5115`. It is a false positive: the advisory covers `github.com/grafana/loki/v3 < v3.6.4`, and the pinned pseudo-version `v3.0.0-20261010092436-fbc3f0770b8c` sorts below that. The commit is newer and already rejects namespace path traversal (`filepath.IsLocal` in `pkg/ruler/base/api.go` `parseNamespace`). `TestRules_PathTraversalRejected` (Task 5) proves it.
-- **Config key names:** wherever Loki has a setting, lokihouse uses Loki's key, block and default:
+- **Config key names:** wherever Loki has a setting, runakefli uses Loki's key, block and default:
   - `server.http_server_read_timeout`, `server.http_server_write_timeout`, `server.http_server_idle_timeout`, `server.graceful_shutdown_timeout`, `server.log_level`, `server.log_format`;
   - `querier.multi_tenant_queries_enabled`;
   - `limits_config.*`;
   - the `-config.file` and `-config.expand-env` flags.
 - **Debian:** source format `3.0 (native)`, version `0.5.0`, architectures `amd64 arm64`, target `trixie`. Maintainer `Bernd Zeimetz <bernd@bzed.de>`. The package must install and run without a network. Only the *build* downloads Go and modules.
-- **systemd:** `lokihouse.service` uses `DynamicUser=yes` and passes `systemd-analyze security --offline=true --threshold=15`. The threshold is 10× the displayed exposure level, so the level must be ≤ 1.5; the draft in Task 7 scores 1.1.
+- **systemd:** `runakefli.service` uses `DynamicUser=yes` and passes `systemd-analyze security --offline=true --threshold=15`. The threshold is 10× the displayed exposure level, so the level must be ≤ 1.5; the draft in Task 7 scores 1.1.
 - **Shutdown order** (Task 2): stop accepting HTTP → drain in-flight requests (bounded by `graceful_shutdown_timeout`) → stop the ruler → stop the background loops → close ClickHouse. Signals are SIGINT and SIGTERM. A second signal kills the process immediately (default Go behaviour).
 - Tests that need ClickHouse use `chtest.New` and must pass on the single node and on the 2×2 cluster (`make test`, `make test-cluster`). The oracle must pass in all push-down modes (`make oracle-all`) and on the cluster (`make oracle-cluster`) at the end of Tasks 9, 10 and 14.
 
@@ -97,14 +97,14 @@ In addition:
 | `Makefile` (modify) | `fmt`, `fmt-check`, `vet`, `lint`, `vuln`, `cover`, `check`, version ldflags, `docs`, `man`, `deb`, `bench` | 1, 3, 6, 7, 12 |
 | `go.mod`, `go.sum` (modify) | `toolchain go1.27.2`; new direct deps | 1, 2, 3, 11 |
 | `internal/server/server.go`, `server_test.go` (new) | Wiring, lifecycle, graceful shutdown, sd_notify | 2, 9, 10, 11 |
-| `cmd/lokihouse/main.go`, `main_test.go` | Flags, signals, exit codes, manpage drift test | 2, 3, 6 |
+| `cmd/runakefli/main.go`, `main_test.go` | Flags, signals, exit codes, manpage drift test | 2, 3, 6 |
 | `internal/config/config.go`, `config_test.go`, `docs_test.go` | Server and logging keys, strict YAML, env expansion, `password_file`, `querier` block, docs drift test | 2, 3, 6, 10 |
 | `internal/logging/logging.go`, `logging_test.go` (new) | go-kit logger from `server.log_level`/`log_format` | 3 |
 | `internal/api/misc.go` (modify) | buildinfo from `prometheus/common/version` | 3 |
 | `internal/deletes/processor.go` (modify) | No error log on shutdown | 2 |
 | `internal/ingest/distcopy/*_test.go` (new, copied from Loki) | Coverage of copied distributor code | 5 |
 | assorted `*_test.go` | Coverage to ≥ 85 % | 5 |
-| `README.md`, `mkdocs.yml`, `docs/index.md`, `docs/getting-started.md`, `docs/configuration.md`, `docs/operations.md`, `docs/api.md`, `docs/architecture.md`, `docs/development.md`, `docs/requirements.txt`, `docs/man/lokihouse.1.md` (new) | Documentation, site and manpage | 6 (extended by 9–13) |
+| `README.md`, `mkdocs.yml`, `docs/index.md`, `docs/getting-started.md`, `docs/configuration.md`, `docs/operations.md`, `docs/api.md`, `docs/architecture.md`, `docs/development.md`, `docs/requirements.txt`, `docs/man/runakefli.1.md` (new) | Documentation, site and manpage | 6 (extended by 9–13) |
 | `debian/*` (new) | Debian native package, systemd unit, packaged config, smoke test | 7 |
 | `.github/workflows/ci.yml`, `deb.yml`, `nightly.yml`, `release.yml`, `pages.yml`, `.github/dependabot.yml` (new); `test/cluster/up.sh` (modify) | CI | 8 |
 | `internal/ingest/ratelimit.go` (new), `internal/ingest/handler.go`, `internal/ingest/distcopy/process.go` (modify) | Ingestion rate limit; Prepare returns sizes | 9 |
@@ -146,7 +146,7 @@ Expected: `go version go1.27.2 linux/amd64`. Commit `go.mod` with this task.
 - [ ] **Step 2: Write `AGENTS.md`**
 
 ```markdown
-# AGENTS.md: rules for working on lokihouse
+# AGENTS.md: rules for working on runakefli
 
 These rules apply to every change, by humans and by coding agents. `make check`
 enforces the mechanical ones; reviewers enforce the rest.
@@ -162,7 +162,7 @@ enforces the mechanical ones; reviewers enforce the rest.
 
 ## Loki compatibility
 
-- lokihouse imports Loki at one pinned commit (`Makefile` `LOKI_COMMIT`). Never
+- runakefli imports Loki at one pinned commit (`Makefile` `LOKI_COMMIT`). Never
   bump it in passing.
 - Reuse Loki's code; do not re-implement Loki behaviour. Code copied from Loki
   starts with `// Copied from grafana/loki@<commit> <path>; modifications: <list>`.
@@ -173,7 +173,7 @@ enforces the mechanical ones; reviewers enforce the rest.
 
 ## Structure
 
-- `cmd/lokihouse` only parses flags and signals; wiring and lifecycle live in
+- `cmd/runakefli` only parses flags and signals; wiring and lifecycle live in
   `internal/server`. Packages under `internal/` own one responsibility each and
   do not import `cmd` or `test`.
 - Keep files focused. A function that no longer fits on a screen is a sign to
@@ -302,7 +302,7 @@ formatters:
   enable: [gofmt, goimports]
   settings:
     goimports:
-      local-prefixes: [github.com/bzed/lokihouse]
+      local-prefixes: [github.com/bzed/runakefli]
 ```
 
 - [ ] **Step 5: Write `scripts/coverage.sh`**
@@ -436,7 +436,7 @@ git commit -m "build: AGENTS.md, lint/vuln/coverage gates, go1.27.2 toolchain"
 
 **Files:**
 - Create: `internal/server/server.go`, `internal/server/server_test.go`
-- Modify: `cmd/lokihouse/main.go`, `internal/config/config.go`, `internal/config/config_test.go`, `internal/deletes/processor.go`, `internal/deletes/processor_test.go`, `go.mod`, `go.sum`
+- Modify: `cmd/runakefli/main.go`, `internal/config/config.go`, `internal/config/config_test.go`, `internal/deletes/processor.go`, `internal/deletes/processor_test.go`, `go.mod`, `go.sum`
 
 **Interfaces:**
 - Consumes: `config.Load(path string) (*config.Config, error)`, `lhruler.New(...)`, `deletes.Processor`, `api.API`, `pushdown.Engine` (existing).
@@ -560,10 +560,10 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	"github.com/bzed/lokihouse/internal/config"
-	"github.com/bzed/lokihouse/internal/server"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/config"
+	"github.com/bzed/runakefli/internal/server"
 )
 
 const defaultServer = "server: {http_listen_address: 127.0.0.1, http_listen_port: 0, graceful_shutdown_timeout: 10s}\n"
@@ -585,7 +585,7 @@ func testConfig(t *testing.T, serverYAML, extra string) *config.Config {
   cluster: %q
   replicated: %t
 `, o.Addr[0], db, o.Auth.Username, o.Auth.Password, topo.Cluster, topo.Replicated) + extra
-	p := filepath.Join(t.TempDir(), "lokihouse.yaml")
+	p := filepath.Join(t.TempDir(), "runakefli.yaml")
 	require.NoError(t, os.WriteFile(p, []byte(y), 0o600))
 	cfg, err := config.Load(p)
 	require.NoError(t, err)
@@ -825,9 +825,9 @@ Expected: compile FAIL (`package server` not found).
 
 - [ ] **Step 6: Implement `internal/server/server.go`**
 
-Move the wiring from `cmd/lokihouse/main.go` `run` into this file; it is a pure move except for the lifecycle code.
+Move the wiring from `cmd/runakefli/main.go` `run` into this file; it is a pure move except for the lifecycle code.
 ```go
-// Package server wires lokihouse's components together and runs them until
+// Package server wires runakefli's components together and runs them until
 // the context ends, then shuts them down in order: HTTP (draining in-flight
 // requests), the ruler, the background loops and the ClickHouse connection.
 package server
@@ -853,15 +853,15 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/bzed/lokihouse/internal/api"
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/config"
-	"github.com/bzed/lokihouse/internal/deletes"
-	"github.com/bzed/lokihouse/internal/ingest"
-	"github.com/bzed/lokihouse/internal/patterns"
-	"github.com/bzed/lokihouse/internal/pushdown"
-	lhruler "github.com/bzed/lokihouse/internal/ruler"
-	lhtail "github.com/bzed/lokihouse/internal/tail"
+	"github.com/bzed/runakefli/internal/api"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/config"
+	"github.com/bzed/runakefli/internal/deletes"
+	"github.com/bzed/runakefli/internal/ingest"
+	"github.com/bzed/runakefli/internal/patterns"
+	"github.com/bzed/runakefli/internal/pushdown"
+	lhruler "github.com/bzed/runakefli/internal/ruler"
+	lhtail "github.com/bzed/runakefli/internal/tail"
 )
 
 // Options are the process-level hooks Run needs besides the config.
@@ -872,7 +872,7 @@ type Options struct {
 	Listening func(net.Addr)
 }
 
-// Run starts lokihouse and blocks until ctx is done or the HTTP server fails.
+// Run starts runakefli and blocks until ctx is done or the HTTP server fails.
 // In-flight requests run on a context that is not cancelled by ctx; they get
 // server.graceful_shutdown_timeout to finish.
 func Run(ctx context.Context, cfg *config.Config, opts Options) error {
@@ -947,7 +947,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 	if opts.Listening != nil {
 		opts.Listening(ln.Addr())
 	}
-	level.Info(logger).Log("msg", "lokihouse listening", "addr", ln.Addr().String())
+	level.Info(logger).Log("msg", "runakefli listening", "addr", ln.Addr().String())
 	sdNotify(logger, daemon.SdNotifyReady)
 
 	var serveErr error
@@ -999,7 +999,7 @@ func openClickHouse(ctx context.Context, cfg *config.Config) (driver.Conn, error
 	return clickhouse.Open(opts(cfg.ClickHouse.Database))
 }
 
-// newAPI builds the HTTP API over conn (moved unchanged from cmd/lokihouse).
+// newAPI builds the HTTP API over conn (moved unchanged from cmd/runakefli).
 func newAPI(cfg *config.Config, conn driver.Conn, limits *validation.Overrides, logger log.Logger) (*api.API, *deletes.Store, *chstore.Querier) {
 	store := &deletes.Store{Conn: conn}
 	q := &chstore.Querier{Conn: conn, Deletes: store}
@@ -1070,10 +1070,10 @@ func sdNotify(logger log.Logger, state string) {
 ```
 `sync.WaitGroup.Go` exists since Go 1.25. Remove the `_ = q` line as soon as a later task uses `q`.
 
-- [ ] **Step 7: Make `cmd/lokihouse/main.go` thin**
+- [ ] **Step 7: Make `cmd/runakefli/main.go` thin**
 
 ```go
-// Command lokihouse serves Loki's HTTP API on top of ClickHouse.
+// Command runakefli serves Loki's HTTP API on top of ClickHouse.
 package main
 
 import (
@@ -1088,8 +1088,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
-	"github.com/bzed/lokihouse/internal/config"
-	"github.com/bzed/lokihouse/internal/server"
+	"github.com/bzed/runakefli/internal/config"
+	"github.com/bzed/runakefli/internal/server"
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
@@ -1097,16 +1097,16 @@ func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 // run is main without os.Exit, for tests. Exit codes: 0 ok, 1 runtime or
 // config error, 2 usage error.
 func run(args []string, _ io.Writer, stderr io.Writer) int {
-	fs := flag.NewFlagSet("lokihouse", flag.ContinueOnError)
+	fs := flag.NewFlagSet("runakefli", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	path := fs.String("config.file", "lokihouse.yaml", "configuration file")
+	path := fs.String("config.file", "runakefli.yaml", "configuration file")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(stderr))
 	cfg, err := config.Load(*path)
 	if err != nil {
-		fmt.Fprintf(stderr, "lokihouse: %v\n", err)
+		fmt.Fprintf(stderr, "runakefli: %v\n", err)
 		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -1149,8 +1149,8 @@ git commit -m "feat(server): graceful shutdown on SIGINT/SIGTERM, server timeout
 ### Task 3: Operator flags and configuration
 
 **Files:**
-- Create: `internal/logging/logging.go`, `internal/logging/logging_test.go`, `cmd/lokihouse/main_test.go`
-- Modify: `cmd/lokihouse/main.go`, `internal/config/config.go`, `internal/config/config_test.go`, `internal/server/server_test.go` (the `config.Load` call), `test/oracle/lokihouse.go` (only if it calls `config.Load`), `internal/api/misc.go`, `Makefile`, `lokihouse.example.yaml`, `go.mod`, `go.sum`
+- Create: `internal/logging/logging.go`, `internal/logging/logging_test.go`, `cmd/runakefli/main_test.go`
+- Modify: `cmd/runakefli/main.go`, `internal/config/config.go`, `internal/config/config_test.go`, `internal/server/server_test.go` (the `config.Load` call), `test/oracle/runakefli.go` (only if it calls `config.Load`), `internal/api/misc.go`, `Makefile`, `runakefli.example.yaml`, `go.mod`, `go.sum`
 
 **Interfaces:**
 - Consumes: `server.Run`, `server.Options` (Task 2).
@@ -1159,7 +1159,7 @@ git commit -m "feat(server): graceful shutdown on SIGINT/SIGTERM, server timeout
   - `config.Config.ClickHouse.PasswordFile string` (`password_file`), mutually exclusive with `password`.
   - `config.Config.Server.LogLevel dskitlog.Level` (`log_level`, default `info`) and `Server.LogFormat string` (`log_format`, `logfmt`|`json`, default `logfmt`).
   - `logging.New(w io.Writer, lvl dskitlog.Level, format string) (log.Logger, error)`.
-  - Flags: `-config.file` (default `lokihouse.yaml`), `-config.expand-env` (default false, Loki's semantics via `github.com/drone/envsubst`), `-version`.
+  - Flags: `-config.file` (default `runakefli.yaml`), `-config.expand-env` (default false, Loki's semantics via `github.com/drone/envsubst`), `-version`.
   - Build info: `github.com/prometheus/common/version` variables set by `-ldflags` (Makefile `LDFLAGS`); `/loki/api/v1/status/buildinfo` reports them.
 
 - [ ] **Step 1: Write the failing config tests**
@@ -1234,7 +1234,7 @@ func TestLoad_Logging(t *testing.T) {
 }
 
 func TestLoad_ExampleConfig(t *testing.T) {
-	_, err := Load(filepath.Join("..", "..", "lokihouse.example.yaml"), false)
+	_, err := Load(filepath.Join("..", "..", "runakefli.example.yaml"), false)
 	require.NoError(t, err)
 }
 ```
@@ -1315,7 +1315,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/logging"
+	"github.com/bzed/runakefli/internal/logging"
 )
 
 func TestNew_LevelAndFormat(t *testing.T) {
@@ -1338,7 +1338,7 @@ Run: `go test ./internal/logging/ -count=1`. Expected: compile FAIL.
 - [ ] **Step 4: Implement `internal/logging/logging.go`**
 
 ```go
-// Package logging builds lokihouse's go-kit logger from Loki's server.log_level
+// Package logging builds runakefli's go-kit logger from Loki's server.log_level
 // and server.log_format keys.
 package logging
 
@@ -1372,7 +1372,7 @@ Run the test. Expected: PASS. If the caller depth is wrong, `caller=` points int
 
 - [ ] **Step 5: Write the failing `main` tests**
 
-`cmd/lokihouse/main_test.go`:
+`cmd/runakefli/main_test.go`:
 ```go
 package main
 
@@ -1388,7 +1388,7 @@ import (
 func TestRun_Version(t *testing.T) {
 	var out, errb bytes.Buffer
 	require.Equal(t, 0, run([]string{"-version"}, &out, &errb))
-	require.Contains(t, out.String(), "lokihouse, version")
+	require.Contains(t, out.String(), "runakefli, version")
 }
 
 func TestRun_UsageError(t *testing.T) {
@@ -1405,30 +1405,30 @@ func TestRun_ConfigError(t *testing.T) {
 	require.Contains(t, errb.String(), "nonsense_key")
 }
 ```
-Run: `go test ./cmd/lokihouse/ -count=1`. Expected: FAIL (`-version` is unknown).
+Run: `go test ./cmd/runakefli/ -count=1`. Expected: FAIL (`-version` is unknown).
 
 - [ ] **Step 6: Implement the flags, logging and version**
 
-In `cmd/lokihouse/main.go` `run`:
+In `cmd/runakefli/main.go` `run`:
 ```go
-	path := fs.String("config.file", "lokihouse.yaml", "configuration file to load")
+	path := fs.String("config.file", "runakefli.yaml", "configuration file to load")
 	expandEnv := fs.Bool("config.expand-env", false, "expand ${VAR} and ${VAR:-default} in the configuration file")
 	showVersion := fs.Bool("version", false, "print version information and exit")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *showVersion {
-		fmt.Fprintln(stdout, version.Print("lokihouse"))
+		fmt.Fprintln(stdout, version.Print("runakefli"))
 		return 0
 	}
 	cfg, err := config.Load(*path, *expandEnv)
 	if err != nil {
-		fmt.Fprintf(stderr, "lokihouse: %v\n", err)
+		fmt.Fprintf(stderr, "runakefli: %v\n", err)
 		return 1
 	}
 	logger, err := logging.New(stderr, cfg.Server.LogLevel, cfg.Server.LogFormat)
 	if err != nil {
-		fmt.Fprintf(stderr, "lokihouse: %v\n", err)
+		fmt.Fprintf(stderr, "runakefli: %v\n", err)
 		return 1
 	}
 ```
@@ -1452,12 +1452,12 @@ REVISION   ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null)
 BRANCH     ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 BUILD_DATE ?= $(shell date -u -d "@$${SOURCE_DATE_EPOCH:-$$(date +%s)}" +%Y-%m-%dT%H:%M:%SZ)
 PV := github.com/prometheus/common/version
-LDFLAGS := -X $(PV).Version=$(VERSION) -X $(PV).Revision=$(REVISION) -X $(PV).Branch=$(BRANCH) -X $(PV).BuildDate=$(BUILD_DATE) -X $(PV).BuildUser=lokihouse
+LDFLAGS := -X $(PV).Version=$(VERSION) -X $(PV).Revision=$(REVISION) -X $(PV).Branch=$(BRANCH) -X $(PV).BuildDate=$(BUILD_DATE) -X $(PV).BuildUser=runakefli
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/lokihouse ./cmd/lokihouse
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/runakefli ./cmd/runakefli
 ```
 
-Add to `lokihouse.example.yaml` under `server:`, commented out:
+Add to `runakefli.example.yaml` under `server:`, commented out:
 ```yaml
   # http_listen_address: 0.0.0.0
   # log_level: info                # debug | info | warn | error
@@ -1469,15 +1469,15 @@ Add to `lokihouse.example.yaml` under `server:`, commented out:
 ```
 and under `clickhouse:`:
 ```yaml
-  # password_file: /run/credentials/lokihouse.service/lokihouse.clickhouse-password
+  # password_file: /run/credentials/runakefli.service/runakefli.clickhouse-password
 ```
 
 - [ ] **Step 7: Run and commit**
 
 ```bash
 go test ./cmd/... ./internal/config/ ./internal/logging/ ./internal/server/ ./internal/api/ -count=1
-make build && ./bin/lokihouse -version
-git add cmd internal Makefile lokihouse.example.yaml go.mod go.sum test
+make build && ./bin/runakefli -version
+git add cmd internal Makefile runakefli.example.yaml go.mod go.sum test
 git commit -m "feat: -version, -config.expand-env, strict config, password_file, log level/format"
 ```
 
@@ -1552,7 +1552,7 @@ Expected: all pass. The oracle proves the cleanup changed no behaviour. Commit a
 - Consumes: `make cover`.
 - Produces: total coverage ≥ 85 % and `COVERAGE_MIN ?= 85` in the `Makefile`.
 
-The baseline is 2554 statements with 636 uncovered, so 253 more must be covered. Task 2's server tests already cover most of the former `cmd/lokihouse` code. Uncovered statements per package before this phase:
+The baseline is 2554 statements with 636 uncovered, so 253 more must be covered. Task 2's server tests already cover most of the former `cmd/runakefli` code. Uncovered statements per package before this phase:
 
 | Package | Statements | Uncovered |
 |---|---:|---:|
@@ -1560,7 +1560,7 @@ The baseline is 2554 statements with 636 uncovered, so 253 more must be covered.
 | internal/chstore | 795 | 99 |
 | internal/deletes | 278 | 70 |
 | internal/api | 215 | 62 |
-| cmd/lokihouse (now internal/server) | 55 | 55 |
+| cmd/runakefli (now internal/server) | 55 | 55 |
 | tools/extract-corpus | 68 | 47 |
 
 - [ ] **Step 1: Measure**
@@ -1572,7 +1572,7 @@ go tool cover -func=coverage.out | sort -k3 -n | head -60
 
 - [ ] **Step 2: Copy Loki's field-detection and validator tests**
 
-Copy `$(go list -m -f '{{.Dir}}' github.com/grafana/loki/v3)/pkg/distributor/field_detection_test.go` to `internal/ingest/distcopy/field_detection_test.go`. Keep the tests that call only functions lokihouse copied:
+Copy `$(go list -m -f '{{.Dir}}' github.com/grafana/loki/v3)/pkg/distributor/field_detection_test.go` to `internal/ingest/distcopy/field_detection_test.go`. Keep the tests that call only functions runakefli copied:
 - `Test_detectLogLevelFromLogEntry`
 - `Test_detectLogLevelFromLogEntryWithCustomLabels`
 - `Test_detectLogLevelFromOTLPSeverityNumber`
@@ -1587,9 +1587,9 @@ Drop the tests that need Loki's `Distributor` (`TestDistributor_SharedFieldDetec
 // Copied from grafana/loki@fbc3f077 pkg/distributor/field_detection_test.go
 // (the tests of the functions in field_detection.go); modifications: package
 // distcopy; Distributor-based tests dropped; validationContext built with
-// lokihouse's copy.
+// runakefli's copy.
 ```
-Adapt the `validationContext{...}` literals to the fields of lokihouse's copy (`internal/ingest/distcopy/validator.go`). Do the same for `pkg/distributor/validator_test.go`, keeping the `ShouldBlockIngestion` tests.
+Adapt the `validationContext{...}` literals to the fields of runakefli's copy (`internal/ingest/distcopy/validator.go`). Do the same for `pkg/distributor/validator_test.go`, keeping the `ShouldBlockIngestion` tests.
 
 Run: `go test ./internal/ingest/distcopy/ -count=1 -cover`. Expected: PASS, package coverage ≥ 80 %.
 
@@ -1609,7 +1609,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/ingest/distcopy"
+	"github.com/bzed/runakefli/internal/ingest/distcopy"
 )
 
 func overrides(t *testing.T, mut func(*validation.Limits)) *validation.Overrides {
@@ -1785,26 +1785,26 @@ git commit -m "test: coverage to 85% (Loki distributor tests, API, deletes, extr
 ### Task 6: Documentation site, README and manpage
 
 **Files:**
-- Create: `README.md`, `mkdocs.yml`, `docs/requirements.txt`, `docs/index.md`, `docs/getting-started.md`, `docs/configuration.md`, `docs/operations.md`, `docs/api.md`, `docs/architecture.md`, `docs/development.md`, `docs/man/lokihouse.1.md`, `internal/config/docs_test.go`
-- Modify: `cmd/lokihouse/main_test.go`, `Makefile`, `docs/phase*-status.md` (links only)
+- Create: `README.md`, `mkdocs.yml`, `docs/requirements.txt`, `docs/index.md`, `docs/getting-started.md`, `docs/configuration.md`, `docs/operations.md`, `docs/api.md`, `docs/architecture.md`, `docs/development.md`, `docs/man/runakefli.1.md`, `internal/config/docs_test.go`
+- Modify: `cmd/runakefli/main_test.go`, `Makefile`, `docs/phase*-status.md` (links only)
 
 **Interfaces:**
 - Consumes: the flags (Task 3), the config keys (Tasks 2–3), `docs/divergences.md`.
 - Produces:
   - `make docs` → `site/` via `mkdocs build --strict`;
-  - `make man` → `bin/lokihouse.1` via `go-md2man`;
-  - drift tests: every flag appears in the manpage, and every lokihouse-owned config key appears in `docs/configuration.md`.
+  - `make man` → `bin/runakefli.1` via `go-md2man`;
+  - drift tests: every flag appears in the manpage, and every runakefli-owned config key appears in `docs/configuration.md`.
 
 - [ ] **Step 1: Write the failing drift tests**
 
-Append to `cmd/lokihouse/main_test.go` (refactor `run` so the flag set comes from `newFlagSet(stderr io.Writer) (*flag.FlagSet, *flags)`):
+Append to `cmd/runakefli/main_test.go` (refactor `run` so the flag set comes from `newFlagSet(stderr io.Writer) (*flag.FlagSet, *flags)`):
 ```go
 func TestManpageDocumentsEveryFlag(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "man", "lokihouse.1.md"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "man", "runakefli.1.md"))
 	require.NoError(t, err)
 	fs, _ := newFlagSet(io.Discard)
 	fs.VisitAll(func(f *flag.Flag) {
-		require.Contains(t, string(b), "**-"+f.Name+"**", "flag -%s missing from docs/man/lokihouse.1.md", f.Name)
+		require.Contains(t, string(b), "**-"+f.Name+"**", "flag -%s missing from docs/man/runakefli.1.md", f.Name)
 	})
 }
 ```
@@ -1850,26 +1850,26 @@ func TestConfigurationDocsCoverEveryKey(t *testing.T) {
 ```
 Only anonymous inline structs (`PkgPath() == ""`) are walked. Named types like `dskitlog.Level` and `time.Duration` are leaves.
 
-Run: `go test ./cmd/lokihouse/ ./internal/config/ -run 'Manpage|Docs' -count=1`. Expected: FAIL (files missing).
+Run: `go test ./cmd/runakefli/ ./internal/config/ -run 'Manpage|Docs' -count=1`. Expected: FAIL (files missing).
 
-- [ ] **Step 2: Write the manpage `docs/man/lokihouse.1.md` (go-md2man format)**
+- [ ] **Step 2: Write the manpage `docs/man/runakefli.1.md` (go-md2man format)**
 
 ```markdown
-% LOKIHOUSE(1) lokihouse | User Commands
+% RUNAKEFLI(1) runakefli | User Commands
 % Bernd Zeimetz
 % October 2026
 
 # NAME
 
-lokihouse - Loki-compatible log store on ClickHouse
+runakefli - Loki-compatible log store on ClickHouse
 
 # SYNOPSIS
 
-**lokihouse** [**-config.file** *path*] [**-config.expand-env**] [**-version**]
+**runakefli** [**-config.file** *path*] [**-config.expand-env**] [**-version**]
 
 # DESCRIPTION
 
-**lokihouse** serves Grafana Loki's HTTP API (push, LogQL queries, labels,
+**runakefli** serves Loki's HTTP API (push, LogQL queries, labels,
 series, tail, index statistics, deletes and the ruler) and stores the logs in
 ClickHouse. Clients such as Grafana, Promtail, Alloy and logcli talk to it as
 they would to Loki.
@@ -1880,7 +1880,7 @@ On start it creates the database and tables it needs, then listens on
 # OPTIONS
 
 **-config.file** *path*
-:   YAML configuration file (default *lokihouse.yaml*). Unknown keys are an error.
+:   YAML configuration file (default *runakefli.yaml*). Unknown keys are an error.
 
 **-config.expand-env**
 :   Expand *${VAR}* and *${VAR:-default}* in the configuration file before
@@ -1904,40 +1904,40 @@ command line.
 
 # FILES
 
-*/etc/lokihouse/lokihouse.yaml*
-:   Configuration used by the Debian package's *lokihouse.service*.
+*/etc/runakefli/runakefli.yaml*
+:   Configuration used by the Debian package's *runakefli.service*.
 
-*/var/lib/lokihouse*
+*/var/lib/runakefli*
 :   Working directory of the service: temporary rule files and the ruler WAL.
 
 # ENVIRONMENT
 
 **NOTIFY_SOCKET**
-:   Set by systemd for *Type=notify* services; lokihouse reports readiness and
+:   Set by systemd for *Type=notify* services; runakefli reports readiness and
     shutdown on it.
 
 **CREDENTIALS_DIRECTORY**
 :   Set by systemd when credentials are imported; reference it from the
     configuration with **-config.expand-env**, for example
-    *password_file: ${CREDENTIALS_DIRECTORY}/lokihouse.clickhouse-password*.
+    *password_file: ${CREDENTIALS_DIRECTORY}/runakefli.clickhouse-password*.
 
 # SEE ALSO
 
-Documentation: <https://lokihouse.dev/>; Loki configuration
+Documentation: <https://runakefli.app/>; Loki configuration
 reference for the *ruler*, *ruler_storage* and *limits_config* blocks:
 <https://grafana.com/docs/loki/latest/configure/>.
 ```
 
 - [ ] **Step 3: Write the docs pages**
 
-`docs/index.md`: what lokihouse is (from spec §1, in user terms), the feature list (spec §6 in user terms), status (phases), and links to the other pages. `README.md`: a short version of `index.md` with a quick start (podman ClickHouse + `make build` + `./bin/lokihouse -config.file lokihouse.example.yaml`), and links to the site, `AGENTS.md` and `LICENSE` (AGPL-3.0).
+`docs/index.md`: what runakefli is (from spec §1, in user terms), the feature list (spec §6 in user terms), status (phases), and links to the other pages. `README.md`: a short version of `index.md` with a quick start (podman ClickHouse + `make build` + `./bin/runakefli -config.file runakefli.example.yaml`), and links to the site, `AGENTS.md` and `LICENSE` (AGPL-3.0).
 
 `docs/getting-started.md`:
-- install the `.deb` from a GitHub release (`apt install ./lokihouse_0.5.0_amd64.deb`);
+- install the `.deb` from a GitHub release (`apt install ./runakefli_0.5.0_amd64.deb`);
 - or build from source (`make build`);
 - start ClickHouse (podman command);
-- edit `/etc/lokihouse/lokihouse.yaml`;
-- `systemctl enable --now lokihouse`;
+- edit `/etc/runakefli/runakefli.yaml`;
+- `systemctl enable --now runakefli`;
 - push a line with curl, query it with curl and `logcli`;
 - add the data source to Grafana (type Loki, URL `http://host:3100`).
 
@@ -1947,7 +1947,7 @@ reference for the *ruler*, *ruler_storage* and *limits_config* blocks:
 - `clickhouse.*`: `addr`, `database`, `username`, `password`, `password_file`, `cluster`, `replicated`, `replica_path`, `replica_name`, `settings`
 - `query.pushdown`
 - `compactor.*`
-- `ruler`, `ruler_storage`, `limits_config`: these link to Loki's reference and list the lokihouse-specific notes (rule_path default, unsupported sharding, WAL guard)
+- `ruler`, `ruler_storage`, `limits_config`: these link to Loki's reference and list the runakefli-specific notes (rule_path default, unsupported sharding, WAL guard)
 - the `-config.expand-env` and `password_file` patterns.
 
 `docs/operations.md`:
@@ -1962,7 +1962,7 @@ reference for the *ruler*, *ruler_storage* and *limits_config* blocks:
 
 Sections added later: "Limits" (Task 9), "Multi-tenant queries" (Task 10), "Metrics" (Task 11).
 
-`docs/api.md`: the endpoint table, each endpoint with its Loki doc link and lokihouse notes (from the phase status docs).
+`docs/api.md`: the endpoint table, each endpoint with its Loki doc link and runakefli notes (from the phase status docs).
 
 `docs/architecture.md`: spec §4 (diagram, Tier A/B) and §5 (schema), rewritten for readers.
 
@@ -1975,10 +1975,10 @@ mkdocs-material==9.7.7
 ```
 `mkdocs.yml`:
 ```yaml
-site_name: lokihouse
+site_name: runakefli
 site_description: Loki-compatible log store on ClickHouse
-site_url: https://lokihouse.dev/
-repo_url: https://github.com/bzed/lokihouse
+site_url: https://runakefli.app/
+repo_url: https://github.com/bzed/runakefli
 edit_uri: edit/main/docs/
 docs_dir: docs
 strict: true
@@ -2003,7 +2003,7 @@ nav:
   - API: api.md
   - Architecture: architecture.md
   - Differences from Loki: divergences.md
-  - Manual page: man/lokihouse.1.md
+  - Manual page: man/runakefli.1.md
   - Development:
       - development.md
       - Benchmark: benchmark.md
@@ -2012,26 +2012,26 @@ nav:
       - Phase 3: phase3-status.md
       - Phase 4: phase4-status.md
 ```
-Task 12 adds `benchmark.md`. Until then, create it with one line: "Results are added in Phase 5 Task 12." In the phase status pages, rewrite any link into `docs/superpowers/` as an absolute GitHub URL (`https://github.com/bzed/lokihouse/blob/main/docs/superpowers/...`), so the strict build does not fail on excluded pages.
+Task 12 adds `benchmark.md`. Until then, create it with one line: "Results are added in Phase 5 Task 12." In the phase status pages, rewrite any link into `docs/superpowers/` as an absolute GitHub URL (`https://github.com/bzed/runakefli/blob/main/docs/superpowers/...`), so the strict build does not fail on excluded pages.
 
 - [ ] **Step 4: Makefile targets**
 
 ```make
 .PHONY: docs man
 docs:
-	python3 -m venv /tmp/lokihouse-docs-venv
-	/tmp/lokihouse-docs-venv/bin/pip install -q -r docs/requirements.txt
-	/tmp/lokihouse-docs-venv/bin/mkdocs build --strict --site-dir site
+	python3 -m venv /tmp/runakefli-docs-venv
+	/tmp/runakefli-docs-venv/bin/pip install -q -r docs/requirements.txt
+	/tmp/runakefli-docs-venv/bin/mkdocs build --strict --site-dir site
 man:
 	mkdir -p bin
-	go-md2man -in docs/man/lokihouse.1.md -out bin/lokihouse.1
+	go-md2man -in docs/man/runakefli.1.md -out bin/runakefli.1
 ```
 
 - [ ] **Step 5: Verify**
 
 ```bash
-go test ./cmd/lokihouse/ ./internal/config/ -count=1
-make docs && make man && man -l bin/lokihouse.1 | head -20
+go test ./cmd/runakefli/ ./internal/config/ -count=1
+make docs && make man && man -l bin/runakefli.1 | head -20
 make check
 ```
 Expected: tests PASS, the strict mkdocs build has no warnings, and the manpage renders.
@@ -2051,16 +2051,16 @@ git commit -m "docs: mkdocs site, README, manpage; flag/config drift tests"
 - Create:
   - `debian/changelog`, `debian/control`, `debian/copyright`, `debian/rules`
   - `debian/source/format`, `debian/source/options`
-  - `debian/lokihouse.service`, `debian/lokihouse.yaml`
-  - `debian/lokihouse.install`, `debian/lokihouse.manpages`, `debian/lokihouse.docs`, `debian/lokihouse.dirs`
+  - `debian/runakefli.service`, `debian/runakefli.yaml`
+  - `debian/runakefli.install`, `debian/runakefli.manpages`, `debian/runakefli.docs`, `debian/runakefli.dirs`
   - `debian/README.Debian`
   - `debian/tests/control`, `debian/tests/smoke`
 - Modify: `Makefile` (`deb` target), `.gitignore`
 
 **Interfaces:**
-- Consumes: the `Makefile` `LDFLAGS` variables (Task 3), `docs/man/lokihouse.1.md` (Task 6), `lokihouse.example.yaml`.
+- Consumes: the `Makefile` `LDFLAGS` variables (Task 3), `docs/man/runakefli.1.md` (Task 6), `runakefli.example.yaml`.
 - Produces:
-  - `dpkg-buildpackage -us -uc -b` → `../lokihouse_<ver>_<arch>.deb`;
+  - `dpkg-buildpackage -us -uc -b` → `../runakefli_<ver>_<arch>.deb`;
   - `debian/tests/smoke`, run in CI after installing the package (Task 8);
   - `make deb`.
 
@@ -2069,7 +2069,7 @@ git commit -m "docs: mkdocs site, README, manpage; flag/config drift tests"
 `debian/tests/control`:
 ```
 Tests: smoke
-Depends: lokihouse, systemd
+Depends: runakefli, systemd
 Restrictions: needs-root, superficial
 ```
 `debian/tests/smoke`:
@@ -2077,21 +2077,21 @@ Restrictions: needs-root, superficial
 #!/bin/sh
 # Installed-package checks: binary, manpage, config, unit validity and hardening.
 set -eu
-lokihouse -version | grep -q '^lokihouse, version '
-test -f /etc/lokihouse/lokihouse.yaml
-dpkg-query -W -f='${Conffiles}\n' lokihouse | grep -q '/etc/lokihouse/lokihouse.yaml'
-test -f /usr/share/man/man1/lokihouse.1.gz
-test -f /usr/share/doc/lokihouse/examples/lokihouse.example.yaml
-unit=/usr/lib/systemd/system/lokihouse.service
+runakefli -version | grep -q '^runakefli, version '
+test -f /etc/runakefli/runakefli.yaml
+dpkg-query -W -f='${Conffiles}\n' runakefli | grep -q '/etc/runakefli/runakefli.yaml'
+test -f /usr/share/man/man1/runakefli.1.gz
+test -f /usr/share/doc/runakefli/examples/runakefli.example.yaml
+unit=/usr/lib/systemd/system/runakefli.service
 test -f "$unit"
 systemd-analyze verify --man=no "$unit"
 systemd-analyze security --offline=true --threshold=15 --no-pager "$unit"
 # Not enabled on install: there is no ClickHouse to talk to yet.
 if [ -d /run/systemd/system ]; then
-	! systemctl is-enabled --quiet lokihouse.service
+	! systemctl is-enabled --quiet runakefli.service
 fi
 # The packaged config parses (no ClickHouse needed for parsing).
-lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -version >/dev/null
+runakefli -config.file /etc/runakefli/runakefli.yaml -config.expand-env -version >/dev/null
 ```
 The last line only proves that flags parse. Config parsing is covered by `TestLoad_PackagedConfig` in Step 2.
 
@@ -2101,19 +2101,19 @@ Append to `internal/config/config_test.go`:
 ```go
 func TestLoad_PackagedConfig(t *testing.T) {
 	t.Setenv("CREDENTIALS_DIRECTORY", t.TempDir())
-	c, err := Load(filepath.Join("..", "..", "debian", "lokihouse.yaml"), true)
+	c, err := Load(filepath.Join("..", "..", "debian", "runakefli.yaml"), true)
 	require.NoError(t, err)
 	require.Equal(t, "127.0.0.1", c.Server.HTTPListenAddress, "the package listens on localhost by default")
 }
 ```
 Run: expected FAIL (file missing).
 
-- [ ] **Step 3: Write `debian/lokihouse.yaml`**
+- [ ] **Step 3: Write `debian/runakefli.yaml`**
 
 ```yaml
-# lokihouse configuration (Debian package). All options:
-#   man lokihouse, /usr/share/doc/lokihouse/examples/lokihouse.example.yaml,
-#   https://lokihouse.dev/configuration/
+# runakefli configuration (Debian package). All options:
+#   man runakefli, /usr/share/doc/runakefli/examples/runakefli.example.yaml,
+#   https://runakefli.app/configuration/
 # The service runs with -config.expand-env, so ${VAR} is expanded.
 auth_enabled: false              # true: clients must send X-Scope-OrgID
 server:
@@ -2122,41 +2122,41 @@ server:
   log_level: info
 clickhouse:
   addr: ["localhost:9000"]
-  database: lokihouse
+  database: runakefli
   username: default
   # Keep the password out of this file: store it as a systemd credential
-  #   systemd-creds encrypt --name=lokihouse.clickhouse-password - \
-  #     /etc/credstore.encrypted/lokihouse.clickhouse-password
+  #   systemd-creds encrypt --name=runakefli.clickhouse-password - \
+  #     /etc/credstore.encrypted/runakefli.clickhouse-password
   # and uncomment:
-  # password_file: ${CREDENTIALS_DIRECTORY}/lokihouse.clickhouse-password
+  # password_file: ${CREDENTIALS_DIRECTORY}/runakefli.clickhouse-password
 limits_config: {}
 ```
 Run the Step 2 test. Expected: PASS.
 
-- [ ] **Step 4: Write the unit `debian/lokihouse.service`**
+- [ ] **Step 4: Write the unit `debian/runakefli.service`**
 
 ```ini
 [Unit]
-Description=lokihouse - Loki-compatible log store on ClickHouse
-Documentation=man:lokihouse(1) https://lokihouse.dev/
+Description=runakefli - Loki-compatible log store on ClickHouse
+Documentation=man:runakefli(1) https://runakefli.app/
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=/usr/bin/lokihouse -config.file=/etc/lokihouse/lokihouse.yaml -config.expand-env=true
+ExecStart=/usr/bin/runakefli -config.file=/etc/runakefli/runakefli.yaml -config.expand-env=true
 Restart=on-failure
 RestartSec=5s
 # graceful_shutdown_timeout (30s) plus ruler and ClickHouse shutdown.
 TimeoutStopSec=45s
 DynamicUser=yes
-StateDirectory=lokihouse
+StateDirectory=runakefli
 StateDirectoryMode=0750
-WorkingDirectory=/var/lib/lokihouse
-ConfigurationDirectory=lokihouse
-# Credentials named lokihouse.* from /etc/credstore{,.encrypted} (optional).
-ImportCredential=lokihouse.*
+WorkingDirectory=/var/lib/runakefli
+ConfigurationDirectory=runakefli
+# Credentials named runakefli.* from /etc/credstore{,.encrypted} (optional).
+ImportCredential=runakefli.*
 UMask=0077
 LimitNOFILE=65536
 CapabilityBoundingSet=
@@ -2194,7 +2194,7 @@ KeyringMode=private
 [Install]
 WantedBy=multi-user.target
 ```
-Check it locally: `systemd-analyze security --offline=true --threshold=15 --no-pager debian/lokihouse.service`. Expected: `Overall exposure level … 1.1 OK`, exit 0.
+Check it locally: `systemd-analyze security --offline=true --threshold=15 --no-pager debian/runakefli.service`. Expected: `Overall exposure level … 1.1 OK`, exit 0.
 
 - [ ] **Step 5: Write the packaging files**
 
@@ -2210,7 +2210,7 @@ tar-ignore = debian/.build
 ```
 `debian/changelog`:
 ```
-lokihouse (0.5.0) trixie; urgency=medium
+runakefli (0.5.0) trixie; urgency=medium
 
   * Phase 5: graceful shutdown, Debian packaging, docs, CI, limits,
     multi-tenant queries, metrics and query stats.
@@ -2219,7 +2219,7 @@ lokihouse (0.5.0) trixie; urgency=medium
 ```
 `debian/control`:
 ```
-Source: lokihouse
+Source: runakefli
 Section: net
 Priority: optional
 Maintainer: Bernd Zeimetz <bernd@bzed.de>
@@ -2229,22 +2229,22 @@ Build-Depends: debhelper-compat (= 13),
                git,
                go-md2man,
 Standards-Version: 4.7.2
-Homepage: https://github.com/bzed/lokihouse
-Vcs-Browser: https://github.com/bzed/lokihouse
-Vcs-Git: https://github.com/bzed/lokihouse.git
+Homepage: https://github.com/bzed/runakefli
+Vcs-Browser: https://github.com/bzed/runakefli
+Vcs-Git: https://github.com/bzed/runakefli.git
 Rules-Requires-Root: no
 
-Package: lokihouse
+Package: runakefli
 Architecture: amd64 arm64
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Suggests: clickhouse-server
 Description: Loki-compatible log store on ClickHouse
- lokihouse serves the HTTP API of Grafana Loki (push, LogQL queries, labels,
+ runakefli serves the HTTP API of Loki (push, LogQL queries, labels,
  series, tail, index statistics, deletes and the ruler) and stores the logs in
  ClickHouse, so Grafana, Promtail, Alloy and logcli use it like Loki.
  .
  The package ships a hardened systemd service using a dynamic user. It is not
- enabled on installation: configure /etc/lokihouse/lokihouse.yaml first.
+ enabled on installation: configure /etc/runakefli/runakefli.yaml first.
 ```
 `debian/rules`:
 ```make
@@ -2294,16 +2294,16 @@ override_dh_auto_configure:
 	$(GO) mod download
 
 override_dh_auto_build:
-	$(GO) build -buildmode=pie -ldflags "$(LDFLAGS)" -o $(B)/lokihouse ./cmd/lokihouse
-	go-md2man -in docs/man/lokihouse.1.md -out $(B)/lokihouse.1
-	$(GO) version -m $(B)/lokihouse > $(B)/MODULES.txt
+	$(GO) build -buildmode=pie -ldflags "$(LDFLAGS)" -o $(B)/runakefli ./cmd/runakefli
+	go-md2man -in docs/man/runakefli.1.md -out $(B)/runakefli.1
+	$(GO) version -m $(B)/runakefli > $(B)/MODULES.txt
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	# Unit tests need a ClickHouse server (CI runs them separately); check
 	# the binary and the packages that need no database.
-	$(B)/lokihouse -version
-	$(GO) test -count=1 ./internal/config/ ./internal/logging/ ./cmd/lokihouse/
+	$(B)/runakefli -version
+	$(GO) test -count=1 ./internal/config/ ./internal/logging/ ./cmd/runakefli/
 endif
 
 override_dh_auto_install:
@@ -2318,26 +2318,26 @@ override_dh_auto_clean:
 	chmod -R u+w $(B) 2>/dev/null || true
 	rm -rf $(B)
 ```
-`debian/lokihouse.install`:
+`debian/runakefli.install`:
 ```
-debian/.build/lokihouse usr/bin
-debian/lokihouse.yaml etc/lokihouse
-lokihouse.example.yaml usr/share/doc/lokihouse/examples
+debian/.build/runakefli usr/bin
+debian/runakefli.yaml etc/runakefli
+runakefli.example.yaml usr/share/doc/runakefli/examples
 ```
-`debian/lokihouse.manpages`: `debian/.build/lokihouse.1`
+`debian/runakefli.manpages`: `debian/.build/runakefli.1`
 
-`debian/lokihouse.docs`:
+`debian/runakefli.docs`:
 ```
 README.md
 docs/divergences.md
 debian/.build/MODULES.txt
 ```
-`debian/lokihouse.dirs`: `etc/lokihouse`
+`debian/runakefli.dirs`: `etc/runakefli`
 
 `debian/README.Debian`:
 - ClickHouse is not packaged in Debian. Install it from ClickHouse's repository or point `clickhouse.addr` at a remote server.
-- The service is not enabled on install. Edit `/etc/lokihouse/lokihouse.yaml`, then `systemctl enable --now lokihouse`.
-- The service runs as a dynamic user with state in `/var/lib/lokihouse`. Point `ruler_storage.filesystem.dir` at `/var/lib/lokihouse/rules`.
+- The service is not enabled on install. Edit `/etc/runakefli/runakefli.yaml`, then `systemctl enable --now runakefli`.
+- The service runs as a dynamic user with state in `/var/lib/runakefli`. Point `ruler_storage.filesystem.dir` at `/var/lib/runakefli/rules`.
 - Put the ClickHouse password in a credential with the `systemd-creds` example from the config.
 - The default listen address is 127.0.0.1.
 - The ruler must run on one instance only.
@@ -2346,9 +2346,9 @@ debian/.build/MODULES.txt
 - `Files: *`: `Copyright: 2026 Bernd Zeimetz <bernd@bzed.de>`, `License: AGPL-3.0`. Check `LICENSE`, and use `AGPL-3.0+` if the project says "or later".
 - A `Files:` stanza for every file that carries the `Copied from grafana/loki` header (`git grep -l "Copied from grafana/loki"`): `Copyright: 2015-2026 Grafana Labs`, `License: AGPL-3.0`.
 - The AGPL-3.0 license paragraph, referencing `/usr/share/common-licenses/AGPL-3` only if that file exists on trixie. If it does not, include the full text.
-- A comment that the binary statically embeds the Go modules listed in `/usr/share/doc/lokihouse/MODULES.txt`, each under its own licence.
+- A comment that the binary statically embeds the Go modules listed in `/usr/share/doc/runakefli/MODULES.txt`, each under its own licence.
 
-`chmod +x debian/rules debian/tests/smoke`. Add `debian/.build/`, `debian/lokihouse/`, `debian/.debhelper/`, `debian/debhelper-build-stamp`, `debian/files` and `debian/*.substvars` to `.gitignore`.
+`chmod +x debian/rules debian/tests/smoke`. Add `debian/.build/`, `debian/runakefli/`, `debian/.debhelper/`, `debian/debhelper-build-stamp`, `debian/files` and `debian/*.substvars` to `.gitignore`.
 
 - [ ] **Step 6: Build, lint and test the package in a trixie container**
 
@@ -2357,21 +2357,21 @@ Add the `Makefile` target:
 .PHONY: deb
 # Builds the .deb for the host architecture in a debian:trixie container (podman).
 deb:
-	out=$$(mktemp -d /tmp/lokihouse-deb.XXXXXX); \
+	out=$$(mktemp -d /tmp/runakefli-deb.XXXXXX); \
 	podman run --rm -v "$(CURDIR):/src:ro,Z" -v "$$out:/out:Z" docker.io/library/debian:trixie sh -euc '\
 		apt-get update -qq && apt-get install -y -qq --no-install-recommends devscripts equivs build-essential lintian git rsync >/dev/null; \
 		rsync -a --exclude .cache --exclude bin --exclude site /src/ /build/; cd /build; \
 		git config --global --add safe.directory /build; \
 		mk-build-deps -i -r -t "apt-get -y -qq --no-install-recommends" debian/control >/dev/null; \
 		dpkg-buildpackage -us -uc -b; \
-		lintian --fail-on error,warning --info ../lokihouse_*.deb; \
-		apt-get install -y -qq systemd ../lokihouse_*.deb >/dev/null && sh debian/tests/smoke; \
-		cp ../lokihouse_*.deb ../lokihouse_*.buildinfo ../lokihouse_*.changes /out/'; \
+		lintian --fail-on error,warning --info ../runakefli_*.deb; \
+		apt-get install -y -qq systemd ../runakefli_*.deb >/dev/null && sh debian/tests/smoke; \
+		cp ../runakefli_*.deb ../runakefli_*.buildinfo ../runakefli_*.changes /out/'; \
 	echo "packages in $$out"; ls -l "$$out"
 ```
-Run: `make deb`. Expected: the build, lintian and the smoke test all succeed, and the `.deb` is in `/tmp/lokihouse-deb.*`.
+Run: `make deb`. Expected: the build, lintian and the smoke test all succeed, and the `.deb` is in `/tmp/runakefli-deb.*`.
 
-Lintian warnings: fix each one. If a warning is inherent to a statically linked Go binary built with a downloaded toolchain, override it in `debian/lokihouse.lintian-overrides` with a `#` comment line naming the reason. Every override needs that reason.
+Lintian warnings: fix each one. If a warning is inherent to a statically linked Go binary built with a downloaded toolchain, override it in `debian/runakefli.lintian-overrides` with a `#` comment line naming the reason. Every override needs that reason.
 
 - [ ] **Step 7: Commit**
 
@@ -2400,7 +2400,7 @@ GitHub runners have podman but no `clickhouse-client`. Change the readiness loop
 ```sh
   until podman exec "ch$i" clickhouse-client -q "SELECT count() FROM system.zookeeper WHERE path = '/'" >/dev/null 2>&1; do
 ```
-Run `make cluster-down && make cluster-up`. Expected: `cluster lokihouse up`.
+Run `make cluster-down && make cluster-up`. Expected: `cluster runakefli up`.
 
 - [ ] **Step 2: `ci.yml`**
 
@@ -2455,7 +2455,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: make build && ./bin/lokihouse -version
+      - run: make build && ./bin/runakefli -version
   docs:
     runs-on: ubuntu-24.04
     steps:
@@ -2510,9 +2510,9 @@ jobs:
           dch --newversion "${v}+git$(date -u +%Y%m%d%H%M%S).$(git rev-parse --short=8 HEAD)" \
             --distribution trixie --force-distribution "CI snapshot build."
       - run: dpkg-buildpackage -us -uc -b
-      - run: lintian --fail-on error,warning --info ../lokihouse_*.deb
-      - run: apt-get install -y ../lokihouse_*.deb && sh debian/tests/smoke
-      - run: mkdir out && cp ../lokihouse_*.deb ../lokihouse_*.buildinfo ../lokihouse_*.changes out/
+      - run: lintian --fail-on error,warning --info ../runakefli_*.deb
+      - run: apt-get install -y ../runakefli_*.deb && sh debian/tests/smoke
+      - run: mkdir out && cp ../runakefli_*.deb ../runakefli_*.buildinfo ../runakefli_*.changes out/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deb-${{ matrix.arch }}
@@ -2783,8 +2783,8 @@ import (
 )
 
 // Copied from grafana/loki@fbc3f077 pkg/distributor/ingestion_rate_strategy.go
-// (localStrategy); modifications: tenant-only keys (lokihouse has no policies),
-// also used for Loki's "global" strategy (lokihouse has no distributor ring:
+// (localStrategy); modifications: tenant-only keys (runakefli has no policies),
+// also used for Loki's "global" strategy (runakefli has no distributor ring:
 // one instance holds the whole limit, see docs/divergences.md).
 type localStrategy struct{ limits *validation.Overrides }
 
@@ -2961,11 +2961,11 @@ Run: `go test ./internal/api/ ./internal/ingest/ -count=1`. Expected: PASS.
 
 - [ ] **Step 5: Docs, divergences and gates**
 
-- `docs/operations.md`, new section "Limits": which `limits_config` keys lokihouse enforces and where:
+- `docs/operations.md`, new section "Limits": which `limits_config` keys runakefli enforces and where:
   - ingestion: `ingestion_rate_mb`, `ingestion_burst_size_mb` and all existing validation limits;
   - query: `max_query_length`, `max_query_lookback`, `max_entries_limit_per_query`, `max_streams_matchers_per_query`, `required_labels`, `minimum_labels_number`, `query_timeout`, `max_query_series`, `max_query_range`.
 - `docs/divergences.md`, section "Hardening (Phase 5)":
-  - `ingestion_rate_strategy: global` behaves like `local`: no distributor ring, so with several lokihouse instances behind a load balancer each enforces the full limit;
+  - `ingestion_rate_strategy: global` behaves like `local`: no distributor ring, so with several runakefli instances behind a load balancer each enforces the full limit;
   - per-policy rate limits (`policy_stream_mapping`) are not supported.
 
 ```bash
@@ -2985,7 +2985,7 @@ git commit -m "feat: Loki ingestion rate limit and query limits"
   - `internal/pushdown/engine.go`, `internal/pushdown/engine_test.go`
   - `internal/api/api.go`, `internal/api/metadata.go`
   - `internal/server/server.go`
-  - `test/oracle/oracle_test.go`, `test/oracle/loki.go` (config), `test/oracle/lokihouse.go` (config)
+  - `test/oracle/oracle_test.go`, `test/oracle/loki.go` (config), `test/oracle/runakefli.go` (config)
   - `docs/configuration.md`, `docs/operations.md`, `docs/divergences.md`
 
 **Interfaces:**
@@ -3065,11 +3065,11 @@ Use Loki's exported `querier.NewTenantEntryIterator` and `querier.NewTenantSampl
 ```go
 // Copied from grafana/loki@fbc3f077 pkg/querier/multi_tenant_querier.go
 // (SelectLogs, SelectSamples, Label, Series and their helpers); modifications:
-// wraps lokihouse's Store instead of Loki's querier.Querier; store-chunk
-// overrides (partitionChunkRefsByTenant) removed: lokihouse has no chunks.
+// wraps runakefli's Store instead of Loki's querier.Querier; store-chunk
+// overrides (partitionChunkRefsByTenant) removed: runakefli has no chunks.
 ```
 ```go
-// Store is what lokihouse's ClickHouse querier offers per tenant.
+// Store is what runakefli's ClickHouse querier offers per tenant.
 type Store interface {
 	logql.Querier
 	Label(ctx context.Context, req *logproto.LabelRequest) (*logproto.LabelResponse, error)
@@ -3104,9 +3104,9 @@ Run the Step 1 tests. Expected: PASS.
 
 Enable the key in both configs:
 - in `test/oracle/loki.go` `lokiConfigTemplate`, add `multi_tenant_queries_enabled: true` to the existing `querier:` block, or add the block if there is none;
-- in `test/oracle/lokihouse.go`'s config, add `querier: {multi_tenant_queries_enabled: true}`.
+- in `test/oracle/runakefli.go`'s config, add `querier: {multi_tenant_queries_enabled: true}`.
 
-Create `test/oracle/multitenant_test.go` with `multiTenantOracle(t, loki, house string, start, end time.Time)`, called from `TestOracle` after the existing endpoint checks. It compares Loki and lokihouse with `Compare` for tenant header `tenant-a|tenant-b`:
+Create `test/oracle/multitenant_test.go` with `multiTenantOracle(t, loki, house string, start, end time.Time)`, called from `TestOracle` after the existing endpoint checks. It compares Loki and runakefli with `Compare` for tenant header `tenant-a|tenant-b`:
 - `query_range` `{app="api"}` limit 100;
 - `query_range` `sum by (__tenant_id__, app) (count_over_time({app=~".+"}[5m]))` step 60;
 - `query_range` `{app="api", __tenant_id__="tenant-b"}`;
@@ -3119,7 +3119,7 @@ Run `make oracle-all`. Expected: PASS. A mismatch is a bug to fix (or, after ana
 - [ ] **Step 4: Docs, divergences, gates, commit**
 
 - `docs/operations.md`, section "Multi-tenant queries": the config key, the header syntax, the `__tenant_id__` label, and which endpoints support it.
-- `docs/divergences.md`: Loki's multi-tenant querier also covers index stats, volume, detected fields and labels, and patterns; lokihouse answers those for one tenant only. Multi-tenant queries always run on Tier B (no SQL push-down).
+- `docs/divergences.md`: Loki's multi-tenant querier also covers index stats, volume, detected fields and labels, and patterns; runakefli answers those for one tenant only. Multi-tenant queries always run on Tier B (no SQL push-down).
 
 ```bash
 make check && make test-cluster && make oracle-all && make oracle-cluster
@@ -3148,8 +3148,8 @@ git commit -m "feat: multi-tenant queries (querier.multi_tenant_queries_enabled)
     - `loki_request_duration_seconds{method,route,status_code,ws}` and `loki_inflight_requests{method,route}`;
     - `loki_distributor_bytes_received_total{tenant}`, `loki_distributor_lines_received_total{tenant}`;
     - Loki's existing `loki_discarded_samples_total` and `loki_discarded_bytes_total`;
-    - `loki_ruler_*` (ruler namespace changed from `lokihouse` to Loki's `loki`);
-    - `lokihouse_build_info`;
+    - `loki_ruler_*` (ruler namespace changed from `runakefli` to Loki's `loki`);
+    - `runakefli_build_info`;
   - `chstore.WithQueryStats(ctx context.Context) context.Context`: adds ClickHouse progress (rows, bytes read) to Loki's stats context in `ctx`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -3175,7 +3175,7 @@ func TestRun_Metrics(t *testing.T) {
 		`loki_distributor_lines_received_total{tenant="t1"} 1`,
 		`loki_discarded_samples_total{`,
 		`loki_ruler_sync_rules_total`,
-		`lokihouse_build_info{`,
+		`runakefli_build_info{`,
 	} {
 		require.Contains(t, m, want)
 	}
@@ -3281,10 +3281,10 @@ Define both with `promauto` (`Namespace: "loki"`, names `distributor_bytes_recei
 
 In `server.Run`:
 - create `rulerReg := prometheus.NewRegistry()` and pass it to `lhruler.New`;
-- register `versioncollector.NewCollector("lokihouse")` on the default registerer, ignoring `prometheus.AlreadyRegisteredError` (several `Run`s in one test process);
+- register `versioncollector.NewCollector("runakefli")` on the default registerer, ignoring `prometheus.AlreadyRegisteredError` (several `Run`s in one test process);
 - set `a.Metrics = promhttp.HandlerFor(prometheus.Gatherers{prometheus.DefaultGatherer, rulerReg}, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError})`.
 
-In `internal/ruler/ruler.go`, change the `NewRuler` namespace argument from `"lokihouse"` to `"loki"` (Loki's `-metrics.namespace` default).
+In `internal/ruler/ruler.go`, change the `NewRuler` namespace argument from `"runakefli"` to `"loki"` (Loki's `-metrics.namespace` default).
 
 - [ ] **Step 3: Implement query stats**
 
@@ -3342,9 +3342,9 @@ git commit -m "feat: /metrics (Loki request, distributor, ruler metrics) and Cli
 - Modify: `Makefile` (`bench`), `docs/development.md`
 
 **Interfaces:**
-- Consumes: `StartLoki`, `StartLokihouse`, `PushBoth`, `Get`, `Compare` (oracle harness).
+- Consumes: `StartLoki`, `StartRunakefli`, `PushBoth`, `Get`, `Compare` (oracle harness).
 - Produces:
-  - `make bench`, which writes a Markdown results table to `$LOKIHOUSE_BENCH_OUT` (default `.cache/bench/results.md`);
+  - `make bench`, which writes a Markdown results table to `$RUNAKEFLI_BENCH_OUT` (default `.cache/bench/results.md`);
   - `docs/benchmark.md` with the method, the environment and one recorded result.
 
 - [ ] **Step 1: Write the benchmark**
@@ -3419,18 +3419,18 @@ var benchQueries = []struct{ name, path, query string }{
 }
 
 func TestBench(t *testing.T) {
-	lines := envInt("LOKIHOUSE_BENCH_LINES", 200000)
-	streams := envInt("LOKIHOUSE_BENCH_STREAMS", 50)
-	rounds := envInt("LOKIHOUSE_BENCH_ROUNDS", 5)
+	lines := envInt("RUNAKEFLI_BENCH_LINES", 200000)
+	streams := envInt("RUNAKEFLI_BENCH_STREAMS", 50)
+	rounds := envInt("RUNAKEFLI_BENCH_ROUNDS", 5)
 	loki := StartLoki(t, "")
-	house := StartLokihouse(t, "")
+	house := StartRunakefli(t, "")
 	end := time.Now().Truncate(time.Minute)
 	benchData(t, []string{loki, house}, lines, streams, end)
 	// Make sure Loki has everything (the oracle's readiness wait, scaled).
 	waitBenchQueryable(t, loki, lines, end)
 
 	var out strings.Builder
-	fmt.Fprintf(&out, "| query | Loki p50 | Loki p95 | lokihouse p50 | lokihouse p95 |\n|---|---:|---:|---:|---:|\n")
+	fmt.Fprintf(&out, "| query | Loki p50 | Loki p95 | runakefli p50 | runakefli p95 |\n|---|---:|---:|---:|---:|\n")
 	for _, q := range benchQueries {
 		u := func(base string) string {
 			v := url.Values{"start": {strconv.FormatInt(end.Add(-time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
@@ -3449,7 +3449,7 @@ func TestBench(t *testing.T) {
 		Compare(t, "bench "+q.name, lb, hb) // a benchmark of wrong answers is worthless
 		fmt.Fprintf(&out, "| %s | %s | %s | %s | %s |\n", q.name, pct(lt, 50), pct(lt, 95), pct(ht, 50), pct(ht, 95))
 	}
-	p := os.Getenv("LOKIHOUSE_BENCH_OUT")
+	p := os.Getenv("RUNAKEFLI_BENCH_OUT")
 	if p == "" {
 		p = filepath.Join("..", "..", ".cache", "bench", "results.md")
 	}
@@ -3519,14 +3519,14 @@ Add the bench to `docs/development.md`.
 ```bash
 make check
 git add test/oracle/bench_test.go docs Makefile
-git commit -m "test(bench): lokihouse vs Loki latency benchmark; docs: results"
+git commit -m "test(bench): runakefli vs Loki latency benchmark; docs: results"
 ```
 
 ---
 
 ### Task 13: Memory and goroutine leak checks
 
-lokihouse is pure Go (`CGO_ENABLED=0`, garbage collected), so valgrind does not apply: it sees the Go runtime's own allocator, not leaks. The Go equivalents:
+runakefli is pure Go (`CGO_ENABLED=0`, garbage collected), so valgrind does not apply: it sees the Go runtime's own allocator, not leaks. The Go equivalents:
 - **pprof** heap and goroutine profiles from a long-running, loaded process (a soak run);
 - **goleak**, which fails a test that leaves goroutines behind;
 - the race detector, which `make cover` already runs.
@@ -3542,11 +3542,11 @@ lokihouse is pure Go (`CGO_ENABLED=0`, garbage collected), so valgrind does not 
   - `go.mod`, `go.sum`
 
 **Interfaces:**
-- Consumes: `server.Run` (Task 2), `/metrics` (Task 11), `StartLokihouse(t, extra)` (oracle harness).
+- Consumes: `server.Run` (Task 2), `/metrics` (Task 11), `StartRunakefli(t, extra)` (oracle harness).
 - Produces:
   - `config.Config.Server.RegisterInstrumentation bool` (`server.register_instrumentation`, Loki/dskit default true). When true, `GET /metrics` and `/debug/pprof/*` are served (Loki parity); when false, neither is.
   - `api.API.Pprof bool`.
-  - `make soak`, which writes heap and goroutine profiles and a samples CSV to `$LOKIHOUSE_SOAK_OUT` (default `.cache/soak/`).
+  - `make soak`, which writes heap and goroutine profiles and a samples CSV to `$RUNAKEFLI_SOAK_OUT` (default `.cache/soak/`).
 
 - [ ] **Step 1: Write the failing pprof and config tests**
 
@@ -3609,14 +3609,14 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m, leakIgnores()...)
 }
 ```
-and, in the same file, `leakIgnores()` returning the `goleak.IgnoreTopFunction(...)` / `goleak.IgnoreAnyFunction(...)` options for goroutines that are not lokihouse's to stop. Each ignore gets a comment naming its owner, for example:
+and, in the same file, `leakIgnores()` returning the `goleak.IgnoreTopFunction(...)` / `goleak.IgnoreAnyFunction(...)` options for goroutines that are not runakefli's to stop. Each ignore gets a comment naming its owner, for example:
 - the ClickHouse driver's connection-pool janitor, which `conn.Close` stops (if it remains, a test forgot to close a connection: fix the test, do not ignore it);
 - Loki and Prometheus package-level workers started in `init`;
 - `net/http` keep-alive connections of `http.DefaultClient`. Call `http.DefaultClient.CloseIdleConnections()` in a `t.Cleanup` of the helpers that use it instead of ignoring them.
 
 Process: run `go test ./internal/server/ -count=1`. goleak prints every leaked goroutine with its stack. Classify each one:
-1. A lokihouse goroutine (`github.com/bzed/lokihouse/...` in the stack) is a **bug**: fix the code so it stops on shutdown or context cancel, and keep the test.
-2. A goroutine owned by a dependency we hold a handle to is a missing `Close`/`Stop` in lokihouse: fix it.
+1. A runakefli goroutine (`github.com/bzed/runakefli/...` in the stack) is a **bug**: fix the code so it stops on shutdown or context cancel, and keep the test.
+2. A goroutine owned by a dependency we hold a handle to is a missing `Close`/`Stop` in runakefli: fix it.
 3. A process-lifetime goroutine of a dependency (started in `init`, or a global cache) gets an ignore with a comment.
 
 Repeat until the four packages pass. Run with `-count=3` as well: a leak that only shows on the second run is a leak.
@@ -3691,21 +3691,21 @@ func saveProfile(t *testing.T, base, name, dir, tag string) {
 	}
 }
 
-// TestSoak runs a mixed workload against lokihouse for LOKIHOUSE_SOAK_DURATION
+// TestSoak runs a mixed workload against runakefli for RUNAKEFLI_SOAK_DURATION
 // (default 10m) and checks that, after a warm-up, the post-GC heap and the
 // goroutine count do not grow. Profiles from the end of the warm-up and from
 // the end are kept for `go tool pprof -base`.
 func TestSoak(t *testing.T) {
-	dur, err := time.ParseDuration(envOr("LOKIHOUSE_SOAK_DURATION", "10m"))
+	dur, err := time.ParseDuration(envOr("RUNAKEFLI_SOAK_DURATION", "10m"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := envOr("LOKIHOUSE_SOAK_OUT", filepath.Join("..", "..", ".cache", "soak"))
+	out := envOr("RUNAKEFLI_SOAK_OUT", filepath.Join("..", "..", ".cache", "soak"))
 	if err := os.MkdirAll(out, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	rules := t.TempDir()
-	house := StartLokihouse(t, fmt.Sprintf("ruler_storage: {backend: filesystem, filesystem: {dir: %s}}\nruler: {rule_path: %s, poll_interval: 5s, evaluation_interval: 5s}\n",
+	house := StartRunakefli(t, fmt.Sprintf("ruler_storage: {backend: filesystem, filesystem: {dir: %s}}\nruler: {rule_path: %s, poll_interval: 5s, evaluation_interval: 5s}\n",
 		filepath.Join(rules, "rules"), filepath.Join(rules, "rules-temp")))
 	putRule(t, house)
 
@@ -3898,7 +3898,7 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 ```
 The workers report errors with `t.Errorf` and return (`t.Fatal` is only allowed on the test goroutine). Before writing the file, check with `grep -n "^func do(" test/oracle/*.go` that no other oracle file already defines `do`; if one does, rename this helper.
 
-`StartLokihouse` must start lokihouse with `server.register_instrumentation` at its default (true) so `/metrics` and `/debug/pprof` are available. Check that its config does not disable it.
+`StartRunakefli` must start runakefli with `server.register_instrumentation` at its default (true) so `/metrics` and `/debug/pprof` are available. Check that its config does not disable it.
 
 `Makefile`:
 ```make
@@ -3910,14 +3910,14 @@ soak:
 - [ ] **Step 5: Run the soak and fix what it finds**
 
 ```bash
-LOKIHOUSE_SOAK_DURATION=10m make soak
+RUNAKEFLI_SOAK_DURATION=10m make soak
 ```
 Expected: PASS, with `samples.csv` and the `warm-*`/`end-*` profiles in `.cache/soak/`. If it fails:
 ```bash
-go tool pprof -top -base .cache/soak/warm-heap.pb.gz bin/lokihouse .cache/soak/end-heap.pb.gz
+go tool pprof -top -base .cache/soak/warm-heap.pb.gz bin/runakefli .cache/soak/end-heap.pb.gz
 go tool pprof -traces .cache/soak/end-goroutine.pb.gz | head -80
 ```
-The growing allocation sites or goroutine stacks name the leak. Fix it in lokihouse and add a unit test that reproduces it: for example a goroutine count before and after N tail connections, or `goleak` in the package. Do not raise the thresholds to make the soak pass. Record the result (duration, heap first and last quarter, goroutines) in `docs/development.md`, section "Leak checks".
+The growing allocation sites or goroutine stacks name the leak. Fix it in runakefli and add a unit test that reproduces it: for example a goroutine count before and after N tail connections, or `goleak` in the package. Do not raise the thresholds to make the soak pass. Record the result (duration, heap first and last quarter, goroutines) in `docs/development.md`, section "Leak checks".
 
 - [ ] **Step 6: Nightly soak in CI and the AGENTS.md rule**
 
@@ -3928,7 +3928,7 @@ Add a job to `.github/workflows/nightly.yml`, with the same ClickHouse service, 
     timeout-minutes: 60
     # services, checkout, setup-go: as in the oracle job
     steps:
-      - run: LOKIHOUSE_SOAK_DURATION=30m make soak
+      - run: RUNAKEFLI_SOAK_DURATION=30m make soak
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -3976,7 +3976,7 @@ git commit -m "test: goleak, pprof endpoints (register_instrumentation), soak te
 - **ClickHouse Cloud verification** (spec §5.1): run the unit suite and the
   oracle against a ClickHouse Cloud service (single-server DDL, which Cloud maps
   to SharedMergeTree) and record the result here. Needs a Cloud account;
-  `LOKIHOUSE_TEST_CH_ADDR`, `LOKIHOUSE_TEST_CH_USER`, `LOKIHOUSE_TEST_CH_PASSWORD`
+  `RUNAKEFLI_TEST_CH_ADDR`, `RUNAKEFLI_TEST_CH_USER`, `RUNAKEFLI_TEST_CH_PASSWORD`
   already select the server, but the native protocol over TLS (port 9440) must
   be wired into `chtest.Options` and `clickhouse.*` config (a `tls` key).
 - **podman compose example** (spec §8 Phase 5 packaging row): not in scope for

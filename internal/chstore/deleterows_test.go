@@ -13,8 +13,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 // mustMatchers parses a logQL selector and returns its matchers.

@@ -3,30 +3,30 @@ VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/
 REVISION   ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null)
 BRANCH     ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 BUILD_DATE ?= $(shell date -u -d "@$${SOURCE_DATE_EPOCH:-$$(date +%s)}" +%Y-%m-%dT%H:%M:%SZ)
-PV := github.com/bzed/lokihouse/internal/build
-LDFLAGS := -X $(PV).Version=$(VERSION) -X $(PV).Revision=$(REVISION) -X $(PV).Branch=$(BRANCH) -X $(PV).BuildDate=$(BUILD_DATE) -X $(PV).BuildUser=lokihouse
+PV := github.com/bzed/runakefli/internal/build
+LDFLAGS := -X $(PV).Version=$(VERSION) -X $(PV).Revision=$(REVISION) -X $(PV).Branch=$(BRANCH) -X $(PV).BuildDate=$(BUILD_DATE) -X $(PV).BuildUser=runakefli
 .PHONY: build test oracle oracle-downstream oracle-all bench soak
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/lokihouse ./cmd/lokihouse
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/runakefli ./cmd/runakefli
 test:
 	go test ./...
 oracle:
 	go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
 oracle-downstream:
-	LOKIHOUSE_ORACLE_PUSHDOWN=downstream go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
+	RUNAKEFLI_ORACLE_PUSHDOWN=downstream go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
 oracle-all:
 	@echo "=== Mode: off ==="
-	LOKIHOUSE_ORACLE_PUSHDOWN=off go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
+	RUNAKEFLI_ORACLE_PUSHDOWN=off go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
 	@echo "=== Mode: downstream ==="
-	LOKIHOUSE_ORACLE_PUSHDOWN=downstream go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
+	RUNAKEFLI_ORACLE_PUSHDOWN=downstream go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
 	@echo "=== Mode: on ==="
 	go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
 # The benchmark's own servers (test/bench/up.sh): ClickHouse on local disk,
 # ClickHouse on S3 with and without its filesystem cache, and RustFS as the S3
 # store for those and for Loki.
-BENCH_ENV := LOKIHOUSE_TEST_CH_ADDR=localhost:19100 LOKIHOUSE_TEST_CH_CLUSTER= \
-	LOKIHOUSE_BENCH_S3=localhost:19900 LOKIHOUSE_BENCH_CH_S3=localhost:19101 \
-	LOKIHOUSE_BENCH_CH_S3_CACHE=localhost:19102
+BENCH_ENV := RUNAKEFLI_TEST_CH_ADDR=localhost:19100 RUNAKEFLI_TEST_CH_CLUSTER= \
+	RUNAKEFLI_BENCH_S3=localhost:19900 RUNAKEFLI_BENCH_CH_S3=localhost:19101 \
+	RUNAKEFLI_BENCH_CH_S3_CACHE=localhost:19102
 .PHONY: bench-up bench-down
 bench-up:
 	sh test/bench/up.sh
@@ -36,8 +36,8 @@ bench: bench-up
 	$(BENCH_ENV) go test -tags oracle,bench -run TestBench -count=1 -timeout 60m -v ./test/oracle/
 # make bench-s3 runs the object-storage scenario against the remote S3 store
 # of .secrets/s3.env (gitignored; S3_*/AWS_* variables, see
-# test/oracle/bench_s3_test.go). BENCH_STORES picks loki, lokihouse-cache or
-# both (default); LOKIHOUSE_BENCH_LINES, _ROUNDS and _SPAN in
+# test/oracle/bench_s3_test.go). BENCH_STORES picks loki, runakefli-cache or
+# both (default); RUNAKEFLI_BENCH_LINES, _ROUNDS and _SPAN in
 # the environment size the run.
 BENCH_S3_ENV ?= .secrets/s3.env
 BENCH_STORES ?=
@@ -46,16 +46,16 @@ bench-s3:
 	set -a; . ./$(BENCH_S3_ENV); set +a; \
 	trap 'sh test/bench/down-remote.sh' EXIT; \
 	sh test/bench/down-remote.sh; sh test/bench/up-remote.sh && \
-	LOKIHOUSE_TEST_CH_ADDR=localhost:19102 LOKIHOUSE_TEST_CH_CLUSTER= LOKIHOUSE_BENCH_S3_REMOTE=1 \
-	LOKIHOUSE_BENCH_CH_S3_CACHE=localhost:19102 \
-	LOKIHOUSE_BENCH_STORES=$(BENCH_STORES) \
+	RUNAKEFLI_TEST_CH_ADDR=localhost:19102 RUNAKEFLI_TEST_CH_CLUSTER= RUNAKEFLI_BENCH_S3_REMOTE=1 \
+	RUNAKEFLI_BENCH_CH_S3_CACHE=localhost:19102 \
+	RUNAKEFLI_BENCH_STORES=$(BENCH_STORES) \
 	go test -tags oracle,bench -run TestBench -count=1 -timeout 120m -v ./test/oracle/
 bench-s3-down:
 	set -a; . ./$(BENCH_S3_ENV); set +a; sh test/bench/down-remote.sh
 soak:
 	go test -tags oracle,soak -run TestSoak -count=1 -timeout 90m -v ./test/oracle/
 
-CLUSTER_ENV := LOKIHOUSE_TEST_CH_ADDR=localhost:19001 LOKIHOUSE_TEST_CH_CLUSTER=lokihouse
+CLUSTER_ENV := RUNAKEFLI_TEST_CH_ADDR=localhost:19001 RUNAKEFLI_TEST_CH_CLUSTER=runakefli
 .PHONY: cluster-up cluster-down test-cluster oracle-cluster
 cluster-up:
 	sh test/cluster/up.sh
@@ -88,34 +88,34 @@ check: fmt-check vet lint vuln cover
 
 .PHONY: docs man
 docs:
-	python3 -m venv /tmp/lokihouse-docs-venv
-	/tmp/lokihouse-docs-venv/bin/pip install -q -r docs/requirements.txt
-	/tmp/lokihouse-docs-venv/bin/mkdocs build --strict --site-dir site
+	python3 -m venv /tmp/runakefli-docs-venv
+	/tmp/runakefli-docs-venv/bin/pip install -q -r docs/requirements.txt
+	/tmp/runakefli-docs-venv/bin/mkdocs build --strict --site-dir site
 man:
 	mkdir -p bin
-	go-md2man -in docs/man/lokihouse.1.md -out bin/lokihouse.1
+	go-md2man -in docs/man/runakefli.1.md -out bin/runakefli.1
 
 .PHONY: docker docker-test
 # Container image for the host architecture (podman, or ENGINE=docker).
 ENGINE ?= $(shell command -v podman || command -v docker)
 docker:
-	$(ENGINE) build -t localhost/lokihouse:test \
+	$(ENGINE) build -t localhost/runakefli:test \
 		--build-arg VERSION=$(VERSION) --build-arg REVISION=$(REVISION) \
 		--build-arg BRANCH=$(BRANCH) --build-arg BUILD_DATE=$(BUILD_DATE) .
 docker-test: docker
-	ENGINE=$(ENGINE) sh scripts/docker-test.sh localhost/lokihouse:test
+	ENGINE=$(ENGINE) sh scripts/docker-test.sh localhost/runakefli:test
 
 .PHONY: deb
 # Builds the .deb for the host architecture in a debian:trixie container (podman).
 deb:
-	out=$$(mktemp -d /tmp/lokihouse-deb.XXXXXX); \
+	out=$$(mktemp -d /tmp/runakefli-deb.XXXXXX); \
 	podman run --rm -v "$(CURDIR):/src:ro,Z" -v "$$out:/out:Z" docker.io/library/debian:trixie sh -euc '\
 		apt-get update -qq && apt-get install -y -qq --no-install-recommends devscripts equivs build-essential lintian git rsync >/dev/null; \
 		rsync -a --exclude .cache --exclude bin --exclude site /src/ /build/; cd /build; \
 		git config --global --add safe.directory /build; \
 		mk-build-deps -i -r -t "apt-get -y -qq --no-install-recommends" debian/control >/dev/null; \
 		dpkg-buildpackage -us -uc -b; \
-		lintian --fail-on error,warning --info ../lokihouse_*.deb; \
-		apt-get install -y -qq systemd ../lokihouse_*.deb >/dev/null && sh debian/tests/smoke; \
-		cp ../lokihouse_*.deb ../lokihouse_*.buildinfo ../lokihouse_*.changes /out/'; \
+		lintian --fail-on error,warning --info ../runakefli_*.deb; \
+		apt-get install -y -qq systemd ../runakefli_*.deb >/dev/null && sh debian/tests/smoke; \
+		cp ../runakefli_*.deb ../runakefli_*.buildinfo ../runakefli_*.changes /out/'; \
 	echo "packages in $$out"; ls -l "$$out"

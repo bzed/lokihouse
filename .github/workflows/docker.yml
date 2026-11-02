@@ -1,5 +1,5 @@
 # Build and test the container image on both architectures. It is pushed to
-# ghcr.io/bzed/lokihouse (linux/amd64 and linux/arm64, signed with cosign, with
+# ghcr.io/bzed/runakefli (linux/amd64 and linux/arm64, signed with cosign, with
 # SBOM and provenance) only when release.yml calls this workflow with push: true;
 # pushes to main and pull requests build and test it.
 name: docker
@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/bzed/lokihouse
+  IMAGE: ghcr.io/bzed/runakefli
 
 jobs:
   test:
@@ -39,11 +39,11 @@ jobs:
         run: |
           set -eu
           if [ "${{ github.ref_type }}" = tag ]; then v=${GITHUB_REF_NAME#v}; else v=$(git describe --tags --always | sed 's/^v//'); fi
-          docker buildx build --load -t localhost/lokihouse:test \
+          docker buildx build --load -t localhost/runakefli:test \
             --build-arg VERSION="$v" --build-arg REVISION="$(git rev-parse --short=12 HEAD)" \
             --build-arg BRANCH="$GITHUB_REF_NAME" \
             --build-arg BUILD_DATE="$(date -u -d "@$(git log -1 --format=%ct)" +%Y-%m-%dT%H:%M:%SZ)" .
-          ENGINE=docker sh scripts/docker-test.sh localhost/lokihouse:test
+          ENGINE=docker sh scripts/docker-test.sh localhost/runakefli:test
 
   publish:
     if: ${{ inputs.push }}

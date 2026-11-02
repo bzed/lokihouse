@@ -1,5 +1,5 @@
 // Package distcopy is a verbatim port of Loki's distributor validation and
-// field detection, trimmed to lokihouse (no ring, Kafka, rate limiting,
+// field detection, trimmed to runakefli (no ring, Kafka, rate limiting,
 // metrics or usage tracking).
 //
 // Copied from grafana/loki@39c256e5 pkg/distributor/validator.go;

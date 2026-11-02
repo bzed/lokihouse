@@ -11,8 +11,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 func queryStrings(t *testing.T, conn driver.Conn, query string, args ...any) []string {
@@ -43,7 +43,7 @@ func TestMigrate_RefusesV2(t *testing.T) {
 	topo := chtest.Topology()
 	err := chstore.Migrate(context.Background(), conn, db, topo)
 	require.True(t, errors.Is(err, chstore.ErrSchemaV2), "got %v", err)
-	require.ErrorContains(t, err, "lokihouse -schema.migrate")
+	require.ErrorContains(t, err, "runakefli -schema.migrate")
 	_, idx := shape(t, conn, db, topo.Local("logs"))
 	require.Len(t, idx, 1, "a refused migration changes nothing")
 	require.Contains(t, idx[0], "line_text")

@@ -33,7 +33,7 @@
 - **The whole split `Exec` runs under the tenant's `query_timeout`** (`SmallestPositiveNonZeroDurationPerTenant`, as `query.Eval`), so inline sequential legs cannot exceed it in total.
 - **Leg errors are returned unwrapped** so that `errors.As`, the HTTP status mapping and the message stay the same as unsplit.
 - **Drilldown overflow detection:** the rerun is triggered when any leg's `Warnings` contains Loki's `seriesLimitPartialResultsWarning(maxSeries)` text (copied) **or** the merged result has more than `maxSeries` series.
-- **Oracle:** `TestOracle` runs lokihouse with `split_queries_by_interval: 15m`, so every 95-minute corpus range query splits into ≥ 7 legs. The default `1h` is covered by the property test and the benchmark (which compares answers). A new corpus kind `unaligned:` shifts `start` by 17 s and uses a 45 s step.
+- **Oracle:** `TestOracle` runs runakefli with `split_queries_by_interval: 15m`, so every 95-minute corpus range query splits into ≥ 7 legs. The default `1h` is covered by the property test and the benchmark (which compares answers). A new corpus kind `unaligned:` shifts `start` by 17 s and uses a 45 s step.
 
 ## Review Focus
 
@@ -504,9 +504,9 @@ Expected: PASS
 
 - [ ] **Step 5: Docs and changelog**
 
-- `CHANGELOG.md` under `## [Unreleased]`, add a `### Added` section: "Metric range queries that run in lokihouse's own engine (`| unwrap`, `quantile_over_time`, parsers) are split by `split_queries_by_interval` (default `1h`) and the pieces are evaluated in parallel, up to `max_query_parallelism` per request and half of `clickhouse.max_open_conns` across requests; `split_queries_by_interval: 0` turns it off. The histogram `loki_query_frontend_partitions` counts the pieces." Do not claim parallel leaves (already true, Loki's evaluator).
-- `docs/divergences.md` `## Query`: the step-grid bullet. Loki's frontend aligns `start`/`end` to `step` before splitting (`alignStartEnd`), so split Loki returns shifted timestamps for unaligned `start`. lokihouse keeps the request's grid, so split and unsplit answers agree.
-- `docs/operations.md` `### Query`: rows `split_queries_by_interval` (where: lokihouse engine; behaviour: legs at wall-clock multiples, never finer than the largest `[range]`, `0` disables, instant/log/multi-tenant never split) and `max_query_parallelism` (legs of one request at once; extra legs run on the request's own goroutine). Add a paragraph: pieces reserve connections from a budget of half of `max_open_conns` and never wait for it. Under load, queries degrade to sequential evaluation instead of queueing.
+- `CHANGELOG.md` under `## [Unreleased]`, add a `### Added` section: "Metric range queries that run in runakefli's own engine (`| unwrap`, `quantile_over_time`, parsers) are split by `split_queries_by_interval` (default `1h`) and the pieces are evaluated in parallel, up to `max_query_parallelism` per request and half of `clickhouse.max_open_conns` across requests; `split_queries_by_interval: 0` turns it off. The histogram `loki_query_frontend_partitions` counts the pieces." Do not claim parallel leaves (already true, Loki's evaluator).
+- `docs/divergences.md` `## Query`: the step-grid bullet. Loki's frontend aligns `start`/`end` to `step` before splitting (`alignStartEnd`), so split Loki returns shifted timestamps for unaligned `start`. runakefli keeps the request's grid, so split and unsplit answers agree.
+- `docs/operations.md` `### Query`: rows `split_queries_by_interval` (where: runakefli engine; behaviour: legs at wall-clock multiples, never finer than the largest `[range]`, `0` disables, instant/log/multi-tenant never split) and `max_query_parallelism` (legs of one request at once; extra legs run on the request's own goroutine). Add a paragraph: pieces reserve connections from a budget of half of `max_open_conns` and never wait for it. Under load, queries degrade to sequential evaluation instead of queueing.
 
 - [ ] **Step 6: `make check`, then commit**
 
@@ -523,8 +523,8 @@ git commit -m "feat: split engine-run range queries by split_queries_by_interval
 ### Task 8: Oracle coverage for splitting
 
 **Files:**
-- Modify: `test/oracle/lokihouse.go` (add `StartLokihouseLimits(t *testing.T, extra, limits string) string`; `StartLokihouse(t, extra)` calls it with `""`; `limits` lines are appended inside `limits_config:`)
-- Modify: `test/oracle/oracle_test.go` (`TestOracle` uses `StartLokihouseLimits(t, rulerYAML(...), "  split_queries_by_interval: 15m\n")`; new kind `unaligned`: range query with `start+17s`, `end`, `step=45s`)
+- Modify: `test/oracle/runakefli.go` (add `StartRunakefliLimits(t *testing.T, extra, limits string) string`; `StartRunakefli(t, extra)` calls it with `""`; `limits` lines are appended inside `limits_config:`)
+- Modify: `test/oracle/oracle_test.go` (`TestOracle` uses `StartRunakefliLimits(t, rulerYAML(...), "  split_queries_by_interval: 15m\n")`; new kind `unaligned`: range query with `start+17s`, `end`, `step=45s`)
 - Create: `test/oracle/corpus/split.logql`
 
 - [ ] **Step 1: Add the corpus**
@@ -543,7 +543,7 @@ range:avg_over_time({app="web"} | logfmt | unwrap bytes [30m])
 
 Before relying on these, check that `bytes` and the logfmt fields exist in `test/oracle/fixture.go`, and adjust the label/field names to the fixture's.
 
-- [ ] **Step 2: Implement the `unaligned` kind and `StartLokihouseLimits`**
+- [ ] **Step 2: Implement the `unaligned` kind and `StartRunakefliLimits`**
 
 - [ ] **Step 3: Run the oracle in all modes and on the cluster**
 
@@ -553,7 +553,7 @@ Expected: PASS in all three modes and on the cluster. A failure here is an exact
 - [ ] **Step 4: Commit**
 
 ```bash
-git add test/oracle/lokihouse.go test/oracle/oracle_test.go test/oracle/corpus/split.logql
+git add test/oracle/runakefli.go test/oracle/oracle_test.go test/oracle/corpus/split.logql
 git commit -m "test: oracle compares split range queries with unsplit Loki"
 ```
 
@@ -562,7 +562,7 @@ git commit -m "test: oracle compares split range queries with unsplit Loki"
 ### Task 9: Benchmark span, acceptance and soak
 
 **Files:**
-- Modify: `test/oracle/bench_test.go` (`LOKIHOUSE_BENCH_SPAN`, parsed with `time.ParseDuration`, default `1h`; `benchData` takes `span time.Duration` and spreads lines over `[end−span, end)`; query `start = end − span`; the header line names the span)
+- Modify: `test/oracle/bench_test.go` (`RUNAKEFLI_BENCH_SPAN`, parsed with `time.ParseDuration`, default `1h`; `benchData` takes `span time.Duration` and spreads lines over `[end−span, end)`; query `start = end − span`; the header line names the span)
 - Modify: `docs/benchmark.md`
 
 - [ ] **Step 1: Make Loki keep a long span queryable**
@@ -571,8 +571,8 @@ When `span > 2h`, append `ingester: {max_chunk_age: 24h, chunk_idle_period: 24h}
 
 - [ ] **Step 2: Run the default and 6 h benchmarks**
 
-Run: `make build && make bench` and `LOKIHOUSE_BENCH_SPAN=6h LOKIHOUSE_BENCH_OUT=/tmp/bench-6h.md make bench`
-Expected: all `Compare` calls pass. At the default span, the `unwrap quantile` lokihouse median ≤ the `Loki` (sharded) median. If it is not, stop and report the numbers; do not tune the test.
+Run: `make build && make bench` and `RUNAKEFLI_BENCH_SPAN=6h RUNAKEFLI_BENCH_OUT=/tmp/bench-6h.md make bench`
+Expected: all `Compare` calls pass. At the default span, the `unwrap quantile` runakefli median ≤ the `Loki` (sharded) median. If it is not, stop and report the numbers; do not tune the test.
 
 - [ ] **Step 3: Record results in `docs/benchmark.md`**
 

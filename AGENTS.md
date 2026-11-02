@@ -1,4 +1,4 @@
-# AGENTS.md: rules for working on lokihouse
+# AGENTS.md: rules for working on Rúnakefli
 
 These rules apply to every change, by humans and by coding agents. `make check`
 enforces the mechanical ones; reviewers enforce the rest.
@@ -14,7 +14,7 @@ enforces the mechanical ones; reviewers enforce the rest.
 
 ## Loki compatibility
 
-- lokihouse imports Loki at one pinned commit (`Makefile` `LOKI_COMMIT`). Never
+- Rúnakefli imports Loki at one pinned commit (`Makefile` `LOKI_COMMIT`). Never
   bump it in passing.
 - Reuse Loki's code; do not re-implement Loki behaviour. Code copied from Loki
   starts with `// Copied from grafana/loki@<commit> <path>; modifications: <list>`.
@@ -25,7 +25,7 @@ enforces the mechanical ones; reviewers enforce the rest.
 
 ## Structure
 
-- `cmd/lokihouse` only parses flags and signals; wiring and lifecycle live in
+- `cmd/runakefli` only parses flags and signals; wiring and lifecycle live in
   `internal/server`. Packages under `internal/` own one responsibility each and
   do not import `cmd` or `test`.
 - Keep files focused. A function that no longer fits on a screen is a sign to

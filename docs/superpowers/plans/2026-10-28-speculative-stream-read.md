@@ -9,7 +9,7 @@
 **Tech Stack:** Go, clickhouse-go v2, ClickHouse 26.9, `github.com/hashicorp/golang-lru/v2` v2.0.7.
 
 **Spec:** No separate spec file. The analysis comes from the 2026-10-28 session (memory `ch-per-query-floor`), on the `make bench` data (200 000 lines, `{app="app1"} |= "status=500"`, limit 1000, `lhb-ch` local disk):
-- lokihouse 7.1 ms p50 against Loki 5.1 ms. `system.query_log`: `streams` lookup 2.06 ms, 0.3 ms gap, `logs` read 3.15 ms; Go ≈1.5 ms.
+- runakefli 7.1 ms p50 against Loki 5.1 ms. `system.query_log`: `streams` lookup 2.06 ms, 0.3 ms gap, `logs` read 3.15 ms; Go ≈1.5 ms.
 - ClickHouse's fixed cost per query is ≈0.6 ms (`SELECT 1`) to ≈1.2 ms (small MergeTree select); about 1.45 ms of the `streams` lookup is parse/analysis/plan/pipeline. No setting reduces it.
 - Folding the lookup into the `logs` query as `stream_id IN (SELECT …)` took 5.2 ms (no gain) and loses the single-stream read-in-order path.
 - `stream_id` is `labels.StableHash(labels)` (`StreamIdentity`, `internal/chstore/stream.go`), so equal ID sets imply equal labels.
@@ -21,7 +21,7 @@
 - Results must be identical with and without the cache. The only new observable difference: on a mismatch, the discarded speculative read's rows still count in `totalLinesProcessed`/`totalBytesProcessed`. Add that sentence to the existing "Query stats" bullet in `docs/divergences.md`.
 - `StreamSetCache` constants: `streamSetCacheEntries = 256` entries; sets with more than `maxCachedStreams = 1000` streams, or with none, are not cached (`put` removes the key). No config key, flag or setting.
 - A nil `*StreamSetCache` disables speculation; `Querier.StreamCache` nil keeps today's path, so existing tests and callers are unaffected. `internal/server` sets it.
-- Metric: `lokihouse_query_stream_speculations_total` counter, label `result` ∈ `miss`, `hit`, `mismatch`, registered with `promauto` (package-level collector, allowed by AGENTS.md). Not incremented when the cache is nil.
+- Metric: `runakefli_query_stream_speculations_total` counter, label `result` ∈ `miss`, `hit`, `mismatch`, registered with `promauto` (package-level collector, allowed by AGENTS.md). Not incremented when the cache is nil.
 - The resolve goroutine is always received from before `SelectLogs` returns (no leak; goleak runs in `internal/chstore/main_test.go`).
 - `github.com/hashicorp/golang-lru/v2` is already in `go.mod` as indirect at v2.0.7, the version in Loki's module graph; `go mod tidy` makes it direct. No other new dependency.
 - Query code changed: before pushing run `make check`, `make test-cluster`, `make oracle-all`, `make oracle-cluster`. Long-lived query path: `make soak` too.
@@ -133,7 +133,7 @@ git commit -m "perf: let a window reader start its first read early"
   - `func (q *Querier) resolvedFor(tenantID string, sel syntax.LogSelectorExpr, req interface{ GetStart() time.Time; GetEnd() time.Time }, dir logproto.Direction, streams []Stream) resolved`: the part of today's `openRows` after `ResolveStreams`; `openRows` becomes `ResolveStreams` + `resolvedFor` (SelectSamples unchanged).
   - `func (q *Querier) logIter(ctx context.Context, sel syntax.LogSelectorExpr, p logql.SelectLogParams, pipeline log.Pipeline, tenantID string, streams []Stream, prime bool) (iter.EntryIterator, error)`: today's `SelectLogs` body from `openRows` on, taking the streams; `iter.NoopEntryIterator` for no streams; `prime` calls `wr.prime()` before returning.
   - `func (q *Querier) speculateLogs(ctx context.Context, sel syntax.LogSelectorExpr, p logql.SelectLogParams, pipeline log.Pipeline, tenantID, key string, cached []Stream) (iter.EntryIterator, error)`
-  - `streamSpeculations` (`*prometheus.CounterVec`, name `lokihouse_query_stream_speculations_total`, help `Log queries by outcome of the speculative read on a cached stream set.`, label `result`).
+  - `streamSpeculations` (`*prometheus.CounterVec`, name `runakefli_query_stream_speculations_total`, help `Log queries by outcome of the speculative read on a cached stream set.`, label `result`).
   - export_test.go: `func StreamSpeculations(result string) float64` (via `testutil.ToFloat64`), and `func SeedStreamSet(c *StreamSetCache, tenant string, ms []*labels.Matcher, from, through time.Time, streams []Stream)` calling `c.put(streamSetKey(...), streams)`.
 
 `SelectLogs` after the deletes/pipeline setup: tenant → `key` → `q.StreamCache.get(key)`; hit → `speculateLogs`; miss (cache non-nil) → count `miss`, `ResolveStreams`, `put`, `logIter(..., false)`.
@@ -174,7 +174,7 @@ Expected: FAIL to compile (`unknown field StreamCache`, `undefined: chstore.Stre
 Run: `go test -race ./internal/chstore -count=3 -run 'TestSelectLogs|TestSelectSamples' -v`
 Expected: PASS three times, no race, no goleak report.
 
-- [ ] **Step 5: Wire it in.** In `newAPI`, `q := &chstore.Querier{Conn: conn, Deletes: dels, StreamCache: chstore.NewStreamSetCache()}`. Add the metric row to the `docs/operations.md` metrics table (`counter`, label `result`, description as the help text plus "`hit`: the cached stream set was still current, the read started without waiting for the stream lookup"). Append to the "Query stats" bullet in `docs/divergences.md`: "When a log query's cached stream set turns out stale, the discarded speculative read is counted too." Under `## [Unreleased]` in `CHANGELOG.md`: "Log queries whose stream set is already known start reading lines while the stream lookup runs, instead of after it (about 2 ms less per query); new metric `lokihouse_query_stream_speculations_total`."
+- [ ] **Step 5: Wire it in.** In `newAPI`, `q := &chstore.Querier{Conn: conn, Deletes: dels, StreamCache: chstore.NewStreamSetCache()}`. Add the metric row to the `docs/operations.md` metrics table (`counter`, label `result`, description as the help text plus "`hit`: the cached stream set was still current, the read started without waiting for the stream lookup"). Append to the "Query stats" bullet in `docs/divergences.md`: "When a log query's cached stream set turns out stale, the discarded speculative read is counted too." Under `## [Unreleased]` in `CHANGELOG.md`: "Log queries whose stream set is already known start reading lines while the stream lookup runs, instead of after it (about 2 ms less per query); new metric `runakefli_query_stream_speculations_total`."
 
 - [ ] **Step 6: Verify**
 
@@ -195,9 +195,9 @@ git commit -m "perf: overlap the stream lookup with the first log read"
 **Files:**
 - Modify: `docs/benchmark.md` (Result section, `log filter` bullet), `README.md` (Speed tables and the sentence below them)
 
-- [ ] **Step 1: Run** `make bench` (servers via `test/bench/up.sh`). Expected: the run passes (every answer matches Loki's), and `log filter` for lokihouse is lower than the 8.1 ms recorded at 0.13.0.
+- [ ] **Step 1: Run** `make bench` (servers via `test/bench/up.sh`). Expected: the run passes (every answer matches Loki's), and `log filter` for runakefli is lower than the 8.1 ms recorded at 0.13.0.
 
-- [ ] **Step 2: Confirm the overlap.** On `lhb-ch`, in `system.query_log` for the bench database, the `logs` query of a `log filter` request starts before the `streams` query of the same request finishes (`query_start_time_microseconds` of the `logs` query < `event_time_microseconds` of the `streams` query), and `/metrics` of the bench lokihouse shows `result="hit"` far above `mismatch`.
+- [ ] **Step 2: Confirm the overlap.** On `lhb-ch`, in `system.query_log` for the bench database, the `logs` query of a `log filter` request starts before the `streams` query of the same request finishes (`query_start_time_microseconds` of the `logs` query < `event_time_microseconds` of the `streams` query), and `/metrics` of the bench runakefli shows `result="hit"` far above `mismatch`.
 
 - [ ] **Step 3: Record.** Replace the result tables in `docs/benchmark.md` with this run (note: from `main` with the speculative stream read; keep the remote S3 columns labelled as the earlier run). Rewrite the `log filter` bullet: the lookup now overlaps the first chunk, give the new ratio. Update the README tables and the "up to 1.6× slower on the plain log filter" sentence to the measured numbers.
 

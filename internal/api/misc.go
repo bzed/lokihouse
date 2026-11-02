@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/bzed/lokihouse/internal/build"
+	"github.com/bzed/runakefli/internal/build"
 )
 
 func buildInfo(w http.ResponseWriter, _ *http.Request) {

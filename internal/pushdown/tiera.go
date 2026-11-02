@@ -19,7 +19,7 @@ import (
 
 	querierdeletion "github.com/grafana/loki/v3/pkg/querier/deletion"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 // TierA executes range-aggregation leaves in ClickHouse.

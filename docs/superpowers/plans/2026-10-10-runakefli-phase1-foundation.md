@@ -1,8 +1,8 @@
-# Lokihouse Phase 1 (Foundation) Implementation Plan
+# Runakefli Phase 1 (Foundation) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A Go service, `lokihouse`, that accepts Loki pushes (proto, JSON, OTLP) into ClickHouse and answers `query`, `query_range`, `labels`, `label values` and `series` with byte-for-byte Loki-equal results. A differential test suite against a real Loki built from the same commit proves the equality. The service runs unchanged on a single ClickHouse server or on a ClickHouse cluster (sharded, replicated, or both).
+**Goal:** A Go service, `runakefli`, that accepts Loki pushes (proto, JSON, OTLP) into ClickHouse and answers `query`, `query_range`, `labels`, `label values` and `series` with byte-for-byte Loki-equal results. A differential test suite against a real Loki built from the same commit proves the equality. The service runs unchanged on a single ClickHouse server or on a ClickHouse cluster (sharded, replicated, or both).
 
 **Architecture:** Import Loki's own packages (`logql`, `logql/syntax`, `logql/log`, `loghttp`, `loghttp/push`, `util/marshal`, `validation`) at a pinned commit. Implement Loki's `logql.Querier` interface on top of ClickHouse ("Tier B"). ClickHouse resolves tenant, stream selector, time range and leading literal line filters. Loki's pipeline and evaluator do everything else, so semantics are identical by construction. SQL push-down of whole queries ("Tier A") is Phase 2 and out of scope here. On a cluster, rows live in `Replicated*MergeTree` `_local` tables and are reached through `Distributed` tables that keep the plain names `logs`/`streams`. Query code is therefore topology-agnostic; only DDL and mutations go through `chstore.Topology`.
 
@@ -12,11 +12,11 @@
 
 ## Global Constraints
 
-- Module path: `github.com/bzed/lokihouse`; binary name `lokihouse`; license AGPL-3.0-only (file `LICENSE` copied from Loki).
+- Module path: `github.com/bzed/runakefli`; binary name `runakefli`; license AGPL-3.0-only (file `LICENSE` copied from Loki).
 - Loki pinned at commit `fbc3f0770b8c56ebec56fbd0fb16dc3b606822d1` (`github.com/grafana/loki/v3 v3.0.0-20261010092436-fbc3f0770b8c`). Never bump it inside a feature task.
 - `go.mod` must carry all of Loki's `replace` directives (listed in Task 1) or the build fails.
 - Containers: **podman** only, never docker.
-- ClickHouse for tests: env `LOKIHOUSE_TEST_CH_ADDR` (default `localhost:9000`), user `LOKIHOUSE_TEST_CH_USER` (default `default`), password `LOKIHOUSE_TEST_CH_PASSWORD` (default empty). Tests create and drop their own database `lh_test_<random>`. The server is disposable: tests may create and drop databases freely.
+- ClickHouse for tests: env `RUNAKEFLI_TEST_CH_ADDR` (default `localhost:9000`), user `RUNAKEFLI_TEST_CH_USER` (default `default`), password `RUNAKEFLI_TEST_CH_PASSWORD` (default empty). Tests create and drop their own database `lh_test_<random>`. The server is disposable: tests may create and drop databases freely.
 - Timestamps are stored as `DateTime64(9, 'UTC')`; Go side always uses `time.Time` in UTC with nanoseconds.
 - `stream_id` is **always** `labels.StableHash(ls)` of the canonical (sorted) stream labels. This equals Loki's stream hash and drives tie-break ordering.
 - Limits come from Loki's `validation.Limits` / `validation.Overrides` with Loki's flag defaults. The `limits_config` YAML block is Loki-compatible.
@@ -39,7 +39,7 @@
 1. **Duplicate entries** (same stream, same ts, same line and metadata, pushed twice): Loki returns them once. Owner: Task 6 (`TestSelectLogs_DedupesIdenticalEntries`).
 2. **Unordered / non-canonical stream labels in push** (`{b="2",a="1"}` vs `{a="1", b="2"}`): one stream, one `stream_id`, labels printed canonically. Owner: Task 3 (`TestStreamIdentity_CanonicalOrder`).
 3. **Entries exactly at query `start` / `end` boundaries**: `start` inclusive, `end` exclusive, as in Loki's chunk iterators. Owner: Task 6 (`TestSelectLogs_TimeBoundaries`).
-4. **Service-name and log-level discovery on push** (`service_name`, `detected_level`): Loki adds them by default, so lokihouse must too, or every stream differs from the oracle. Owner: Task 4 (`TestPush_DiscoversServiceNameAndLevel`).
+4. **Service-name and log-level discovery on push** (`service_name`, `detected_level`): Loki adds them by default, so runakefli must too, or every stream differs from the oracle. Owner: Task 4 (`TestPush_DiscoversServiceNameAndLevel`).
 5. **Tenant isolation and missing `X-Scope-OrgID`**: with `auth_enabled: true` the request gets 401 `no org id`. With `false` the tenant is `fake`. Data never crosses tenants. Owner: Task 8 (`TestAPI_TenantIsolation`).
 6. **Query immediately after push on a replicated cluster**: the entry is visible, whichever replica serves the read, because the push is acked after quorum and all shards. Owner: Task 12 (`TestCluster_ReadAfterPush`).
 7. **Duplicates and stream metadata across shards**: all rows of one (tenant, stream), in both `logs` and `streams`, land on one shard. This keeps dedup and the label/series results correct. Owner: Task 12 (`TestCluster_StreamColocation`), plus the whole suite under `make test-cluster`.
@@ -52,7 +52,7 @@
 go.mod / go.sum                         module + Loki pin + replaces
 Makefile                                build, test, oracle targets
 LICENSE                                 AGPL-3.0 (from Loki)
-cmd/lokihouse/main.go                   flag/config parsing, wiring, HTTP server
+cmd/runakefli/main.go                   flag/config parsing, wiring, HTTP server
 internal/config/config.go               YAML config (server, clickhouse, auth_enabled, limits_config)
 internal/config/config_test.go
 internal/chstore/schema.sql             embedded DDL (templated by Topology)
@@ -118,7 +118,7 @@ Expected: FAIL with `go: cannot find main module` (no go.mod yet).
 - [ ] **Step 3: Create go.mod with the Loki pin and replaces**
 
 ```bash
-go mod init github.com/bzed/lokihouse
+go mod init github.com/bzed/runakefli
 cat >> go.mod <<'EOF'
 
 replace github.com/Azure/azure-sdk-for-go => github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
@@ -144,7 +144,7 @@ go mod tidy
 LOKI_COMMIT := fbc3f0770b8c56ebec56fbd0fb16dc3b606822d1
 .PHONY: build test oracle
 build:
-	go build -o bin/lokihouse ./cmd/lokihouse
+	go build -o bin/runakefli ./cmd/runakefli
 test:
 	go test ./...
 oracle:
@@ -182,9 +182,9 @@ git commit -m "build: bootstrap module importing Loki at pinned commit"
     - `Engine(base) string`: `base` or `Replicated<base>[(path, name)]`
     - `Settings() clickhouse.Settings`: session settings every connection must carry
   - `func RenderSchema(db string, topo Topology) ([]string, error)` (pure)
-  - `func Migrate(ctx context.Context, conn driver.Conn, db string, topo Topology) error`. It is idempotent, and safe when several lokihouse instances start at once.
+  - `func Migrate(ctx context.Context, conn driver.Conn, db string, topo Topology) error`. It is idempotent, and safe when several runakefli instances start at once.
   - `func DropDatabase(ctx context.Context, conn driver.Conn, db string, topo Topology) error`
-  - `func chtest.Topology() chstore.Topology`. It reads `LOKIHOUSE_TEST_CH_CLUSTER`, which is empty by default. With a cluster set, tables are replicated unless `LOKIHOUSE_TEST_CH_REPLICATED=0`.
+  - `func chtest.Topology() chstore.Topology`. It reads `RUNAKEFLI_TEST_CH_CLUSTER`, which is empty by default. With a cluster set, tables are replicated unless `RUNAKEFLI_TEST_CH_REPLICATED=0`.
   - `func chtest.Options(db string) *clickhouse.Options` includes `Topology().Settings()`
   - `func chtest.New(t *testing.T) (conn driver.Conn, db string)` returns a connection whose default database is a fresh, migrated database. The database is dropped on cleanup, on every node.
   - Tables:
@@ -207,7 +207,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 func TestTopology_SingleNode(t *testing.T) {
@@ -219,8 +219,8 @@ func TestTopology_SingleNode(t *testing.T) {
 }
 
 func TestTopology_ReplicatedCluster(t *testing.T) {
-	topo := chstore.Topology{Cluster: "lokihouse", Replicated: true}
-	require.Equal(t, "ON CLUSTER `lokihouse`", topo.OnCluster())
+	topo := chstore.Topology{Cluster: "runakefli", Replicated: true}
+	require.Equal(t, "ON CLUSTER `runakefli`", topo.OnCluster())
 	require.Equal(t, "logs_local", topo.Local("logs"))
 	require.Equal(t, "ReplicatedReplacingMergeTree", topo.Engine("ReplacingMergeTree"))
 	require.Equal(t, 1, topo.Settings()["distributed_foreground_insert"])
@@ -249,13 +249,13 @@ func TestRenderSchema_SingleNode(t *testing.T) {
 }
 
 func TestRenderSchema_Cluster(t *testing.T) {
-	stmts, err := chstore.RenderSchema("db", chstore.Topology{Cluster: "lokihouse", Replicated: true})
+	stmts, err := chstore.RenderSchema("db", chstore.Topology{Cluster: "runakefli", Replicated: true})
 	require.NoError(t, err)
 	require.Len(t, stmts, 4)
-	require.Contains(t, stmts[0], "CREATE TABLE IF NOT EXISTS `db`.logs_local ON CLUSTER `lokihouse` (")
+	require.Contains(t, stmts[0], "CREATE TABLE IF NOT EXISTS `db`.logs_local ON CLUSTER `runakefli` (")
 	require.Contains(t, stmts[0], "ENGINE = ReplicatedReplacingMergeTree")
-	require.Contains(t, stmts[2], "ENGINE = Distributed('lokihouse', 'db', 'logs_local', cityHash64(tenant, stream_id))")
-	require.Contains(t, stmts[3], "ENGINE = Distributed('lokihouse', 'db', 'streams_local', cityHash64(tenant, stream_id))")
+	require.Contains(t, stmts[2], "ENGINE = Distributed('runakefli', 'db', 'logs_local', cityHash64(tenant, stream_id))")
+	require.Contains(t, stmts[3], "ENGINE = Distributed('runakefli', 'db', 'streams_local', cityHash64(tenant, stream_id))")
 }
 ```
 
@@ -269,8 +269,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 func TestMigrate_CreatesTablesIdempotently(t *testing.T) {
@@ -342,7 +342,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
-// Topology describes how lokihouse tables are laid out on ClickHouse.
+// Topology describes how runakefli tables are laid out on ClickHouse.
 // The zero value is a single server with plain MergeTree tables.
 type Topology struct {
 	Cluster     string // remote_servers cluster name; empty = single server
@@ -379,7 +379,7 @@ func (t Topology) Engine(base string) string {
 	return "Replicated" + base + "(" + sqlString(t.ReplicaPath) + ", " + sqlString(t.ReplicaName) + ")"
 }
 
-// Settings returns the session settings every lokihouse connection needs
+// Settings returns the session settings every runakefli connection needs
 // for this topology: pushes are acknowledged only once all shards and an
 // insert quorum of replicas hold the rows, so a query right after a push sees them.
 func (t Topology) Settings() clickhouse.Settings {
@@ -449,8 +449,8 @@ func RenderSchema(db string, topo Topology) ([]string, error) {
 	return out, nil
 }
 
-// Migrate creates all lokihouse tables in db. Safe to run repeatedly,
-// and from several lokihouse instances at once.
+// Migrate creates all runakefli tables in db. Safe to run repeatedly,
+// and from several runakefli instances at once.
 func Migrate(ctx context.Context, conn driver.Conn, db string, topo Topology) error {
 	if topo.Cluster != "" {
 		var n uint64
@@ -495,7 +495,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 func env(k, def string) string {
@@ -506,20 +506,20 @@ func env(k, def string) string {
 }
 
 // Topology is the layout tests run against: a single server by default,
-// or the cluster named by LOKIHOUSE_TEST_CH_CLUSTER (see test/cluster/up.sh).
+// or the cluster named by RUNAKEFLI_TEST_CH_CLUSTER (see test/cluster/up.sh).
 func Topology() chstore.Topology {
-	c := os.Getenv("LOKIHOUSE_TEST_CH_CLUSTER")
-	return chstore.Topology{Cluster: c, Replicated: c != "" && os.Getenv("LOKIHOUSE_TEST_CH_REPLICATED") != "0"}
+	c := os.Getenv("RUNAKEFLI_TEST_CH_CLUSTER")
+	return chstore.Topology{Cluster: c, Replicated: c != "" && os.Getenv("RUNAKEFLI_TEST_CH_REPLICATED") != "0"}
 }
 
 // Options returns connection options for the test server with the given default database.
 func Options(db string) *clickhouse.Options {
 	return &clickhouse.Options{
-		Addr: []string{env("LOKIHOUSE_TEST_CH_ADDR", "localhost:9000")},
+		Addr: []string{env("RUNAKEFLI_TEST_CH_ADDR", "localhost:9000")},
 		Auth: clickhouse.Auth{
 			Database: db,
-			Username: env("LOKIHOUSE_TEST_CH_USER", "default"),
-			Password: os.Getenv("LOKIHOUSE_TEST_CH_PASSWORD"),
+			Username: env("RUNAKEFLI_TEST_CH_USER", "default"),
+			Password: os.Getenv("RUNAKEFLI_TEST_CH_PASSWORD"),
 		},
 		Settings: Topology().Settings(),
 	}
@@ -539,7 +539,7 @@ func New(t *testing.T) (driver.Conn, string) {
 		t.Fatalf("open clickhouse: %v", err)
 	}
 	if err := admin.Ping(ctx); err != nil {
-		t.Fatalf("clickhouse not reachable (set LOKIHOUSE_TEST_CH_ADDR or start: podman run -d -p 9000:9000 -e CLICKHOUSE_SKIP_USER_SETUP=1 docker.io/clickhouse/clickhouse-server:26.9): %v", err)
+		t.Fatalf("clickhouse not reachable (set RUNAKEFLI_TEST_CH_ADDR or start: podman run -d -p 9000:9000 -e CLICKHOUSE_SKIP_USER_SETUP=1 docker.io/clickhouse/clickhouse-server:26.9): %v", err)
 	}
 	if err := chstore.Migrate(ctx, admin, db, topo); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -598,8 +598,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 func TestStreamIdentity_CanonicalOrder(t *testing.T) {
@@ -806,9 +806,9 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	"github.com/bzed/lokihouse/internal/ingest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/ingest"
 )
 
 func defaultLimits(t *testing.T) *validation.Overrides {
@@ -891,8 +891,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/loghttp/push"
 	"github.com/grafana/loki/v3/pkg/validation"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/ingest/distcopy"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/ingest/distcopy"
 )
 
 const (
@@ -1178,8 +1178,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 // Yesterday 12:00 UTC. Must stay within the 31-day TTL: ClickHouse drops already-expired rows at insert time.
@@ -1623,8 +1623,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 func TestLabelAndSeries(t *testing.T) {
@@ -1802,10 +1802,10 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/api"
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	"github.com/bzed/lokihouse/internal/ingest"
+	"github.com/bzed/runakefli/internal/api"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/ingest"
 )
 
 func newServer(t *testing.T, auth bool) *httptest.Server {
@@ -1898,7 +1898,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/loki/v3/pkg/logql"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 type API struct {
@@ -2070,7 +2070,7 @@ import (
 	"net/http"
 )
 
-// Version is set at build time with -ldflags "-X github.com/bzed/lokihouse/internal/api.Version=...".
+// Version is set at build time with -ldflags "-X github.com/bzed/runakefli/internal/api.Version=...".
 var Version = "dev"
 
 func buildInfo(w http.ResponseWriter, _ *http.Request) {
@@ -2093,10 +2093,10 @@ git commit -m "feat(api): Loki HTTP query, label, series, push routes with tenan
 
 ---
 
-### Task 9: Config and `lokihouse` binary
+### Task 9: Config and `runakefli` binary
 
 **Files:**
-- Create: `internal/config/config.go`, `internal/config/config_test.go`, `cmd/lokihouse/main.go`, `lokihouse.example.yaml`
+- Create: `internal/config/config.go`, `internal/config/config_test.go`, `cmd/runakefli/main.go`, `runakefli.example.yaml`
 
 **Interfaces:**
 - Consumes: everything above
@@ -2108,7 +2108,7 @@ git commit -m "feat(api): Loki HTTP query, label, series, push routes with tenan
     - `limits_config` (Loki-compatible)
   - `func (c *Config) Topology() chstore.Topology` and `func (c *Config) CHSettings() clickhouse.Settings` (topology settings overlaid with `clickhouse.settings`)
   - `func Load(path string) (*Config, error)` applies Loki's limit defaults before unmarshalling
-  - `lokihouse -config.file=path`
+  - `runakefli -config.file=path`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2124,7 +2124,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 func TestLoad_DefaultsAndOverrides(t *testing.T) {
@@ -2150,12 +2150,12 @@ func TestLoad_Cluster(t *testing.T) {
 	require.NoError(t, os.WriteFile(p, []byte(`
 clickhouse:
   addr: ["ch1:9000", "ch3:9000"]
-  cluster: lokihouse
+  cluster: runakefli
   settings: {insert_quorum: 2, max_execution_time: 60}
 `), 0o600))
 	c, err := Load(p)
 	require.NoError(t, err)
-	require.Equal(t, chstore.Topology{Cluster: "lokihouse", Replicated: true}, c.Topology())
+	require.Equal(t, chstore.Topology{Cluster: "runakefli", Replicated: true}, c.Topology())
 	s := c.CHSettings()
 	require.EqualValues(t, 2, s["insert_quorum"]) // explicit setting wins over the topology default
 	require.EqualValues(t, 60, s["max_execution_time"])
@@ -2182,7 +2182,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 	"gopkg.in/yaml.v2"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 type Config struct {
@@ -2213,7 +2213,7 @@ func Load(path string) (*Config, error) {
 	c := &Config{AuthEnabled: true}
 	c.Server.HTTPListenPort = 3100
 	c.ClickHouse.Addr = []string{"localhost:9000"}
-	c.ClickHouse.Database = "lokihouse"
+	c.ClickHouse.Database = "runakefli"
 	c.ClickHouse.Username = "default"
 	c.ClickHouse.Replicated = true
 	c.LimitsConfig = defaults
@@ -2250,7 +2250,7 @@ func (c *Config) CHSettings() clickhouse.Settings {
 ```
 Use whichever YAML package Loki's `validation.Limits.UnmarshalYAML` signature expects. It takes `*yaml.Node`, which is `gopkg.in/yaml.v3`, so switch the import to `gopkg.in/yaml.v3` and use `yaml.NewDecoder` with `KnownFields(true)` if v2 fails to compile.
 
-`cmd/lokihouse/main.go`:
+`cmd/runakefli/main.go`:
 ```go
 package main
 
@@ -2267,14 +2267,14 @@ import (
 	"github.com/grafana/loki/v3/pkg/logql"
 	"github.com/grafana/loki/v3/pkg/validation"
 
-	"github.com/bzed/lokihouse/internal/api"
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/config"
-	"github.com/bzed/lokihouse/internal/ingest"
+	"github.com/bzed/runakefli/internal/api"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/config"
+	"github.com/bzed/runakefli/internal/ingest"
 )
 
 func main() {
-	path := flag.String("config.file", "lokihouse.yaml", "configuration file")
+	path := flag.String("config.file", "runakefli.yaml", "configuration file")
 	flag.Parse()
 	logger := log.NewLogfmtLogger(os.Stderr)
 	if err := run(*path, logger); err != nil {
@@ -2320,23 +2320,23 @@ func run(path string, logger log.Logger) error {
 		AuthEnabled: cfg.AuthEnabled,
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Server.HTTPListenAddress, cfg.Server.HTTPListenPort)
-	level.Info(logger).Log("msg", "lokihouse listening", "addr", addr)
+	level.Info(logger).Log("msg", "runakefli listening", "addr", addr)
 	return http.ListenAndServe(addr, a.Router())
 }
 ```
 
-`lokihouse.example.yaml`:
+`runakefli.example.yaml`:
 ```yaml
 auth_enabled: false
 server:
   http_listen_port: 3100
 clickhouse:
   addr: ["localhost:9000"]
-  database: lokihouse
+  database: runakefli
   username: default
   # ClickHouse cluster (remote_servers name). Tables become Replicated*MergeTree
   # <table>_local created ON CLUSTER, plus Distributed tables; list several nodes in addr.
-  # cluster: lokihouse
+  # cluster: runakefli
   # replicated: true              # false = sharding without replication
   # replica_path: /clickhouse/tables/{shard}/{database}/{table}   # default: server default_replica_path
   # replica_name: '{replica}'
@@ -2348,11 +2348,11 @@ limits_config: {}
 
 Run: `go test ./internal/config/... -v && make build`
 (`TestLoad_Cluster` needs no cluster; it only checks config mapping.)
-Expected: PASS, and `bin/lokihouse` exists.
+Expected: PASS, and `bin/runakefli` exists.
 
 Smoke test:
 ```bash
-bin/lokihouse -config.file=lokihouse.example.yaml &
+bin/runakefli -config.file=runakefli.example.yaml &
 sleep 2
 curl -s -XPOST localhost:3100/loki/api/v1/push -H 'Content-Type: application/json' \
   -d "{\"streams\":[{\"stream\":{\"app\":\"smoke\"},\"values\":[[\"$(date +%s%N)\",\"hello smoke\"]]}]}" -w '%{http_code}\n'
@@ -2364,8 +2364,8 @@ Expected: `204`, then `hello smoke`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/config cmd lokihouse.example.yaml
-git commit -m "feat: lokihouse binary with Loki-compatible limits config"
+git add internal/config cmd runakefli.example.yaml
+git commit -m "feat: runakefli binary with Loki-compatible limits config"
 ```
 
 ---
@@ -2373,15 +2373,15 @@ git commit -m "feat: lokihouse binary with Loki-compatible limits config"
 ### Task 10: Differential oracle harness against real Loki
 
 **Files:**
-- Create: `test/oracle/loki.go`, `test/oracle/lokihouse.go`, `test/oracle/fixture.go`, `test/oracle/compare.go`, `test/oracle/oracle_test.go`, `test/oracle/loki-config.yaml`, `test/oracle/corpus/basic.logql`
+- Create: `test/oracle/loki.go`, `test/oracle/runakefli.go`, `test/oracle/fixture.go`, `test/oracle/compare.go`, `test/oracle/oracle_test.go`, `test/oracle/loki-config.yaml`, `test/oracle/corpus/basic.logql`
 
 All files carry the build tag `//go:build oracle`.
 
 **Interfaces:**
-- Consumes: built `bin/lokihouse`, Loki source at `LOKI_COMMIT`
+- Consumes: built `bin/runakefli`, Loki source at `LOKI_COMMIT`
 - Produces:
   - `func StartLoki(t *testing.T) (baseURL string)` clones or reuses Loki at the pinned commit in `.cache/loki-src`, builds `.cache/loki-bin/loki` once (`go build ./cmd/loki`), and starts it on a free port with `loki-config.yaml` in a temp dir
-  - `func StartLokihouse(t *testing.T) (baseURL string)` starts `go run ./cmd/lokihouse` with a fresh ClickHouse database
+  - `func StartRunakefli(t *testing.T) (baseURL string)` starts `go run ./cmd/runakefli` with a fresh ClickHouse database
   - `func Fixture(base time.Time) []PushBatch` returns a deterministic, seeded data set (described below)
   - `func Compare(t *testing.T, name string, a, b []byte)` normalises and diffs two Loki JSON responses. It drops `data.stats` and `data.encodingFlags`. Within each stream it sorts entries that share a timestamp, because tie order inside one stream is undefined (spec §7.1). It then requires JSON equality.
   - Corpus format: one query per line. `#` starts a comment. A line may be prefixed with `instant:` or `range:` (default `range`).
@@ -2421,7 +2421,7 @@ limits_config:
 analytics:
   reporting_enabled: false
 ```
-The harness substitutes `${DIR}` and the ports. Turning off sharding and splitting in the oracle makes it compute the same thing Loki's engine computes without fan-out, so differences point to lokihouse.
+The harness substitutes `${DIR}` and the ports. Turning off sharding and splitting in the oracle makes it compute the same thing Loki's engine computes without fan-out, so differences point to runakefli.
 
 `test/oracle/corpus/basic.logql` (initial corpus; grows with every bug):
 ```
@@ -2483,7 +2483,7 @@ import (
 
 func TestOracle(t *testing.T) {
 	loki := StartLoki(t)
-	house := StartLokihouse(t)
+	house := StartRunakefli(t)
 	base := time.Now().Truncate(time.Hour).Add(-2 * time.Hour)
 	for _, b := range Fixture(base) {
 		PushBoth(t, []string{loki, house}, b)
@@ -2542,12 +2542,12 @@ func TestOracle(t *testing.T) {
 
 - [ ] **Step 2: Implement harness files**
 
-Write `loki.go`, `lokihouse.go`, `fixture.go` and `compare.go` with the functions named in **Interfaces**. In addition:
+Write `loki.go`, `runakefli.go`, `fixture.go` and `compare.go` with the functions named in **Interfaces**. In addition:
 - `PushBoth(t, urls []string, b PushBatch)` POSTs the same JSON body (`{"streams":[...]}`) with `X-Scope-OrgID: b.Tenant` and requires 204 from both.
 - `Get(t, url, tenant) []byte` requires 200, except that a 400 must be 400 on both sides with an equal error message. In that case `Get` returns the body and `Compare` compares the error strings.
 - `WaitQueryable` polls `count_over_time({app=~".+"}[2h])` on Loki until it equals the fixture size, with a 60 s timeout.
 - `StartLoki` uses `exec.Command(bin, "-config.file", cfgPath, "-config.expand-env=true")` with env `DIR=<tmp>`, and passes `-server.http-listen-port=<free>` and `-server.grpc-listen-port=<free>`. It waits for `/ready` to answer 200 (Loki answers 503 while starting) for up to 120 s, and kills the process in `t.Cleanup`.
-- `StartLokihouse` builds `bin/lokihouse` via `go build`. It writes a config with `auth_enabled: true`, a free port, a fresh database name, and `clickhouse.cluster`/`replicated` taken from `chtest.Topology()`. It starts the binary and waits for `/ready`. On cleanup it drops the database with `chstore.DropDatabase(ctx, conn, db, chtest.Topology())`, reusing `chtest.Options`. This makes `make oracle-cluster` (Task 12) run the same suite against the cluster.
+- `StartRunakefli` builds `bin/runakefli` via `go build`. It writes a config with `auth_enabled: true`, a free port, a fresh database name, and `clickhouse.cluster`/`replicated` taken from `chtest.Topology()`. It starts the binary and waits for `/ready`. On cleanup it drops the database with `chstore.DropDatabase(ctx, conn, db, chtest.Topology())`, reusing `chtest.Options`. This makes `make oracle-cluster` (Task 12) run the same suite against the cluster.
 - `Compare` on mismatch writes both bodies to `t.TempDir()` and fails with a unified diff (use `github.com/pmezard/go-difflib/difflib`, already in Loki's dependency tree).
 
 - [ ] **Step 3: Run the oracle suite and triage**
@@ -2556,7 +2556,7 @@ Run: `make oracle`
 Expected: the first build of Loki takes several minutes. Then every subtest either passes or shows a diff.
 
 For every failing subtest, use **superpowers:systematic-debugging**. Each failure is one of:
-1. A lokihouse bug. Fix it in the owning package and add a focused unit test there.
+1. A runakefli bug. Fix it in the owning package and add a focused unit test there.
 2. A harness normalisation gap (an undefined ordering only). Fix it in `Compare` and add a comment citing the Loki code that makes the order undefined.
 3. A genuine accepted divergence. Write it in `docs/divergences.md` with the reason and skip the case with `t.Skip("divergence: <link>")`. This needs the project owner's approval, so ask before adding any.
 
@@ -2757,7 +2757,7 @@ git commit -m "test: expand oracle corpus with Loki's own parser/engine/doc quer
   - `chstore.Writer` (Task 3)
   - the `seed` and `t0` helpers in `internal/chstore/querier_test.go` (Task 6, same package `chstore_test`)
 - Produces:
-  - `make cluster-up` starts a ClickHouse 26.9 cluster named `lokihouse` with 2 shards × 2 replicas (`ch1`–`ch4`) plus one Keeper, on the podman network `lhnet`. Native ports are `localhost:19001`–`19004`.
+  - `make cluster-up` starts a ClickHouse 26.9 cluster named `runakefli` with 2 shards × 2 replicas (`ch1`–`ch4`) plus one Keeper, on the podman network `lhnet`. Native ports are `localhost:19001`–`19004`.
   - `make test-cluster` and `make oracle-cluster` run the **unchanged** unit and oracle suites against that cluster.
 
 - [ ] **Step 1: Cluster configuration**
@@ -2767,14 +2767,14 @@ git commit -m "test: expand oracle corpus with Loki's own parser/engine/doc quer
 <clickhouse>
   <listen_host>0.0.0.0</listen_host>
   <remote_servers>
-    <lokihouse>
+    <runakefli>
       <shard><internal_replication>true</internal_replication>
         <replica><host>ch1</host><port>9000</port></replica>
         <replica><host>ch2</host><port>9000</port></replica></shard>
       <shard><internal_replication>true</internal_replication>
         <replica><host>ch3</host><port>9000</port></replica>
         <replica><host>ch4</host><port>9000</port></replica></shard>
-    </lokihouse>
+    </runakefli>
   </remote_servers>
   <zookeeper><node><host>keeper</host><port>9181</port></node></zookeeper>
   <distributed_ddl><path>/clickhouse/task_queue/ddl</path></distributed_ddl>
@@ -2796,11 +2796,11 @@ git commit -m "test: expand oracle corpus with Loki's own parser/engine/doc quer
 `test/cluster/up.sh`:
 ```sh
 #!/bin/sh
-# Start a 2-shard x 2-replica ClickHouse cluster "lokihouse" with one Keeper (podman).
+# Start a 2-shard x 2-replica ClickHouse cluster "runakefli" with one Keeper (podman).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 img=docker.io/clickhouse/clickhouse-server:26.9
-work=${LOKIHOUSE_CLUSTER_DIR:-$here/../../.cache/cluster}
+work=${RUNAKEFLI_CLUSTER_DIR:-$here/../../.cache/cluster}
 mkdir -p "$work"
 podman network exists lhnet || podman network create lhnet >/dev/null
 podman container exists keeper || podman run -d --name keeper --network lhnet \
@@ -2820,7 +2820,7 @@ for i in 1 2 3 4; do
     n=$((n + 1)); [ "$n" -lt 60 ] || { echo "ch$i not ready" >&2; exit 1; }; sleep 1
   done
 done
-echo "cluster lokihouse up: localhost:19001-19004"
+echo "cluster runakefli up: localhost:19001-19004"
 ```
 If `clickhouse-client` is not installed on the host, run it inside the container instead: `podman exec ch$i clickhouse-client -q …`.
 
@@ -2833,7 +2833,7 @@ podman network rm lhnet >/dev/null 2>&1 || true
 
 `Makefile` additions:
 ```make
-CLUSTER_ENV := LOKIHOUSE_TEST_CH_ADDR=localhost:19001 LOKIHOUSE_TEST_CH_CLUSTER=lokihouse
+CLUSTER_ENV := RUNAKEFLI_TEST_CH_ADDR=localhost:19001 RUNAKEFLI_TEST_CH_CLUSTER=runakefli
 .PHONY: cluster-up cluster-down test-cluster oracle-cluster
 cluster-up:
 	sh test/cluster/up.sh
@@ -2846,7 +2846,7 @@ oracle-cluster: cluster-up
 ```
 
 Run: `make cluster-up`
-Expected: `cluster lokihouse up: localhost:19001-19004`
+Expected: `cluster runakefli up: localhost:19001-19004`
 
 - [ ] **Step 2: Write the cluster-only tests**
 
@@ -2864,8 +2864,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 func requireCluster(t *testing.T) {
@@ -2930,7 +2930,7 @@ Use **superpowers:systematic-debugging**. Do not add `skip_unavailable_shards` o
 
 - [ ] **Step 4: Run the oracle on the cluster**
 
-`StartLokihouse` (Task 10) already writes `clickhouse.cluster` from `chtest.Topology()`, so no harness change is needed.
+`StartRunakefli` (Task 10) already writes `clickhouse.cluster` from `chtest.Topology()`, so no harness change is needed.
 
 Run: `make oracle-cluster`
 Expected: the same PASS set as `make oracle`.
@@ -2949,7 +2949,7 @@ git commit -m "test: podman ClickHouse cluster and cluster runs of unit and orac
 - `make test` and `make oracle` are green against local ClickHouse 26.9 and Loki @ `fbc3f077`.
 - `make test-cluster` and `make oracle-cluster` are green against the podman 2×2 replicated cluster, with the same PASS set as the single-node runs.
 - `docs/divergences.md` is empty, or holds owner-approved entries only.
-- `bin/lokihouse` is usable from Grafana as a Loki datasource for Explore, logs and metrics.
+- `bin/runakefli` is usable from Grafana as a Loki datasource for Explore, logs and metrics.
 
 ## Follow-up plans (written when each phase starts; see spec §8)
 

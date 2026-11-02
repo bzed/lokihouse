@@ -54,7 +54,7 @@ func TestSimplifiedRegexSQL(t *testing.T) {
 // TestSimplifiedRegexSQL_MatchesLoki checks, against a real ClickHouse, that the
 // SQL keeps exactly the lines Loki's own filter keeps, in both polarities.
 func TestSimplifiedRegexSQL_MatchesLoki(t *testing.T) {
-	addr := os.Getenv("LOKIHOUSE_TEST_CH_ADDR")
+	addr := os.Getenv("RUNAKEFLI_TEST_CH_ADDR")
 	if addr == "" {
 		addr = "localhost:9000"
 	}

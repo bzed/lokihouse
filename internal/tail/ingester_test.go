@@ -11,9 +11,9 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	lt "github.com/bzed/lokihouse/internal/tail"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	lt "github.com/bzed/runakefli/internal/tail"
 )
 
 // countingConn wraps a driver.Conn and counts SELECT queries issued through it.

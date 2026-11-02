@@ -15,7 +15,7 @@ import (
 var lokiOwned = map[string]bool{"ruler": true, "ruler_storage": true, "limits_config": true}
 
 // TestConfigurationDocsCoverEveryKey walks the Config struct and checks that
-// every lokihouse-owned config key appears in docs/reference/configuration.md
+// every runakefli-owned config key appears in docs/reference/configuration.md
 // with its full dotted name in backticks.
 func TestConfigurationDocsCoverEveryKey(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "reference", "configuration.md"))

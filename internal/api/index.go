@@ -9,7 +9,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	querier_limits "github.com/grafana/loki/v3/pkg/querier/limits"
 
-	"github.com/bzed/lokihouse/internal/multitenant"
+	"github.com/bzed/runakefli/internal/multitenant"
 )
 
 // tenantIndex answers the index and drilldown endpoints for the single tenant

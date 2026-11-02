@@ -1,15 +1,15 @@
-# Lokihouse Phase 4 (Ruler) Implementation Plan
+# Runakefli Phase 4 (Ruler) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Run Loki's ruler inside lokihouse: rule groups stored on the local filesystem and managed through Loki's rules API, alerting and recording rules evaluated with lokihouse's own query engine, alerts sent to Alertmanager, and recording-rule samples sent by Prometheus remote write. Everything is compared against real Loki in the oracle.
+**Goal:** Run Loki's ruler inside runakefli: rule groups stored on the local filesystem and managed through Loki's rules API, alerting and recording rules evaluated with runakefli's own query engine, alerts sent to Alertmanager, and recording-rule samples sent by Prometheus remote write. Everything is compared against real Loki in the oracle.
 
-**Architecture:** Loki's ruler is an exported library, so lokihouse reuses it whole and supplies only the glue:
+**Architecture:** Loki's ruler is an exported library, so runakefli reuses it whole and supplies only the glue:
 - `pkg/ruler.NewRuler(cfg, evaluator, reg, logger, store, limits, ns)` builds the Cortex-derived `base.Ruler` (a dskit service), the per-tenant Prometheus rule managers, the notifier and the remote-write WAL registry.
 - `base.NewRuleStore` with backend `filesystem` gives a writable rule store in a local directory. Backend `local` gives Loki's read-only directory of rule files.
 - `base.NewAPI` provides the HTTP handlers.
 
-Lokihouse adds four things: an `Evaluator` that runs instant queries on its engine (Tier A push-down with Tier B fallback, including delete filtering), config loading for Loki's `ruler:` and `ruler_storage:` blocks, route registration on Go's `ServeMux`, and startup wiring. Sharding (Loki's ruler ring) is not supported: exactly one lokihouse instance runs the ruler.
+Runakefli adds four things: an `Evaluator` that runs instant queries on its engine (Tier A push-down with Tier B fallback, including delete filtering), config loading for Loki's `ruler:` and `ruler_storage:` blocks, route registration on Go's `ServeMux`, and startup wiring. Sharding (Loki's ruler ring) is not supported: exactly one runakefli instance runs the ruler.
 
 **Tech Stack:** Go 1.27, `github.com/grafana/loki/v3` @ `fbc3f0770b8c` (unchanged). New imports:
 - `pkg/ruler`, `pkg/ruler/base`, `pkg/ruler/rulestore`
@@ -23,15 +23,15 @@ Also `clickhouse-go/v2` v2.49.0 and ClickHouse 26.9.
 
 ## Global Constraints
 
-All Phase 1–3 Global Constraints still apply (`docs/superpowers/plans/2026-10-10-lokihouse-phase1-foundation.md`, `…-phase2-pushdown.md`, `…-phase3-apis.md`). In addition:
+All Phase 1–3 Global Constraints still apply (`docs/superpowers/plans/2026-10-10-runakefli-phase1-foundation.md`, `…-phase2-pushdown.md`, `…-phase3-apis.md`). In addition:
 
 - Never bump the Loki commit inside a Phase 4 task. Task 1 is the first task to import `pkg/ruler`: run `go mod tidy` there and commit `go.mod`/`go.sum` with it.
-- **Reuse Loki's ruler, never re-implement it.** This covers rule storage, rule validation, rule-group scheduling, alert state, the notifier, the remote-write WAL and queue, and the HTTP handlers. They all come from `pkg/ruler`, `pkg/ruler/base` and `pkg/ruler/rulestore`. Lokihouse code is limited to the evaluator, config, routes and wiring. A behaviour difference is fixed by routing through Loki's code, not by patching around it.
-- **Config uses Loki's own keys and defaults.** The top-level `ruler:` block is `pkg/ruler.Config` and `ruler_storage:` is `rulestore.Config`, defaulted through their `RegisterFlags`, exactly as Loki parses them. A Loki ruler config block works unchanged in lokihouse. The only changed default is `ruler.rule_path`: `rules-temp` (relative to the working directory) instead of Loki's `/rules`. Loki's single binary moves it under `common.path_prefix`, which lokihouse does not have.
+- **Reuse Loki's ruler, never re-implement it.** This covers rule storage, rule validation, rule-group scheduling, alert state, the notifier, the remote-write WAL and queue, and the HTTP handlers. They all come from `pkg/ruler`, `pkg/ruler/base` and `pkg/ruler/rulestore`. Runakefli code is limited to the evaluator, config, routes and wiring. A behaviour difference is fixed by routing through Loki's code, not by patching around it.
+- **Config uses Loki's own keys and defaults.** The top-level `ruler:` block is `pkg/ruler.Config` and `ruler_storage:` is `rulestore.Config`, defaulted through their `RegisterFlags`, exactly as Loki parses them. A Loki ruler config block works unchanged in runakefli. The only changed default is `ruler.rule_path`: `rules-temp` (relative to the working directory) instead of Loki's `/rules`. Loki's single binary moves it under `common.path_prefix`, which runakefli does not have.
 - **The ruler runs only when `ruler_storage` is configured** (`!RulerStorage.IsDefaults()`). That is Loki's single-binary rule ("Ruler storage is not configured; ruler will not be started").
-- **Unsupported modes are rejected at startup** with a clear error. These are `ruler.enable_sharding: true` (lokihouse has no ruler ring) and `ruler.evaluation.mode: remote` (lokihouse evaluates locally; there is no query-frontend to dial).
+- **Unsupported modes are rejected at startup** with a clear error. These are `ruler.enable_sharding: true` (runakefli has no ruler ring) and `ruler.evaluation.mode: remote` (runakefli evaluates locally; there is no query-frontend to dial).
 - **One ruler per process.** Loki keeps the remote-write registry in a package variable (`pkg/ruler/compat.go` `registry`). Tests must stop each ruler before starting the next (`t.Cleanup`) and must never call `t.Parallel()` in ruler tests.
-- The ruler registers its metrics in a private `prometheus.NewRegistry()`. Lokihouse has no `/metrics` endpoint yet (Phase 5); the default registerer must not collect duplicate Loki metric names.
+- The ruler registers its metrics in a private `prometheus.NewRegistry()`. Runakefli has no `/metrics` endpoint yet (Phase 5); the default registerer must not collect duplicate Loki metric names.
 - Code copied from Loki keeps the Phase 1 attribution rule: `// Copied from grafana/loki@fbc3f077 <path>; modifications: <list>`.
 - Every accepted difference from Loki goes into `docs/divergences.md` (spec §7.4) with its reason, in the task that introduces it.
 - Every task's tests must pass on the single node and on the 2×2 podman cluster (`make test`, `make test-cluster`). Task 4 also needs `make oracle-all` and `make oracle-cluster`.
@@ -41,7 +41,7 @@ All Phase 1–3 Global Constraints still apply (`docs/superpowers/plans/2026-10-
 1. **Invalid rule groups** (LogQL syntax error, a recording-rule name that is not a metric name, `for:` on a recording rule, a body that is not YAML): rejected with HTTP 400 and Loki's message, and nothing stored. Owner: Task 2 (`TestRules_InvalidGroupRejected`), plus the oracle in Task 4.
 2. **Tenant isolation.** Tenant B can neither list nor delete tenant A's groups, and A's rules only see A's data. Owner: Task 2 (`TestRules_TenantIsolation`).
 3. **ClickHouse failing during evaluation:** the rule reports `health: "err"` with the error in `lastError`, the ruler keeps running, and the rule recovers to `ok` once queries succeed again. Owner: Task 2 (`TestRules_EvaluationErrorReported`).
-4. **Restart:** rule groups survive a lokihouse restart (filesystem storage) and resume evaluating without any API call. Owner: Task 2 (`TestRules_SurviveRestart`).
+4. **Restart:** rule groups survive a runakefli restart (filesystem storage) and resume evaluating without any API call. Owner: Task 2 (`TestRules_SurviveRestart`).
 5. **Loki's WAL wipe.** With remote write enabled, Loki runs `os.RemoveAll(ruler.wal.dir)` at every startup (`pkg/ruler/registry.go` `newWALRegistry`). A `wal.dir` of `.`, `/`, or a parent of the rule storage or `rule_path` would delete the working directory or the stored rules. Config validation must refuse those values. Owner: Task 3 (`TestValidate_WALDir`).
 
 ---
@@ -51,17 +51,17 @@ All Phase 1–3 Global Constraints still apply (`docs/superpowers/plans/2026-10-
 | File | Responsibility |
 |---|---|
 | `internal/ruler/config.go` (new) | `Defaults`, `Enabled`, `Validate` (Task 1); WAL-dir guard (Task 3) |
-| `internal/ruler/evaluator.go` (new) | `Engine` interface; `Evaluator` (Loki's `LocalEvaluator.Eval` over lokihouse's engine) (Task 1) |
+| `internal/ruler/evaluator.go` (new) | `Engine` interface; `Evaluator` (Loki's `LocalEvaluator.Eval` over runakefli's engine) (Task 1) |
 | `internal/ruler/ruler.go` (new) | `New`: rule store + Loki ruler + rules API (Task 2) |
 | `internal/api/rules.go` (new) | Ruler route registration on `ServeMux` with gorilla URL vars (Task 2) |
 | `internal/api/api.go` (modify) | `Rules *rulerbase.API` field; call `ruleRoutes` (Task 2) |
 | `internal/config/config.go` (modify) | `Ruler`, `RulerStorage` fields; defaults, validation, `RulerEnabled` (Task 1) |
-| `cmd/lokihouse/main.go` (modify) | Start the ruler when enabled (Task 2) |
+| `cmd/runakefli/main.go` (modify) | Start the ruler when enabled (Task 2) |
 | `internal/ruler/*_test.go` (new) | Evaluator (Task 1), API + evaluation (Task 2), remote write + Alertmanager + WAL guard (Task 3) |
-| `test/oracle/loki.go`, `test/oracle/lokihouse.go` (modify) | `extra` config parameter (Task 4) |
+| `test/oracle/loki.go`, `test/oracle/runakefli.go` (modify) | `extra` config parameter (Task 4) |
 | `test/oracle/ruler_test.go` (new) | Remote-write and Alertmanager sinks, ruler oracle (Task 4) |
 | `test/oracle/oracle_test.go` (modify) | Start sinks, pass ruler config, call `rulerOracle` (Task 4) |
-| `lokihouse.example.yaml`, `docs/divergences.md`, `docs/phase4-status.md` (new) | Config example, divergences, status (Tasks 2–4) |
+| `runakefli.example.yaml`, `docs/divergences.md`, `docs/phase4-status.md` (new) | Config example, divergences, status (Tasks 2–4) |
 
 ---
 
@@ -80,7 +80,7 @@ All Phase 1–3 Global Constraints still apply (`docs/superpowers/plans/2026-10-
   - `config.Config.Ruler lokiruler.Config` (`yaml:"ruler"`), `config.Config.RulerStorage rulestore.Config` (`yaml:"ruler_storage"`), `(*config.Config).RulerEnabled() bool`.
   - Test helpers in package `ruler_test` (reused by Tasks 2–3): `overrides(t) *validation.Overrides`, `engine(t, conn) ruler.Engine`, `writeLines(t, conn, tenant string, n int)` (n lines of `{app="a"}` ending a minute before now).
 
-Import aliases used throughout: `lokiruler "github.com/grafana/loki/v3/pkg/ruler"`, `rulerbase "github.com/grafana/loki/v3/pkg/ruler/base"`, `"github.com/grafana/loki/v3/pkg/ruler/rulestore"`. Lokihouse's own package is `github.com/bzed/lokihouse/internal/ruler` (package `ruler`; imported as `ruler` in tests and `lhruler` in `cmd/lokihouse`).
+Import aliases used throughout: `lokiruler "github.com/grafana/loki/v3/pkg/ruler"`, `rulerbase "github.com/grafana/loki/v3/pkg/ruler/base"`, `"github.com/grafana/loki/v3/pkg/ruler/rulestore"`. Runakefli's own package is `github.com/bzed/runakefli/internal/ruler` (package `ruler`; imported as `ruler` in tests and `lhruler` in `cmd/runakefli`).
 
 - [ ] **Step 1: Write the failing config tests**
 
@@ -93,7 +93,7 @@ func TestLoad_RulerDisabledByDefault(t *testing.T) {
 	c, err := Load(p)
 	require.NoError(t, err)
 	require.False(t, c.RulerEnabled())
-	require.Equal(t, "rules-temp", c.Ruler.RulePath)       // lokihouse default (Loki: /rules)
+	require.Equal(t, "rules-temp", c.Ruler.RulePath)       // runakefli default (Loki: /rules)
 	require.Equal(t, time.Minute, c.Ruler.PollInterval)    // Loki default kept
 	require.Equal(t, "local", c.Ruler.Evaluation.Mode)     // Loki default kept
 }
@@ -111,7 +111,7 @@ ruler:
       prom: {url: "http://prom:9090/api/v1/write"}
 ruler_storage:
   backend: filesystem
-  filesystem: {dir: /var/lib/lokihouse/rules}
+  filesystem: {dir: /var/lib/runakefli/rules}
 `), 0o600))
 	c, err := Load(p)
 	require.NoError(t, err)
@@ -122,7 +122,7 @@ ruler_storage:
 	require.Equal(t, time.Minute, c.Ruler.EvaluationInterval) // Loki default kept
 	require.Equal(t, "http://prom:9090/api/v1/write", c.Ruler.RemoteWrite.Clients["prom"].URL.String())
 	require.Equal(t, "filesystem", c.RulerStorage.Backend)
-	require.Equal(t, "/var/lib/lokihouse/rules", c.RulerStorage.Filesystem.Directory)
+	require.Equal(t, "/var/lib/runakefli/rules", c.RulerStorage.Filesystem.Directory)
 }
 
 func TestLoad_RulerRejectsUnsupportedModes(t *testing.T) {
@@ -151,7 +151,7 @@ Expected: FAIL to compile with `c.RulerEnabled undefined` / `c.Ruler undefined`.
 ```go
 // Package ruler runs Loki's ruler (rule storage, evaluation, alert
 // notification, recording-rule remote write and the rules HTTP API) over
-// lokihouse's query engine.
+// runakefli's query engine.
 package ruler
 
 import (
@@ -166,7 +166,7 @@ import (
 // Defaults returns Loki's ruler and ruler_storage defaults (their flag
 // defaults). rule_path moves from Loki's /rules to rules-temp, relative to the
 // working directory like Loki's default ruler WAL directory (ruler-wal); Loki's
-// single binary moves it under common.path_prefix, which lokihouse lacks.
+// single binary moves it under common.path_prefix, which runakefli lacks.
 func Defaults() (lokiruler.Config, rulestore.Config) {
 	var rc lokiruler.Config
 	rc.RegisterFlags(flag.NewFlagSet("ruler", flag.PanicOnError))
@@ -180,7 +180,7 @@ func Defaults() (lokiruler.Config, rulestore.Config) {
 // when ruler_storage is configured.
 func Enabled(sc rulestore.Config) bool { return !sc.IsDefaults() }
 
-// Validate runs Loki's ruler config validation and rejects the modes lokihouse
+// Validate runs Loki's ruler config validation and rejects the modes runakefli
 // does not support.
 func Validate(rc lokiruler.Config, sc rulestore.Config) error {
 	if err := rc.Validate(); err != nil {
@@ -190,10 +190,10 @@ func Validate(rc lokiruler.Config, sc rulestore.Config) error {
 		return err
 	}
 	if rc.Evaluation.Mode != lokiruler.EvalModeLocal {
-		return fmt.Errorf("ruler.evaluation.mode: %q is not supported (lokihouse evaluates rules locally)", rc.Evaluation.Mode)
+		return fmt.Errorf("ruler.evaluation.mode: %q is not supported (runakefli evaluates rules locally)", rc.Evaluation.Mode)
 	}
 	if rc.EnableSharding {
-		return errors.New("ruler.enable_sharding: not supported (lokihouse has no ruler ring); run the ruler on one instance")
+		return errors.New("ruler.enable_sharding: not supported (runakefli has no ruler ring); run the ruler on one instance")
 	}
 	return nil
 }
@@ -203,7 +203,7 @@ func Validate(rc lokiruler.Config, sc rulestore.Config) error {
 
 - [ ] **Step 4: Wire it into `internal/config/config.go`**
 
-Add the imports `lokiruler "github.com/grafana/loki/v3/pkg/ruler"`, `"github.com/grafana/loki/v3/pkg/ruler/rulestore"` and `"github.com/bzed/lokihouse/internal/ruler"`. Add two fields after `Compactor`:
+Add the imports `lokiruler "github.com/grafana/loki/v3/pkg/ruler"`, `"github.com/grafana/loki/v3/pkg/ruler/rulestore"` and `"github.com/bzed/runakefli/internal/ruler"`. Add two fields after `Compactor`:
 
 ```go
 	Ruler        lokiruler.Config `yaml:"ruler"`         // Loki's ruler block, Loki's keys and defaults
@@ -261,10 +261,10 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/api"
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	"github.com/bzed/lokihouse/internal/ruler"
+	"github.com/bzed/runakefli/internal/api"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/ruler"
 )
 
 // overrides returns Loki's default per-tenant limits.
@@ -346,7 +346,7 @@ type Engine interface {
 	Query(ctx context.Context, p logql.Params) logql.Query
 }
 
-// Evaluator implements Loki's pkg/ruler.Evaluator on lokihouse's engine, so
+// Evaluator implements Loki's pkg/ruler.Evaluator on runakefli's engine, so
 // rules get Tier A push-down, Tier B fallback and query-time delete filtering
 // like every other query.
 type Evaluator struct {
@@ -388,14 +388,14 @@ Expected: PASS.
 
 - [ ] **Step 10: Run on the cluster**
 
-Run: `make cluster-up && LOKIHOUSE_TEST_CH_ADDR=localhost:19001 LOKIHOUSE_TEST_CH_CLUSTER=lokihouse go test -count=1 ./internal/ruler/ ./internal/config/`
+Run: `make cluster-up && RUNAKEFLI_TEST_CH_ADDR=localhost:19001 RUNAKEFLI_TEST_CH_CLUSTER=runakefli go test -count=1 ./internal/ruler/ ./internal/config/`
 Expected: PASS.
 
 - [ ] **Step 11: Commit**
 
 ```bash
 git add go.mod go.sum internal/ruler/config.go internal/ruler/evaluator.go internal/ruler/evaluator_test.go internal/config/config.go internal/config/config_test.go
-git commit -m "feat(ruler): ruler config (Loki's ruler/ruler_storage keys) and evaluator over the lokihouse engine"
+git commit -m "feat(ruler): ruler config (Loki's ruler/ruler_storage keys) and evaluator over the runakefli engine"
 ```
 
 ---
@@ -404,7 +404,7 @@ git commit -m "feat(ruler): ruler config (Loki's ruler/ruler_storage keys) and e
 
 **Files:**
 - Create: `internal/ruler/ruler.go`, `internal/ruler/ruler_test.go`, `internal/api/rules.go`
-- Modify: `internal/api/api.go`, `cmd/lokihouse/main.go`, `lokihouse.example.yaml`, `docs/divergences.md`
+- Modify: `internal/api/api.go`, `cmd/runakefli/main.go`, `runakefli.example.yaml`, `docs/divergences.md`
 
 **Interfaces:**
 - Consumes: `ruler.Engine`, `ruler.Evaluator`, `ruler.Defaults`, `ruler.Validate`, `overrides(t)`, `engine(t, conn)`, `writeLines(t, conn, tenant, n)` (Task 1); `api.API`, `api.API.Router()` (existing).
@@ -459,9 +459,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/api"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	"github.com/bzed/lokihouse/internal/ruler"
+	"github.com/bzed/runakefli/internal/api"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/ruler"
 )
 
 // group is a rule group evaluated every 100ms over {app="a"}.
@@ -483,7 +483,7 @@ type harness struct {
 }
 
 // startRuler starts Loki's ruler over eng with filesystem rule storage in dir,
-// polling and evaluating every 100ms, behind lokihouse's API router. mut, when
+// polling and evaluating every 100ms, behind runakefli's API router. mut, when
 // set, adjusts the ruler config. The ruler is stopped when the test ends; only
 // one ruler may run at a time (Loki keeps its remote-write registry global).
 func startRuler(t *testing.T, dir string, eng ruler.Engine, mut func(*lokiruler.Config)) *harness {
@@ -773,7 +773,7 @@ func New(ctx context.Context, rc lokiruler.Config, sc rulestore.Config, e Engine
 		return nil, nil, err
 	}
 	ev := lokiruler.NewEvaluatorWithJitter(&Evaluator{Engine: e}, rc.Evaluation.MaxJitter, fnv.New32a(), logger)
-	r, err := lokiruler.NewRuler(rc, ev, reg, logger, store, limits, "lokihouse")
+	r, err := lokiruler.NewRuler(rc, ev, reg, logger, store, limits, "runakefli")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -844,9 +844,9 @@ and in `Router()`, after the `if a.Tail != nil { … }` block:
 Run: `go test ./internal/ruler/ ./internal/api/ -count=1`
 Expected: PASS. If `TestRules_InvalidGroupRejected/not yaml` returns a different message, check `ErrBadRuleGroup` in `pkg/ruler/base/api.go` at the pinned commit: it is `"unable to decoded rule group"` (Loki's typo).
 
-- [ ] **Step 6: Wire the ruler into `cmd/lokihouse/main.go`**
+- [ ] **Step 6: Wire the ruler into `cmd/runakefli/main.go`**
 
-Add the imports `"github.com/grafana/dskit/services"`, `"github.com/prometheus/client_golang/prometheus"` and `lhruler "github.com/bzed/lokihouse/internal/ruler"`. Before `addr := …`, add:
+Add the imports `"github.com/grafana/dskit/services"`, `"github.com/prometheus/client_golang/prometheus"` and `lhruler "github.com/bzed/runakefli/internal/ruler"`. Before `addr := …`, add:
 
 ```go
 	// Loki's ruler, when ruler_storage is configured (Loki's single-binary rule).
@@ -876,45 +876,45 @@ clickhouse: {database: lh_smoke}
 ruler: {poll_interval: 1s, rule_path: $d/rules-temp}
 ruler_storage: {backend: filesystem, filesystem: {dir: $d/rules}}
 EOF
-go build -o $d/lokihouse ./cmd/lokihouse && ($d/lokihouse -config.file $d/c.yaml > $d/log 2>&1 &)
+go build -o $d/runakefli ./cmd/runakefli && ($d/runakefli -config.file $d/c.yaml > $d/log 2>&1 &)
 sleep 3
 printf 'name: g\nrules:\n  - record: x:count\n    expr: sum(count_over_time({app="a"}[1m]))\n' | curl -s -w ' %{http_code}\n' --data-binary @- -H 'Content-Type: application/yaml' localhost:13101/loki/api/v1/rules/ns
 curl -s localhost:13101/loki/api/v1/rules
-pkill -f "$d/lokihouse"; rm -rf "$d"
+pkill -f "$d/runakefli"; rm -rf "$d"
 ```
 
 Expected: `{"status":"success","data":null,"errorType":"","error":""} 202`, then the group as YAML under `ns:`. The log has no `panic`. Afterwards drop the smoke database: `clickhouse client -q 'DROP DATABASE IF EXISTS lh_smoke'`.
 
 - [ ] **Step 8: Document config and divergences**
 
-Append to `lokihouse.example.yaml`:
+Append to `runakefli.example.yaml`:
 
 ```yaml
 # Loki's ruler (alerting and recording rules), with Loki's own config keys.
-# It runs only when ruler_storage is set, and on one lokihouse instance only
+# It runs only when ruler_storage is set, and on one runakefli instance only
 # (no ruler ring; see docs/divergences.md).
 # ruler:
-#   rule_path: /var/lib/lokihouse/rules-temp   # default: rules-temp (relative)
+#   rule_path: /var/lib/runakefli/rules-temp   # default: rules-temp (relative)
 #   alertmanager_url: http://alertmanager:9093
 #   external_url: http://grafana:3000
 #   remote_write:
 #     enabled: true
 #     clients:
 #       prom: {url: http://prometheus:9090/api/v1/write}
-#   wal: {dir: /var/lib/lokihouse/ruler-wal}   # wiped at every start
+#   wal: {dir: /var/lib/runakefli/ruler-wal}   # wiped at every start
 # ruler_storage:
 #   backend: filesystem                        # local = read-only rule files
-#   filesystem: {dir: /var/lib/lokihouse/rules}
+#   filesystem: {dir: /var/lib/runakefli/rules}
 ```
 
 Append to `docs/divergences.md`:
 
 ```markdown
 ## Ruler (Phase 4)
-- **No ruler ring (sharding):** Loki distributes rule groups over a ring of rulers; lokihouse has no ring. `ruler.enable_sharding: true` and `ruler.evaluation.mode: remote` are rejected at startup, and `/ruler/ring` is not served. Every lokihouse instance with `ruler_storage` configured evaluates *all* rule groups, so configure it on exactly one instance; otherwise alerts and recording-rule samples are duplicated.
-- **`ruler.rule_path` default:** `rules-temp` relative to the working directory instead of Loki's `/rules` (Loki's single binary uses `<common.path_prefix>/rules-temp`; lokihouse has no `path_prefix`).
-- **Namespaces containing `/`:** Loki's router (gorilla mux on the decoded path) splits `/loki/api/v1/rules/a%2Fb` into namespace `a` and group `b`; lokihouse's `ServeMux` keeps `a/b` as one namespace. Other escaped characters (spaces, `%`, unicode) behave the same in both.
-- **Ruler metrics:** collected in a private registry and not exposed (lokihouse has no `/metrics` endpoint before Phase 5).
+- **No ruler ring (sharding):** Loki distributes rule groups over a ring of rulers; runakefli has no ring. `ruler.enable_sharding: true` and `ruler.evaluation.mode: remote` are rejected at startup, and `/ruler/ring` is not served. Every runakefli instance with `ruler_storage` configured evaluates *all* rule groups, so configure it on exactly one instance; otherwise alerts and recording-rule samples are duplicated.
+- **`ruler.rule_path` default:** `rules-temp` relative to the working directory instead of Loki's `/rules` (Loki's single binary uses `<common.path_prefix>/rules-temp`; runakefli has no `path_prefix`).
+- **Namespaces containing `/`:** Loki's router (gorilla mux on the decoded path) splits `/loki/api/v1/rules/a%2Fb` into namespace `a` and group `b`; runakefli's `ServeMux` keeps `a/b` as one namespace. Other escaped characters (spaces, `%`, unicode) behave the same in both.
+- **Ruler metrics:** collected in a private registry and not exposed (runakefli has no `/metrics` endpoint before Phase 5).
 ```
 
 - [ ] **Step 9: Run everything on the single node and the cluster**
@@ -925,7 +925,7 @@ Expected: all packages `ok`.
 - [ ] **Step 10: Commit**
 
 ```bash
-git add internal/ruler/ruler.go internal/ruler/ruler_test.go internal/api/rules.go internal/api/api.go cmd/lokihouse/main.go lokihouse.example.yaml docs/divergences.md
+git add internal/ruler/ruler.go internal/ruler/ruler_test.go internal/api/rules.go internal/api/api.go cmd/runakefli/main.go runakefli.example.yaml docs/divergences.md
 git commit -m "feat(ruler): Loki ruler service, filesystem rule storage and rules API"
 ```
 
@@ -941,7 +941,7 @@ git commit -m "feat(ruler): Loki ruler service, filesystem rule storage and rule
 - Consumes: `startRuler`, `(*harness).do`, `(*harness).alerts`, `group`, `engine`, `writeLines` (Tasks 1–2); `ruler.Validate`, `ruler.Defaults` (Task 1).
 - Produces: `ruler.Validate` additionally rejects unsafe `ruler.wal.dir` values when `ruler.remote_write.enabled` is true (unexported `checkWALDir`, `within`).
 
-Remote write and notification need no new production code: `ruler.New` already runs Loki's WAL registry and notifier. This task pins their behaviour on lokihouse's engine with real receivers, and adds the WAL-dir guard. The guard is needed because `pkg/ruler/registry.go` `newWALRegistry` runs `os.RemoveAll(config.WAL.Dir)` at every startup when remote write is enabled.
+Remote write and notification need no new production code: `ruler.New` already runs Loki's WAL registry and notifier. This task pins their behaviour on runakefli's engine with real receivers, and adds the WAL-dir guard. The guard is needed because `pkg/ruler/registry.go` `newWALRegistry` runs `os.RemoveAll(config.WAL.Dir)` at every startup when remote write is enabled.
 
 - [ ] **Step 1: Write the failing WAL-guard test**
 
@@ -1072,7 +1072,7 @@ import (
 	"github.com/stretchr/testify/require"
 	yaml "go.yaml.in/yaml/v4"
 
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 // rwSink is a Prometheus remote-write receiver. The first failFirst requests
@@ -1211,7 +1211,7 @@ Expected: PASS. If a remote-write test times out, read the ruler log with `log.N
 Append to the `## Ruler (Phase 4)` section of `docs/divergences.md`:
 
 ```markdown
-- **Ruler WAL directory guard:** with remote write enabled, Loki wipes `ruler.wal.dir` (`os.RemoveAll`) at every start. lokihouse refuses to start when that directory is empty or contains the working directory, the rule storage directory or `rule_path`; Loki would delete them.
+- **Ruler WAL directory guard:** with remote write enabled, Loki wipes `ruler.wal.dir` (`os.RemoveAll`) at every start. runakefli refuses to start when that directory is empty or contains the working directory, the rule storage directory or `rule_path`; Loki would delete them.
 ```
 
 - [ ] **Step 8: Run everything on the single node and the cluster**
@@ -1232,11 +1232,11 @@ git commit -m "feat(ruler): guard the ruler WAL dir; pin remote write and Alertm
 
 **Files:**
 - Create: `test/oracle/ruler_test.go`, `docs/phase4-status.md`
-- Modify: `test/oracle/loki.go`, `test/oracle/lokihouse.go`, `test/oracle/oracle_test.go`
+- Modify: `test/oracle/loki.go`, `test/oracle/runakefli.go`, `test/oracle/oracle_test.go`
 
 **Interfaces:**
-- Consumes: `Compare`, `CompareMut`, `PushBoth`, `Get` (existing oracle helpers); lokihouse's ruler config keys (Tasks 1–3).
-- Produces: `StartLoki(t *testing.T, extra string) string` and `StartLokihouse(t *testing.T, extra string) string`, where `extra` is YAML appended to the generated config. Also `newRulerSinks`, `rulerYAML` and `rulerOracle(t, loki, house string, ls, hs *rulerSinks)`.
+- Consumes: `Compare`, `CompareMut`, `PushBoth`, `Get` (existing oracle helpers); runakefli's ruler config keys (Tasks 1–3).
+- Produces: `StartLoki(t *testing.T, extra string) string` and `StartRunakefli(t *testing.T, extra string) string`, where `extra` is YAML appended to the generated config. Also `newRulerSinks`, `rulerYAML` and `rulerOracle(t, loki, house string, ls, hs *rulerSinks)`.
 
 Facts checked against the pinned Loki binary while planning:
 - With `common.storage.filesystem.rules_directory` set, Loki's ruler storage is the read-only `local` backend, and `POST /loki/api/v1/rules/…` fails. An explicit `ruler_storage: {backend: filesystem, filesystem: {dir: …}}` (no `rules_directory`) is writable.
@@ -1250,7 +1250,7 @@ In `test/oracle/loki.go`:
 - After the two `strings.ReplaceAll` lines, add `cfg += extra`.
 - In `lokiConfigTemplate`, change `filesystem: {chunks_directory: ${DIR}/chunks, rules_directory: ${DIR}/rules}` to `filesystem: {chunks_directory: ${DIR}/chunks}`. The `rules_directory` only selected Loki's read-only rule store.
 
-In `test/oracle/lokihouse.go`, change the signature to `func StartLokihouse(t *testing.T, extra string) string` and append `extra` to the generated config: change the `fmt.Sprintf(\`auth_enabled: …\`, …)` call to end with `) + extra`.
+In `test/oracle/runakefli.go`, change the signature to `func StartRunakefli(t *testing.T, extra string) string` and append `extra` to the generated config: change the `fmt.Sprintf(\`auth_enabled: …\`, …)` call to end with `) + extra`.
 
 - [ ] **Step 2: Write the ruler oracle**
 
@@ -1346,7 +1346,7 @@ func (s *rulerSinks) counts() (series, alerts int) {
 	return len(s.samples), len(s.alerts)
 }
 
-// rulerYAML is the ruler config both stores get (Loki's keys; lokihouse reads
+// rulerYAML is the ruler config both stores get (Loki's keys; runakefli reads
 // the same ones), with its own directories and sinks.
 func rulerYAML(dir string, s *rulerSinks) string {
 	return fmt.Sprintf(`
@@ -1489,7 +1489,7 @@ func rulerOracle(t *testing.T, loki, house string, ls, hs *rulerSinks) {
 		lc, lb := send(t, method, loki+path, tenant, body)
 		hc, hb := send(t, method, house+path, tenant, body)
 		if lc != hc {
-			t.Errorf("%s: status loki=%d lokihouse=%d\nloki: %s\nlokihouse: %s", name, lc, hc, lb, hb)
+			t.Errorf("%s: status loki=%d runakefli=%d\nloki: %s\nrunakefli: %s", name, lc, hc, lb, hb)
 			return
 		}
 		Compare(t, name, lb, hb)
@@ -1532,7 +1532,7 @@ func rulerOracle(t *testing.T, loki, house string, ls, hs *rulerSinks) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("sinks incomplete after 2m: loki %d series/%d alerts, lokihouse %d series/%d alerts", ln, la, hn, ha)
+			t.Fatalf("sinks incomplete after 2m: loki %d series/%d alerts, runakefli %d series/%d alerts", ln, la, hn, ha)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -1551,7 +1551,7 @@ In `test/oracle/oracle_test.go`, replace the first two lines of `TestOracle` wit
 ```go
 	lokiSinks, houseSinks := newRulerSinks(t), newRulerSinks(t)
 	loki := StartLoki(t, rulerYAML(t.TempDir(), lokiSinks))
-	house := StartLokihouse(t, rulerYAML(t.TempDir(), houseSinks))
+	house := StartRunakefli(t, rulerYAML(t.TempDir(), houseSinks))
 ```
 
 and call the ruler oracle right after `phase3Endpoints(...)`, before `deletesOracle`:
@@ -1579,9 +1579,9 @@ Fill in the date and record the gate results from Step 5 exactly as they came ou
 ```markdown
 # Phase 4 status
 
-Phase 4 runs Loki's ruler inside lokihouse: rule groups in local filesystem
+Phase 4 runs Loki's ruler inside runakefli: rule groups in local filesystem
 storage, Loki's rules API, alerting and recording rules evaluated with
-lokihouse's engine (Tier A push-down, Tier B fallback, delete filtering),
+runakefli's engine (Tier A push-down, Tier B fallback, delete filtering),
 Alertmanager notification and recording-rule remote write. Everything is
 compared against real Loki (commit `fbc3f077`) in the oracle.
 
@@ -1594,7 +1594,7 @@ Run on <date>, on `main` after task 4.
 | Unit tests | `make test` | ok (all packages) |
 | Cluster unit tests | `make test-cluster` | ok (4-node ClickHouse cluster) |
 | Oracle (all push-down modes) | `make oracle-all` | ok (off / downstream / on) |
-| Cluster oracle | `make oracle-cluster` | ok (Loki vs 4-node lokihouse) |
+| Cluster oracle | `make oracle-cluster` | ok (Loki vs 4-node runakefli) |
 
 ## Endpoints
 
@@ -1621,13 +1621,13 @@ Outputs: recording-rule samples by Prometheus remote write
 
 - **Enable** by setting `ruler_storage` (backend `filesystem` with a writable
   `filesystem.dir`, or `local` for a read-only directory of rule files). The
-  `ruler:` block takes Loki's keys; see `lokihouse.example.yaml`.
+  `ruler:` block takes Loki's keys; see `runakefli.example.yaml`.
 - **One ruler instance.** There is no ruler ring: configure `ruler_storage` on
-  exactly one lokihouse instance, otherwise every instance evaluates every rule
+  exactly one runakefli instance, otherwise every instance evaluates every rule
   (duplicate alerts and samples). `ruler.enable_sharding` and
   `ruler.evaluation.mode: remote` are rejected at startup.
 - **WAL.** With remote write enabled, Loki's ruler wipes `ruler.wal.dir` at
-  every start; lokihouse refuses a WAL directory that contains the working
+  every start; runakefli refuses a WAL directory that contains the working
   directory, the rule storage or `rule_path`.
 - **Paths.** `ruler.rule_path` (temporary rule files, default `rules-temp`) and
   `ruler.wal.dir` (default `ruler-wal`) are relative to the working directory
@@ -1641,6 +1641,6 @@ See `docs/divergences.md`, section "Ruler (Phase 4)".
 - [ ] **Step 7: Commit**
 
 ```bash
-git add test/oracle/ruler_test.go test/oracle/loki.go test/oracle/lokihouse.go test/oracle/oracle_test.go docs/phase4-status.md
+git add test/oracle/ruler_test.go test/oracle/loki.go test/oracle/runakefli.go test/oracle/oracle_test.go docs/phase4-status.md
 git commit -m "test(oracle): ruler oracle; docs: phase 4 status"
 ```

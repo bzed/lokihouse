@@ -1,13 +1,13 @@
-# Lokihouse Phase 3 (Remaining APIs) Implementation Plan
+# Runakefli Phase 3 (Remaining APIs) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Serve the rest of Loki's read and admin API from ClickHouse: per-stream retention, `index/stats`, `index/volume`, `index/volume_range`, `detected_labels`, `detected_fields`, `detected_field/{name}/values`, `patterns`, the delete API (with query-time filtering and physical deletion), `tail` over WebSocket, and `format_query`. Each endpoint is compared against real Loki in the oracle.
 
-**Architecture:** Wherever Loki's own HTTP layer is exported, lokihouse plugs its handlers in behind it instead of re-implementing it:
+**Architecture:** Wherever Loki's own HTTP layer is exported, runakefli plugs its handlers in behind it instead of re-implementing it:
 - `queryrange.NewSerializeHTTPHandler(handler, queryrange.DefaultCodec)` decodes the request and encodes the response with Loki's codec. Our `api.lokiHandler` implements `queryrangebase.Handler` for the decoded request types. This covers index stats, volume, detected labels, detected fields and patterns.
 - Loki's frontend middlewares wrap that handler unchanged: `queryrange.NewVolumeMiddleware()` (step bucketing and the Prometheus-shaped volume response), `queryrange.NewDetectedLabelsCardinalityFilter` and `queryrange.NewDetectedFieldsHandler`.
-- Tail reuses Loki's `tail.Querier`, `Tailer` and `TailHandler`. Lokihouse supplies one in-process "ingester" whose `Querier_TailClient` polls ClickHouse.
+- Tail reuses Loki's `tail.Querier`, `Tailer` and `TailHandler`. Runakefli supplies one in-process "ingester" whose `Querier_TailClient` polls ClickHouse.
 
 Statistics come from a new materialized view `stream_stats_hourly`. It stores per (tenant, stream, hour) the entry count, the bytes, and the first and last entry timestamps. Loki's own chunk pro-rating rule is then applied per hourly bucket. Unexported Loki code (the delete request handler, the detected-labels cardinality helpers, pattern pruning, `format_query`) is copied with attribution.
 
@@ -17,7 +17,7 @@ Statistics come from a new materialized view `stream_stats_hourly`. It stores pe
 
 ## Global Constraints
 
-All Phase 1 and Phase 2 Global Constraints still apply (`docs/superpowers/plans/2026-10-10-lokihouse-phase1-foundation.md`, `docs/superpowers/plans/2026-10-11-lokihouse-phase2-pushdown.md`). In addition:
+All Phase 1 and Phase 2 Global Constraints still apply (`docs/superpowers/plans/2026-10-10-runakefli-phase1-foundation.md`, `docs/superpowers/plans/2026-10-11-runakefli-phase2-pushdown.md`). In addition:
 
 - Never bump the Loki commit inside a Phase 3 task. Importing `pkg/querier/queryrange` adds many indirect modules (cloud storage SDKs). Run `go mod tidy` and commit `go.mod`/`go.sum` in the task that first imports it (Task 2). The spec accepts the heavy dependency tree (§3).
 - **Never re-implement a Loki wire format.** Requests are decoded and responses encoded by Loki code: `queryrange.DefaultCodec`, `loghttp.Parse*`, `marshal.*`, or Loki handlers copied verbatim. If a response differs from Loki only in encoding, the fix is to route it through Loki's encoder.
@@ -71,17 +71,17 @@ All Phase 1 and Phase 2 Global Constraints still apply (`docs/superpowers/plans/
 | `internal/deletes/processor.go` (new) | Background physical deletion after the cancel period (Task 7) |
 | `internal/tail/ingester.go` (new) | `tail.Ingester` + polling `Querier_TailClient` (Task 8) |
 | `internal/pushdown/tiera.go` (modify) | `ErrFallback` while a pending delete overlaps the leaf (Task 6) |
-| `cmd/lokihouse/main.go` (modify) | Wiring (Tasks 2–9) |
+| `cmd/runakefli/main.go` (modify) | Wiring (Tasks 2–9) |
 | `test/oracle/compare.go` (modify) | `CompareMut` + JSON mutators (Task 2) |
 | `test/oracle/phase3_test.go` (new) | Phase 3 endpoint cases + delete and tail oracles (Tasks 2–9) |
-| `test/oracle/loki.go`, `test/oracle/lokihouse.go` (modify) | Loki/lokihouse oracle config additions (Tasks 3, 5, 6) |
+| `test/oracle/loki.go`, `test/oracle/runakefli.go` (modify) | Loki/runakefli oracle config additions (Tasks 3, 5, 6) |
 | `docs/divergences.md` (new), `docs/phase3-status.md` (new) | Divergence register (Tasks 2–8 append), status (Task 9) |
 
 ---
 
 ### Task 1: Per-stream retention (`retention_stream`)
 
-Phase 1 applies only the tenant `retention_period`. Loki's compactor picks a retention per stream from `retention_stream` rules: among matching rules the highest `priority` wins, and on equal priority the shorter `period` wins. Lokihouse applies the same rule at ingest by calling Loki's own function. The result goes into `retention_days`, which TTL and partitioning already use.
+Phase 1 applies only the tenant `retention_period`. Loki's compactor picks a retention per stream from `retention_stream` rules: among matching rules the highest `priority` wins, and on equal priority the shorter `period` wins. Runakefli applies the same rule at ingest by calling Loki's own function. The result goes into `retention_days`, which TTL and partitioning already use.
 
 **Files:**
 - Modify: `internal/ingest/handler.go` (`retentionDays`)
@@ -219,7 +219,7 @@ git commit -m "feat(ingest): per-stream retention via Loki's retention_stream ru
 **Files:**
 - Modify: `internal/chstore/schema.sql`
 - Create: `internal/chstore/stats.go`, `internal/chstore/stats_test.go`
-- Create: `internal/api/lokicodec.go`; Modify: `internal/api/api.go`, `cmd/lokihouse/main.go`
+- Create: `internal/api/lokicodec.go`; Modify: `internal/api/api.go`, `cmd/runakefli/main.go`
 - Test: `internal/api/lokicodec_test.go`
 - Modify: `test/oracle/compare.go`; Create: `test/oracle/phase3_test.go`; Modify: `test/oracle/oracle_test.go` (one call)
 - Create: `docs/divergences.md`
@@ -474,7 +474,7 @@ func (a *API) lokiRoutes(mux *http.ServeMux) {
 }
 ```
 
-In `api.go` add the field `Limits *validation.Overrides` to `API` and call `a.lokiRoutes(mux)` in `Router()`. In `cmd/lokihouse/main.go` set `Limits: limits`. Run `go mod tidy`.
+In `api.go` add the field `Limits *validation.Overrides` to `API` and call `a.lokiRoutes(mux)` in `Router()`. In `cmd/runakefli/main.go` set `Limits: limits`. Run `go mod tidy`.
 
 - [ ] **Step 9: Run the API test and verify it passes.** Run: `go test -count=1 ./internal/api/ ./internal/chstore/`. Expected: PASS.
 
@@ -564,7 +564,7 @@ import (
 	"time"
 )
 
-// endpointCase is one Phase 3 API call compared between Loki and lokihouse.
+// endpointCase is one Phase 3 API call compared between Loki and runakefli.
 // check, when set, replaces the default CompareMut.
 type endpointCase struct {
 	name   string
@@ -615,7 +615,7 @@ func checkStats(t *testing.T, loki, house []byte) {
 		t.Fatalf("loki: %v: %s", err, loki)
 	}
 	if err := json.Unmarshal(house, &b); err != nil {
-		t.Fatalf("lokihouse: %v: %s", err, house)
+		t.Fatalf("runakefli: %v: %s", err, house)
 	}
 	if a.Streams != b.Streams || a.Entries != b.Entries || !within(float64(a.Bytes), float64(b.Bytes), 0.01) {
 		t.Errorf("index/stats differ:\nloki=%s\nhouse=%s", loki, house)
@@ -646,12 +646,12 @@ In `TestOracle` (`oracle_test.go`), after the `meta` loop and before the Tier A 
 Spec §7.4: every accepted difference, with its reason. Target: empty apart from these.
 
 ## Tie order inside one stream and timestamp (Phase 1)
-Loki keeps insertion order; lokihouse cannot. The oracle compares such groups as multisets.
+Loki keeps insertion order; runakefli cannot. The oracle compares such groups as multisets.
 
 ## index/stats and index/volume (Phase 3)
-- **Granularity:** Loki pro-rates per chunk (bounds = first/last entry of the chunk); lokihouse pro-rates per hourly bucket (bounds = first/last entry in that hour). Ranges that cover all data in a bucket/chunk agree; ranges cutting through a chunk can differ.
+- **Granularity:** Loki pro-rates per chunk (bounds = first/last entry of the chunk); runakefli pro-rates per hourly bucket (bounds = first/last entry in that hour). Ranges that cover all data in a bucket/chunk agree; ranges cutting through a chunk can differ.
 - **Duplicates:** Loki's head block drops exact duplicates before counting; the materialized view counts every inserted row, so client retries of the same push count twice.
-- **Bytes:** Loki adds each chunk's structured-metadata symbol table; lokihouse counts `len(line) + 8 × pairs` only (≈0.2% for typical metadata).
+- **Bytes:** Loki adds each chunk's structured-metadata symbol table; runakefli counts `len(line) + 8 × pairs` only (≈0.2% for typical metadata).
 - **chunks:** the number of overlapping hourly buckets, not Loki chunks.
 ```
 
@@ -666,12 +666,12 @@ git commit -m "feat: stream_stats_hourly MV and /loki/api/v1/index/stats via Lok
 
 ### Task 3: `index/volume` and `index/volume_range`
 
-Loki's querier returns a `VolumeResponse` per bucket. Its frontend `NewVolumeMiddleware` splits the request by `step` and turns the per-bucket answers into a Prometheus vector or matrix. Lokihouse wraps `lokiHandler` with that exported middleware, so the bucketing and response shape are Loki's. The per-bucket volume copies the aggregation logic of the ingester's `getVolume`.
+Loki's querier returns a `VolumeResponse` per bucket. Its frontend `NewVolumeMiddleware` splits the request by `step` and turns the per-bucket answers into a Prometheus vector or matrix. Runakefli wraps `lokiHandler` with that exported middleware, so the bucketing and response shape are Loki's. The per-bucket volume copies the aggregation logic of the ingester's `getVolume`.
 
 **Files:**
 - Modify: `internal/chstore/stats.go`, `internal/chstore/stats_test.go`
 - Modify: `internal/api/lokicodec.go`, `internal/api/lokicodec_test.go`
-- Modify: `test/oracle/loki.go`, `test/oracle/lokihouse.go`, `test/oracle/phase3_test.go`
+- Modify: `test/oracle/loki.go`, `test/oracle/runakefli.go`, `test/oracle/phase3_test.go`
 
 **Interfaces:**
 - Consumes: `HourlyStats`, `overlaps`, `ResolveStreams` (Task 2); `util.PrepareLabelsAndMatchers` (`pkg/util`), `seriesvolume.MatchAny`, `seriesvolume.AggregateBySeries`, `seriesvolume.MapToVolumeResponse` (`pkg/storage/stores/index/seriesvolume`), `queryrange.NewVolumeMiddleware()`.
@@ -813,7 +813,7 @@ In `lokicodec.go`:
 
 - [ ] **Step 5: Run and verify it passes.** Run: `go test -count=1 -run 'TestVolumeFromHours|TestAPI_' ./internal/chstore/ ./internal/api/`. Expected: PASS.
 
-- [ ] **Step 6: Oracle.** Add `  volume_enabled: true` under `limits_config:` in both `lokiConfigTemplate` (`test/oracle/loki.go`) and the lokihouse config in `test/oracle/lokihouse.go`. Append to `phase3Cases`:
+- [ ] **Step 6: Oracle.** Add `  volume_enabled: true` under `limits_config:` in both `lokiConfigTemplate` (`test/oracle/loki.go`) and the runakefli config in `test/oracle/runakefli.go`. Append to `phase3Cases`:
 
 ```go
 	{name: "volume_series", path: "/loki/api/v1/index/volume", params: url.Values{"query": {`{app=~"api|legacy"}`}}, check: checkVolume},
@@ -885,7 +885,7 @@ git commit -m "feat: /loki/api/v1/index/volume and volume_range via Loki's volum
 
 **detected_labels:** Loki's querier collects label → values for the matching streams and turns them into `DetectedLabel{Label, Cardinality, Sketch}`, using unexported helpers that are copied here. The frontend's exported `NewDetectedLabelsCardinalityFilter` then strips the sketches.
 
-**detected_fields:** Loki's frontend handler `queryrange.NewDetectedFieldsHandler(limitedHandler, logHandler, limits)` runs a BACKWARD log query with the `categorize-labels` encoding flag and parses the fields from the result. Both handlers passed in run that log query on lokihouse's engine.
+**detected_fields:** Loki's frontend handler `queryrange.NewDetectedFieldsHandler(limitedHandler, logHandler, limits)` runs a BACKWARD log query with the `categorize-labels` encoding flag and parses the fields from the result. Both handlers passed in run that log query on runakefli's engine.
 
 **Files:**
 - Create: `internal/chstore/detected.go`, `internal/chstore/detected_test.go`
@@ -983,7 +983,7 @@ func (q *Querier) DetectedLabels(ctx context.Context, req *logproto.DetectedLabe
 and
 
 ```go
-// logQuery runs a log/range query on lokihouse's engine and returns Loki's
+// logQuery runs a log/range query on runakefli's engine and returns Loki's
 // queryrange response, as the querier does for the frontend.
 func (h lokiHandler) logQuery(ctx context.Context, req queryrangebase.Request) (queryrangebase.Response, error) {
 	params, err := queryrange.ParamsFromRequest(req)
@@ -1055,7 +1055,7 @@ git commit -m "feat: detected_labels, detected_fields and detected_field values 
 
 ### Task 5: `patterns`
 
-Loki's pattern ingester trains one Drain instance per (stream, `detected_level`) in push order and answers queries from the clusters. Lokihouse rebuilds the same state at query time:
+Loki's pattern ingester trains one Drain instance per (stream, `detected_level`) in push order and answers queries from the clusters. Runakefli rebuilds the same state at query time:
 1. Read the matching rows in timestamp order.
 2. Per stream, detect the format from the stream's first line.
 3. Train a Drain per level, configured exactly as `pkg/pattern/ingester.go` lines 242–246 configure it.
@@ -1063,7 +1063,7 @@ Loki's pattern ingester trains one Drain instance per (stream, `detected_level`)
 
 **Files:**
 - Create: `internal/patterns/patterns.go`, `internal/patterns/patterns_test.go`
-- Modify: `internal/api/lokicodec.go`, `internal/api/api.go`, `cmd/lokihouse/main.go`
+- Modify: `internal/api/lokicodec.go`, `internal/api/api.go`, `cmd/runakefli/main.go`
 - Modify: `test/oracle/loki.go`, `test/oracle/phase3_test.go`
 
 **Interfaces:**
@@ -1193,7 +1193,7 @@ func (p *Querier) Query(ctx context.Context, req *logproto.QueryPatternsRequest)
 
 Copy `prunePatterns` from `pkg/pattern/ingester_querier.go` with the attribution header. Drop its metrics parameter and keep `minClusterSize = 30` and `maxPatterns = 300`.
 
-Before relying on it, verify the level key in `pkg/pattern/stream.go` `Push`: Loki reads `constants.LevelLabel` from the entry's structured metadata. Lokihouse stores `detected_level` as structured metadata (Phase 1 discovery), and the entry iterator returns it in `e.StructuredMetadata`. If `SelectLogs` with an empty pipeline returns no structured metadata, use the categorized-labels context flag as `detected_fields` does.
+Before relying on it, verify the level key in `pkg/pattern/stream.go` `Push`: Loki reads `constants.LevelLabel` from the entry's structured metadata. Runakefli stores `detected_level` as structured metadata (Phase 1 discovery), and the entry iterator returns it in `e.StructuredMetadata`. If `SelectLogs` with an empty pipeline returns no structured metadata, use the categorized-labels context flag as `detected_fields` does.
 
 - [ ] **Step 4: Wire it.** In `Do`:
 
@@ -1226,7 +1226,7 @@ Add a wait helper that polls Loki's `/loki/api/v1/patterns?query={app="web"}` fo
 	{name: "patterns_legacy", path: "/loki/api/v1/patterns", params: url.Values{"query": {`{app="legacy"}`}, "step": {"300s"}}, mut: sortArrayBy("data", "pattern")},
 ```
 
-The goal is equality. If patterns differ, find the cause (training order, format detection, sample interval). Fix it if lokihouse can match. If the difference is inherent (e.g. Loki trains duplicates or out-of-order lines in push order), compare only the sorted pattern strings for that case, and write the reason into `docs/divergences.md`. Also record `MaxLines` there.
+The goal is equality. If patterns differ, find the cause (training order, format detection, sample interval). Fix it if runakefli can match. If the difference is inherent (e.g. Loki trains duplicates or out-of-order lines in push order), compare only the sorted pattern strings for that case, and write the reason into `docs/divergences.md`. Also record `MaxLines` there.
 
 - [ ] **Step 7: Full gate and commit.** Run `make test`, `make test-cluster`, `make oracle` and `make oracle-cluster`.
 
@@ -1239,14 +1239,14 @@ git commit -m "feat: /loki/api/v1/patterns via query-time Drain configured like 
 
 ### Task 6: Delete API and query-time filtering
 
-Requests are stored in ClickHouse, so every lokihouse instance sees them. The HTTP handler is Loki's `pkg/compactor/deletion/request_handler.go`, copied: its store interface has an unexported method and cannot be implemented from outside the package. Until a request is processed (Task 7), `SelectLogs`/`SelectSamples` hide matching lines with Loki's own `util/deletion.SetupPipeline`/`SetupExtractor`, and Tier A falls back to Tier B for overlapping leaves.
+Requests are stored in ClickHouse, so every runakefli instance sees them. The HTTP handler is Loki's `pkg/compactor/deletion/request_handler.go`, copied: its store interface has an unexported method and cannot be implemented from outside the package. Until a request is processed (Task 7), `SelectLogs`/`SelectSamples` hide matching lines with Loki's own `util/deletion.SetupPipeline`/`SetupExtractor`, and Tier A falls back to Tier B for overlapping leaves.
 
 **Files:**
 - Modify: `internal/chstore/schema.sql` (`delete_requests`)
 - Create: `internal/deletes/store.go`, `internal/deletes/handler.go`, `internal/deletes/store_test.go`, `internal/deletes/handler_test.go`
 - Modify: `internal/chstore/querier.go` (field `Deletes`, filtering), `internal/chstore/querier_test.go`
 - Modify: `internal/pushdown/tiera.go` (field `Deletes`), `internal/pushdown/tiera_test.go`
-- Modify: `internal/config/config.go` (`compactor:` block), `internal/api/api.go`, `cmd/lokihouse/main.go`
+- Modify: `internal/config/config.go` (`compactor:` block), `internal/api/api.go`, `cmd/runakefli/main.go`
 - Modify: `test/oracle/loki.go`, `test/oracle/phase3_test.go`, `test/oracle/oracle_test.go`
 
 **Interfaces:**
@@ -1484,8 +1484,8 @@ compactor:
   If step 3's sanity check fails on Loki itself, inspect `loki.log` for delete-client errors and fix the Loki config. Never weaken the comparison.
 
 - [ ] **Step 12: Divergences.** Append to `docs/divergences.md`:
-  - **Delete request IDs:** lokihouse uses 8 random hex characters; the format and the IDs differ from Loki.
-  - **Stats and volume after a delete:** `index/stats`, `index/volume`, patterns and `detected_labels` ignore deletes (Loki's index stats also count unprocessed deletes; after processing, Loki's rewritten chunks shrink while lokihouse's MV does not).
+  - **Delete request IDs:** runakefli uses 8 random hex characters; the format and the IDs differ from Loki.
+  - **Stats and volume after a delete:** `index/stats`, `index/volume`, patterns and `detected_labels` ignore deletes (Loki's index stats also count unprocessed deletes; after processing, Loki's rewritten chunks shrink while runakefli's MV does not).
 
 - [ ] **Step 13: Full gate and commit.** Run `make test`, `make test-cluster`, `make oracle` and `make oracle-cluster`.
 
@@ -1498,12 +1498,12 @@ git commit -m "feat: delete API with query-time filtering (Loki's handler and fi
 
 ### Task 7: Delete processing (physical deletion)
 
-After `delete_request_cancel_period`, Loki's compactor rewrites the chunks. Lokihouse deletes the rows with a ClickHouse lightweight `DELETE` and then marks the request processed. The rows to delete are chosen by running each candidate row through `utildeletion.SetupPipeline` with that single request: exactly the rows query-time filtering hid (Review Focus 3).
+After `delete_request_cancel_period`, Loki's compactor rewrites the chunks. Runakefli deletes the rows with a ClickHouse lightweight `DELETE` and then marks the request processed. The rows to delete are chosen by running each candidate row through `utildeletion.SetupPipeline` with that single request: exactly the rows query-time filtering hid (Review Focus 3).
 
 **Files:**
 - Create: `internal/chstore/deleterows.go`, `internal/chstore/deleterows_test.go`
 - Create: `internal/deletes/processor.go`, `internal/deletes/processor_test.go`
-- Modify: `cmd/lokihouse/main.go`
+- Modify: `cmd/runakefli/main.go`
 
 **Interfaces:**
 - Consumes: `deletes.Store` (Task 6); `chstore.ResolveStreams`, `Topology`; `utildeletion.SetupPipeline`; `log.NewNoopPipeline()` (`pkg/logql/log`).
@@ -1715,11 +1715,11 @@ git commit -m "feat(deletes): physical deletion after the cancel period, exact t
 
 ### Task 8: `tail` over WebSocket
 
-Loki's `tail.Querier` asks an `Ingester` interface for live tail clients and the store for history. It then merges, orders and delays them in its `Tailer` and serves the WebSocket in `TailHandler`. Lokihouse reuses all of that and implements `tail.Ingester` with one in-process "ingester". Its `Querier_TailClient` polls ClickHouse every second for rows with `ts` newer than the previous poll, minus a 10 s lookback for late arrivals, deduplicated by a seen-set.
+Loki's `tail.Querier` asks an `Ingester` interface for live tail clients and the store for history. It then merges, orders and delays them in its `Tailer` and serves the WebSocket in `TailHandler`. Runakefli reuses all of that and implements `tail.Ingester` with one in-process "ingester". Its `Querier_TailClient` polls ClickHouse every second for rows with `ts` newer than the previous poll, minus a 10 s lookback for late arrivals, deduplicated by a seen-set.
 
 **Files:**
 - Create: `internal/tail/ingester.go`, `internal/tail/ingester_test.go`
-- Modify: `internal/api/api.go`, `cmd/lokihouse/main.go`
+- Modify: `internal/api/api.go`, `cmd/runakefli/main.go`
 - Modify: `test/oracle/phase3_test.go`, `test/oracle/oracle_test.go`
 
 **Interfaces:**
@@ -1901,7 +1901,7 @@ If `*validation.Overrides` does not satisfy `querier_limits.Limits` at compile t
   Decode with `loghttp.TailResponse` (`pkg/loghttp`) so both sides are parsed by Loki's types.
 
 - [ ] **Step 7: Divergences.** Append:
-  - **Tail delivery:** Loki streams entries as ingesters receive them. lokihouse polls every second and catches entries whose timestamp is up to 10 s older than the poll. An entry pushed later with an older timestamp, or with a timestamp before the tail started, is not sent live.
+  - **Tail delivery:** Loki streams entries as ingesters receive them. runakefli polls every second and catches entries whose timestamp is up to 10 s older than the poll. An entry pushed later with an older timestamp, or with a timestamp before the tail started, is not sent live.
 
 - [ ] **Step 8: Full gate and commit.** Run `make test`, `make test-cluster`, `make oracle` and `make oracle-cluster`.
 

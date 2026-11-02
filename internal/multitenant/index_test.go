@@ -11,7 +11,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/multitenant"
+	"github.com/bzed/runakefli/internal/multitenant"
 )
 
 // fakeIndex answers per tenant from fixed data and records the tenants it saw.

@@ -1,0 +1,2 @@
+debian/.build/runakefli usr/bin
+runakefli.example.yaml usr/share/doc/runakefli/examples

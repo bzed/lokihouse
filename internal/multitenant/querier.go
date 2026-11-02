@@ -1,4 +1,4 @@
-// Package multitenant lets a single lokihouse instance answer queries whose
+// Package multitenant lets a single runakefli instance answer queries whose
 // X-Scope-OrgID names several tenants ("a|b"): one sub-query per tenant, each
 // result labelled with __tenant_id__, merged the way Loki's multi-tenant
 // querier does.
@@ -7,8 +7,8 @@
 // (SelectLogs, SelectSamples, Label, Series, removeTenantSelector,
 // replaceMatchers, filterValuesByMatchers, sliceToSet, relabel and the
 // defaultTenantLabel/retainExistingPrefix constants); modifications: wraps
-// lokihouse's Store instead of Loki's querier.Querier; the store-chunk
-// overrides (partitionChunkRefsByTenant) are omitted because lokihouse has no
+// runakefli's Store instead of Loki's querier.Querier; the store-chunk
+// overrides (partitionChunkRefsByTenant) are omitted because runakefli has no
 // chunks; SelectLogs closes the iterators it opened when a later tenant fails,
 // as Loki's SelectSamples does. index.go fans out the index and drilldown
 // endpoints (IndexStats, Volume, Patterns, DetectedLabels) the same way.
@@ -39,7 +39,7 @@ const (
 	retainExistingPrefix = "original_"
 )
 
-// Store is what lokihouse's ClickHouse querier offers per tenant: the log/sample
+// Store is what runakefli's ClickHouse querier offers per tenant: the log/sample
 // selectors plus the label/series metadata endpoints.
 type Store interface {
 	logql.Querier

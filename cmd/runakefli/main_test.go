@@ -12,10 +12,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
-// newFlagSet returns the lokihouse flag set so the drift tests can iterate
+// newFlagSet returns the runakefli flag set so the drift tests can iterate
 // over the registered flags.
 func newFlagSet(stderr io.Writer) (*flag.FlagSet, *struct {
 	configFile  string
@@ -23,7 +23,7 @@ func newFlagSet(stderr io.Writer) (*flag.FlagSet, *struct {
 	showVersion bool
 	migrate     bool
 }) {
-	fs := flag.NewFlagSet("lokihouse", flag.ContinueOnError)
+	fs := flag.NewFlagSet("runakefli", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	f := &struct {
 		configFile  string
@@ -31,7 +31,7 @@ func newFlagSet(stderr io.Writer) (*flag.FlagSet, *struct {
 		showVersion bool
 		migrate     bool
 	}{}
-	fs.StringVar(&f.configFile, "config.file", "lokihouse.yaml", "configuration file to load")
+	fs.StringVar(&f.configFile, "config.file", "runakefli.yaml", "configuration file to load")
 	fs.BoolVar(&f.expandEnv, "config.expand-env", false, "expand ${VAR} and ${VAR:-default} in the configuration file")
 	fs.BoolVar(&f.showVersion, "version", false, "print version information and exit")
 	fs.BoolVar(&f.migrate, "schema.migrate", false, "migrate the ClickHouse schema to the current version and exit")
@@ -40,18 +40,18 @@ func newFlagSet(stderr io.Writer) (*flag.FlagSet, *struct {
 
 // TestManpageDocumentsEveryFlag ensures the manpage lists every registered flag.
 func TestManpageDocumentsEveryFlag(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "man", "lokihouse.1.md"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "man", "runakefli.1.md"))
 	require.NoError(t, err)
 	fs, _ := newFlagSet(io.Discard)
 	fs.VisitAll(func(f *flag.Flag) {
-		require.Contains(t, string(b), "**-"+f.Name+"**", "flag -%s missing from docs/man/lokihouse.1.md", f.Name)
+		require.Contains(t, string(b), "**-"+f.Name+"**", "flag -%s missing from docs/man/runakefli.1.md", f.Name)
 	})
 }
 
 func TestRun_Version(t *testing.T) {
 	var out, errb bytes.Buffer
 	require.Equal(t, 0, run([]string{"-version"}, &out, &errb))
-	require.Contains(t, out.String(), "lokihouse, version")
+	require.Contains(t, out.String(), "runakefli, version")
 }
 
 func TestRun_UsageError(t *testing.T) {
@@ -74,7 +74,7 @@ func TestRun_SchemaMigrateFlag(t *testing.T) {
 
 	var out, errb bytes.Buffer
 	require.Equal(t, 1, run([]string{"-config.file", p}, &out, &errb), "a normal start refuses a version 1 database")
-	require.Contains(t, errb.String(), "lokihouse -schema.migrate")
+	require.Contains(t, errb.String(), "runakefli -schema.migrate")
 
 	errb.Reset()
 	require.Equal(t, 0, run([]string{"-config.file", p, "-schema.migrate"}, &out, &errb), errb.String())
@@ -96,7 +96,7 @@ func TestRun_SchemaMigrateFlagV2(t *testing.T) {
 
 	var out, errb bytes.Buffer
 	require.Equal(t, 1, run([]string{"-config.file", p}, &out, &errb), "a normal start refuses a version 2 database")
-	require.Contains(t, errb.String(), "lokihouse -schema.migrate")
+	require.Contains(t, errb.String(), "runakefli -schema.migrate")
 	require.Equal(t, uint64(1), logsIndexes(), "the refused start changed nothing")
 
 	errb.Reset()
@@ -109,7 +109,7 @@ func writeConfig(t *testing.T, db string) string {
 	t.Helper()
 	o := chtest.Options("default")
 	topo := chtest.Topology()
-	p := filepath.Join(t.TempDir(), "lokihouse.yaml")
+	p := filepath.Join(t.TempDir(), "runakefli.yaml")
 	y := fmt.Sprintf(`server: {http_listen_address: 127.0.0.1, http_listen_port: 0}
 clickhouse:
   addr: [%q]
@@ -124,7 +124,7 @@ clickhouse:
 }
 
 func TestRun_SchemaMigrateError(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "lokihouse.yaml")
+	p := filepath.Join(t.TempDir(), "runakefli.yaml")
 	require.NoError(t, os.WriteFile(p, []byte("clickhouse: {addr: [\"127.0.0.1:1\"], dial_timeout: 200ms}\n"), 0o600))
 	var out, errb bytes.Buffer
 	require.Equal(t, 1, run([]string{"-config.file", p, "-schema.migrate"}, &out, &errb))

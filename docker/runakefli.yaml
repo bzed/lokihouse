@@ -1,0 +1,19 @@
+# runakefli configuration for the container image. The image runs with
+# -config.expand-env, so ${VAR} and ${VAR:-default} are expanded. Mount your own
+# file over /etc/runakefli/runakefli.yaml for anything beyond these variables;
+# all options: https://runakefli.app/reference/configuration/
+auth_enabled: false
+server:
+  http_listen_address: 0.0.0.0
+  http_listen_port: ${RUNAKEFLI_HTTP_LISTEN_PORT:-3100}
+clickhouse:
+  addr: ["${RUNAKEFLI_CLICKHOUSE_ADDR:-clickhouse:9000}"]
+  database: ${RUNAKEFLI_CLICKHOUSE_DATABASE:-runakefli}
+  username: ${RUNAKEFLI_CLICKHOUSE_USER:-default}
+  # Prefer a mounted file (RUNAKEFLI_CLICKHOUSE_PASSWORD_FILE): environment
+  # variables are visible in `inspect`. Set at most one of the two. The
+  # password is expanded into a single-quoted YAML string, so it must not
+  # contain a single quote; use the file for such passwords.
+  password: '${RUNAKEFLI_CLICKHOUSE_PASSWORD:-}'
+  password_file: ${RUNAKEFLI_CLICKHOUSE_PASSWORD_FILE:-}
+limits_config: {}

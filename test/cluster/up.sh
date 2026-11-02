@@ -1,9 +1,9 @@
 #!/bin/sh
-# Start a 2-shard x 2-replica ClickHouse cluster "lokihouse" with one Keeper (podman).
+# Start a 2-shard x 2-replica ClickHouse cluster "runakefli" with one Keeper (podman).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 img=docker.io/clickhouse/clickhouse-server:26.9
-work=${LOKIHOUSE_CLUSTER_DIR:-$here/../../.cache/cluster}
+work=${RUNAKEFLI_CLUSTER_DIR:-$here/../../.cache/cluster}
 mkdir -p "$work"
 podman network exists lhnet || podman network create lhnet >/dev/null
 podman container exists keeper || podman run -d --name keeper --network lhnet \
@@ -23,4 +23,4 @@ for i in 1 2 3 4; do
     n=$((n + 1)); [ "$n" -lt 60 ] || { echo "ch$i not ready" >&2; exit 1; }; sleep 1
   done
 done
-echo "cluster lokihouse up: localhost:19001-19004"
+echo "cluster runakefli up: localhost:19001-19004"

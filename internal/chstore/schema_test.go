@@ -8,8 +8,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 func TestMigrate_CreatesTablesIdempotently(t *testing.T) {

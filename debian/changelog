@@ -1,3 +1,15 @@
+runakefli (0.15.0) trixie; urgency=medium
+
+  * Renamed from lokihouse to runakefli (Rúnakefli), as a precaution to
+    avoid trademark issues. Binary, package, systemd unit, container image,
+    config file (/etc/runakefli/runakefli.yaml), state directory, environment
+    variables (RUNAKEFLI_*), metrics (runakefli_*) and default ClickHouse
+    database (runakefli) change; Loki's own names do not.
+  * The package replaces, breaks and conflicts with lokihouse (<< 0.15.0).
+  * The documentation and apt repository moved to https://runakefli.app/.
+
+ -- Bernd Zeimetz <bernd@bzed.de>  Mon, 02 Nov 2026 16:52:22 +0100
+
 lokihouse (0.14.0) trixie; urgency=medium
 
   * Log queries whose stream set is already known start reading lines

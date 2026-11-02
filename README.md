@@ -1,35 +1,35 @@
 <div align="center">
-  <img src="assets/logo.svg" alt="lokihouse logo" width="160" height="160">
+  <img src="assets/logo.svg" alt="runakefli logo" width="160" height="160">
 
-  <h1>lokihouse</h1>
-  <p><strong>Grafana Loki's HTTP API, with logs stored in ClickHouse.</strong></p>
+  <h1>Rúnakefli</h1>
+  <p><strong>The Loki® HTTP API, with logs stored in ClickHouse®.</strong></p>
 
-  [![CI](https://github.com/bzed/lokihouse/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bzed/lokihouse/actions/workflows/ci.yml)
-  [![codecov](https://codecov.io/gh/bzed/lokihouse/branch/main/graph/badge.svg)](https://codecov.io/gh/bzed/lokihouse)
-  [![Go Reference](https://pkg.go.dev/badge/github.com/bzed/lokihouse.svg)](https://pkg.go.dev/github.com/bzed/lokihouse)
-  [![Docs](https://img.shields.io/badge/docs-lokihouse.dev-blue)](https://lokihouse.dev/)
+  [![CI](https://github.com/bzed/runakefli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bzed/runakefli/actions/workflows/ci.yml)
+  [![codecov](https://codecov.io/gh/bzed/runakefli/branch/main/graph/badge.svg)](https://codecov.io/gh/bzed/runakefli)
+  [![Go Reference](https://pkg.go.dev/badge/github.com/bzed/runakefli.svg)](https://pkg.go.dev/github.com/bzed/runakefli)
+  [![Docs](https://img.shields.io/badge/docs-runakefli.app-blue)](https://runakefli.app/)
   [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
   [![Status: release candidate](https://img.shields.io/badge/status-release%20candidate-yellowgreen)](docs/roadmap.md)
 </div>
 
 ---
 
-> **Release candidate.** lokihouse is feature complete and passes the Loki
+> **Release candidate.** Rúnakefli is feature complete and passes the Loki
 > compatibility oracle, but has not yet been proven in production. Packages and
 > images are built from every release. Back up the ClickHouse database before
 > upgrading; schema changes ship with a migration (`-schema.migrate`).
 
-lokihouse is a single static Go service that speaks
-[Grafana Loki](https://grafana.com/oss/loki/)'s HTTP API (push, LogQL queries,
+Rúnakefli (`runakefli` on the command line and in packages) is a single static Go service that speaks
+[Loki](https://grafana.com/oss/loki/)'s HTTP API (push, LogQL queries,
 labels, series, tail, index statistics, deletes and the ruler) and stores the
-logs in [ClickHouse](https://clickhouse.com/). Point Grafana, Alloy or
+logs in [ClickHouse](https://clickhouse.com/). Point Grafana®, Alloy or
 Promtail at it as if it were Loki; ClickHouse does the storage and the heavy
 lifting.
 
 **Built with**
 [![Go](https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![Grafana Loki](https://img.shields.io/badge/Grafana%20Loki-compatible-F46800?logo=grafana&logoColor=white)](https://github.com/grafana/loki)
-[![ClickHouse](https://img.shields.io/badge/ClickHouse-26.9-FFCC00?logo=clickhouse&logoColor=black)](https://clickhouse.com/)
+[![Loki](https://img.shields.io/badge/Loki%C2%AE-compatible-F46800)](https://github.com/grafana/loki)
+[![ClickHouse](https://img.shields.io/badge/ClickHouse%C2%AE-26.9-FFCC00)](https://clickhouse.com/)
 [![Debian](assets/built-with-debian.svg)](https://www.debian.org/)
 [![Claude](assets/built-with-claude.svg)](https://claude.com/claude-code)
 
@@ -51,10 +51,10 @@ lifting.
 ## Speed
 
 Query latency against Loki on identical data and queries (200 000 lines, 50
-streams, one node each, p50, lokihouse at main with the speculative stream
+streams, one node each, p50, Rúnakefli at main with the speculative stream
 read; every answer is compared with Loki's before it counts):
 
-| query | Loki | lokihouse |
+| query | Loki | Rúnakefli |
 |---|---:|---:|
 | `count_over_time` | 53 ms | **14 ms** |
 | `topk` | 25 ms | **11 ms** |
@@ -69,7 +69,7 @@ filesystem cache; p50, ms), on a local RustFS and on a remote S3 bucket
 (separate runs; the remote bucket figures are from an earlier run, before the
 speculative stream read, which is why its plain log filter is still 8 ms):
 
-| query | Loki, RustFS | lokihouse, RustFS | Loki, remote S3 | lokihouse, remote S3 |
+| query | Loki, RustFS | Rúnakefli, RustFS | Loki, remote S3 | Rúnakefli, remote S3 |
 |---|---:|---:|---:|---:|
 | `count_over_time` | 51 | **14** | 65 | **12** |
 | `topk` | 24 | **12** | 32 | **11** |
@@ -79,7 +79,7 @@ speculative stream read, which is why its plain log filter is still 8 ms):
 | plain log filter | **5** | 6 | **5** | 8 |
 | `unwrap` + `quantile_over_time` | **48** | 56 | **61** | 63 |
 
-lokihouse is 1.7–4× faster on the aggregations and the `logfmt` filter, level
+Rúnakefli is 1.7–4× faster on the aggregations and the `logfmt` filter, level
 with Loki on the plain log filter and `rate` with regex, and 1.1–1.2× slower on
 `unwrap` + `quantile_over_time`; `labels` (about 2 ms) and `series` (2–3 ms)
 are 1–2 ms slower than Loki's. Without ClickHouse's filesystem cache, S3 reads add
@@ -93,56 +93,56 @@ Method, environment and caveats: [`docs/benchmark.md`](docs/benchmark.md).
 
 ```console
 $ sudo install -d -m 0755 /etc/apt/keyrings
-$ sudo curl -fsSLo /etc/apt/keyrings/lokihouse-archive-keyring.asc https://lokihouse.dev/apt/lokihouse-archive-keyring.asc
-$ sudo tee /etc/apt/sources.list.d/lokihouse.sources <<'EOF'
+$ sudo curl -fsSLo /etc/apt/keyrings/runakefli-archive-keyring.asc https://runakefli.app/apt/runakefli-archive-keyring.asc
+$ sudo tee /etc/apt/sources.list.d/runakefli.sources <<'EOF'
 Types: deb
-URIs: https://lokihouse.dev/apt
+URIs: https://runakefli.app/apt
 Suites: trixie
 Components: main
-Signed-By: /etc/apt/keyrings/lokihouse-archive-keyring.asc
+Signed-By: /etc/apt/keyrings/runakefli-archive-keyring.asc
 EOF
-$ sudo apt update && sudo apt install lokihouse
+$ sudo apt update && sudo apt install runakefli
 ```
 
 The key's fingerprint is `74E9 21AC B040 DCC7 2C02  A144 1193 7B6E A8AF C649`.
-Edit `/etc/lokihouse/lokihouse.yaml` (the service is not started on install),
-then `sudo systemctl enable --now lokihouse`.
+Edit `/etc/runakefli/runakefli.yaml` (the service is not started on install),
+then `sudo systemctl enable --now runakefli`.
 
 **Container** (linux/amd64, linux/arm64):
 
 ```console
-$ podman run -d -p 3100:3100 -e LOKIHOUSE_CLICKHOUSE_ADDR=clickhouse.example.org:9000 ghcr.io/bzed/lokihouse:latest
+$ podman run -d -p 3100:3100 -e RUNAKEFLI_CLICKHOUSE_ADDR=clickhouse.example.org:9000 ghcr.io/bzed/runakefli:latest
 ```
 
-ClickHouse credentials: `-e LOKIHOUSE_CLICKHOUSE_USER=...` and either
-`-e LOKIHOUSE_CLICKHOUSE_PASSWORD=...` or, preferably, a mounted file named by
-`-e LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE=...`
-([details](https://lokihouse.dev/install/#clickhouse-password)).
+ClickHouse credentials: `-e RUNAKEFLI_CLICKHOUSE_USER=...` and either
+`-e RUNAKEFLI_CLICKHOUSE_PASSWORD=...` or, preferably, a mounted file named by
+`-e RUNAKEFLI_CLICKHOUSE_PASSWORD_FILE=...`
+([details](https://runakefli.app/install/#clickhouse-password)).
 
 **From source** (a ClickHouse server 26.9 or later and a recent Go toolchain, see `go.mod`):
 
 ```console
 $ podman run -d -p 9000:9000 -e CLICKHOUSE_SKIP_USER_SETUP=1 docker.io/clickhouse/clickhouse-server:26.9
 $ make build
-$ cat > lokihouse.yaml <<'YAML'
+$ cat > runakefli.yaml <<'YAML'
 server:
   http_listen_port: 3100
 clickhouse:
   addr: ["localhost:9000"]
-  database: lokihouse
+  database: runakefli
   username: default
 YAML
-$ ./bin/lokihouse -config.file lokihouse.yaml
+$ ./bin/runakefli -config.file runakefli.yaml
 ```
 
-Then use it like Loki, for example as a Grafana Loki data source at
-`http://localhost:3100`. [`lokihouse.example.yaml`](lokihouse.example.yaml) lists
+Then use it like Loki, for example as a Loki data source at
+`http://localhost:3100`. [`runakefli.example.yaml`](runakefli.example.yaml) lists
 the optional keys; the [installation guide](docs/install/index.md) has the
 details, including systemd.
 
 ## Documentation
 
-Full documentation: **<https://lokihouse.dev/>**
+Full documentation: **<https://runakefli.app/>**
 
 - [Installation](docs/install/index.md) and [migrating from Loki](docs/migrating.md)
 - [Configuration](docs/reference/configuration.md) and [HTTP API](docs/reference/http-api.md)
@@ -165,12 +165,12 @@ $ make oracle-all       # differential tests against real Loki
 
 ## Trademarks
 
-Loki and Grafana are trademarks of Grafana Labs. ClickHouse is a trademark of
-ClickHouse, Inc. Debian is a registered trademark of Software in the Public
-Interest, Inc. Claude is a trademark of Anthropic. lokihouse is an independent
-project, not affiliated with or endorsed by any of them; the names are used only
-to say what it works with. The logo is original artwork and does not use their
-logos.
+Loki® and Grafana® are trademarks of Grafana Labs. ClickHouse® is a registered
+trademark of ClickHouse, Inc. Debian is a registered trademark of Software in
+the Public Interest, Inc. Claude is a trademark of Anthropic. Rúnakefli is an
+independent project, not affiliated with, endorsed or sponsored by Grafana Labs,
+ClickHouse, Inc. or any of the others; the names are used only to say what it
+works with. The logo is original artwork and does not use their logos.
 
 ## License
 

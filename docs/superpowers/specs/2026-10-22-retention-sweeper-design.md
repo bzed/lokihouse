@@ -2,7 +2,7 @@
 
 ## Problem
 
-lokihouse stores each row's retention (`retention_days`) at push time and lets a
+runakefli stores each row's retention (`retention_days`) at push time and lets a
 table `TTL` on `retention_days` expire it. `retention_days` is part of the
 partition key, so ClickHouse cannot change it with `ALTER … UPDATE` (key columns
 cannot be mutated). Changing `limits_config.retention_period` or
@@ -19,7 +19,7 @@ Retention is applied by a sweeper at run time, not stored with the data.
    materialized view no longer carries `retention_days`. Nothing else in the
    schema changes. The query side never read `retention_days`.
 2. **Sweeper.** When `compactor.retention_enabled` is true (Loki's key;
-   lokihouse's default is `true`, Loki's is `false`), a loop runs every `compactor.compaction_interval` and
+   runakefli's default is `true`, Loki's is `false`), a loop runs every `compactor.compaction_interval` and
    applies the current `retention_period` and `retention_stream`, using Loki's
    rule (`retention.TenantRetentionSnapshot.RetentionPeriodFor`: highest
    priority wins, the shorter period on a tie, else `retention_period`). Periods
@@ -39,8 +39,8 @@ Retention is applied by a sweeper at run time, not stored with the data.
    - After deletes, `APPLY DELETED MASK` runs on each table that had a delete.
    - Every step is idempotent. Several instances may sweep concurrently.
 3. **Migration.** A database with schema version 1 (a `retention_days` column
-   on the storage `logs` table) is migrated by `lokihouse -schema.migrate`,
-   run once by the operator with every other lokihouse instance stopped. A
+   on the storage `logs` table) is migrated by `runakefli -schema.migrate`,
+   run once by the operator with every other runakefli instance stopped. A
    normal start against a version 1 database exits 1 with an error naming
    the command. Steps, per table, resumable after a crash:
    drop the stats materialized view; create `<table>_migrate` (v2 DDL, plus a
@@ -72,6 +72,6 @@ Retention is applied by a sweeper at run time, not stored with the data.
   configured `retention_period` keeps working after the upgrade as it did with the
   TTL. The default is recorded in `docs/divergences.md` and in `CHANGELOG.md`.
   Someone moving a Loki config over with `retention_period` set but
-  `retention_enabled` unset gets expiry on lokihouse where Loki kept the data;
+  `retention_enabled` unset gets expiry on runakefli where Loki kept the data;
   the divergence entry and the migration guide say so.
 - The push partition limit (60) now counts UTC days only.

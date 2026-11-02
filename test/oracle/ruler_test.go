@@ -87,7 +87,7 @@ func (s *rulerSinks) counts() (series, alerts int) {
 	return len(s.samples), len(s.alerts)
 }
 
-// rulerYAML is the ruler config both stores get (Loki's keys; lokihouse reads
+// rulerYAML is the ruler config both stores get (Loki's keys; runakefli reads
 // the same ones), with its own directories and sinks.
 func rulerYAML(dir string, s *rulerSinks) string {
 	return fmt.Sprintf(`
@@ -230,7 +230,7 @@ func rulerOracle(t *testing.T, loki, house string, ls, hs *rulerSinks) {
 		lc, lb := send(t, method, loki+path, tenant, body)
 		hc, hb := send(t, method, house+path, tenant, body)
 		if lc != hc {
-			t.Errorf("%s: status loki=%d lokihouse=%d\nloki: %s\nlokihouse: %s", name, lc, hc, lb, hb)
+			t.Errorf("%s: status loki=%d runakefli=%d\nloki: %s\nrunakefli: %s", name, lc, hc, lb, hb)
 			return
 		}
 		Compare(t, name, lb, hb)
@@ -276,7 +276,7 @@ func rulerOracle(t *testing.T, loki, house string, ls, hs *rulerSinks) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("sinks incomplete after 2m: loki %d series/%d alerts, lokihouse %d series/%d alerts", ln, la, hn, ha)
+			t.Fatalf("sinks incomplete after 2m: loki %d series/%d alerts, runakefli %d series/%d alerts", ln, la, hn, ha)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}

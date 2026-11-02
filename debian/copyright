@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: lokihouse
+Upstream-Name: runakefli
 Upstream-Contact: Bernd Zeimetz <bernd@bzed.de>
-Source: https://github.com/bzed/lokihouse
+Source: https://github.com/bzed/runakefli
 
 Files: *
 Copyright: 2026 Bernd Zeimetz <bernd@bzed.de>
@@ -34,4 +34,4 @@ License: AGPL-3.0
  or https://www.gnu.org/licenses/agpl-3.0.txt
 
  The binary statically embeds the Go modules listed in
- /usr/share/doc/lokihouse/MODULES.txt, each under its own licence.
+ /usr/share/doc/runakefli/MODULES.txt, each under its own licence.

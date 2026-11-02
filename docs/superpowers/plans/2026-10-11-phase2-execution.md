@@ -1,6 +1,6 @@
 # Phase 2 execution tracker
 
-Plan: `2026-10-11-lokihouse-phase2-pushdown.md`. Inline execution, TDD per task,
+Plan: `2026-10-11-runakefli-phase2-pushdown.md`. Inline execution, TDD per task,
 one commit per task. Single-node ClickHouse on localhost:9000; 2x2 podman cluster
 on 19001-19004 (keeper + ch1-ch4).
 

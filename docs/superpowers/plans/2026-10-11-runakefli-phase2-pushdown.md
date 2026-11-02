@@ -1,4 +1,4 @@
-# Lokihouse Phase 2 (Push-down) Implementation Plan
+# Runakefli Phase 2 (Push-down) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -16,7 +16,7 @@ Queries without an eligible leaf skip the mapping and run on the Phase 1 engine 
 
 ## Global Constraints
 
-All Phase 1 Global Constraints still apply (`docs/superpowers/plans/2026-10-10-lokihouse-phase1-foundation.md`). In addition:
+All Phase 1 Global Constraints still apply (`docs/superpowers/plans/2026-10-10-runakefli-phase1-foundation.md`). In addition:
 
 - Never bump the Loki commit inside a Phase 2 task.
 - SQL used as a **pre-filter** (Tier B) only needs to be a *necessary* condition: every row Loki would keep must pass it. SQL used as an **exact filter** (Tier A) must accept exactly the rows Loki's filter accepts. Each function that emits SQL documents which of the two it guarantees, in its doc comment.
@@ -60,7 +60,7 @@ All Phase 1 Global Constraints still apply (`docs/superpowers/plans/2026-10-10-l
 | `internal/pushdown/engine.go` (new) | `Engine.Query(ctx, params)`: choose plain vs downstream engine; `Downstreamer` (Task 5) |
 | `internal/pushdown/tiera.go` (new) | Tier A leaf: eligibility, SQL, sliding window, result building (Task 6) |
 | `internal/pushdown/property_test.go` (new) | Tier A == Tier B on random data × random queries (Task 7) |
-| `internal/api/query.go`, `internal/config/config.go`, `cmd/lokihouse/main.go` (modify) | Wire `query.pushdown` (Task 5) |
+| `internal/api/query.go`, `internal/config/config.go`, `cmd/runakefli/main.go` (modify) | Wire `query.pushdown` (Task 5) |
 | `test/oracle/*` (modify) | Run the corpus in each pushdown mode; push-down corpus; tier coverage (Task 8) |
 | `internal/pushdown/bench_test.go`, `docs/phase2-status.md` (new) | Benchmark and status (Task 9) |
 
@@ -385,7 +385,7 @@ This task builds and proves the routing machinery with **no SQL changes**. Every
 
 **Files:**
 - Create: `internal/pushdown/mapper.go`, `internal/pushdown/engine.go`, `internal/pushdown/mapper_test.go`, `internal/pushdown/engine_test.go`
-- Modify: `internal/config/config.go`, `internal/api/api.go`, `internal/api/query.go`, `cmd/lokihouse/main.go`
+- Modify: `internal/config/config.go`, `internal/api/api.go`, `internal/api/query.go`, `cmd/runakefli/main.go`
 
 **Interfaces:**
 - Consumes: `*logql.QueryEngine` (Phase 1 Tier B), `logql.NewDownstreamEngine`, `logql.DownstreamSampleExpr`, `logql.ParamsWithExpressionOverride`, `logql.NewBufferedAccumulator`.
@@ -477,11 +477,11 @@ require.Equal(t, want.Data, got.Data, q)
   3. `main.go` builds `&pushdown.Engine{Mode: cfg.Query.Pushdown, TierB: engine, Limits: limits, Logger: logger}`.
   4. `api_test.go`'s `newServer` builds the same with mode `"off"`.
 
-- [ ] **Step 5: Add the oracle mode.** `StartLokihouse` reads `LOKIHOUSE_ORACLE_PUSHDOWN` (default `on`) into the generated config. Add a Makefile target:
+- [ ] **Step 5: Add the oracle mode.** `StartRunakefli` reads `RUNAKEFLI_ORACLE_PUSHDOWN` (default `on`) into the generated config. Add a Makefile target:
 
 ```make
 oracle-downstream:
-	LOKIHOUSE_ORACLE_PUSHDOWN=downstream go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
+	RUNAKEFLI_ORACLE_PUSHDOWN=downstream go test -tags oracle -count=1 -timeout 30m ./test/oracle/...
 ```
 
 - [ ] **Step 6: Run.** `go test -count=1 ./... && make oracle-downstream && make oracle`. Expected: PASS. A failure in `oracle-downstream` means Loki's downstream evaluation of a leaf differs from evaluating it inline. Fix this by making `Map` return `ok=false` for that node shape (and add the shape to `TestMap` with `ok=false`). Never fix it by post-processing results.
@@ -494,7 +494,7 @@ oracle-downstream:
 
 **Files:**
 - Create: `internal/chstore/buckets.go`, `internal/pushdown/tiera.go`, `internal/pushdown/tiera_test.go`
-- Modify: `internal/chstore/sqlbuild.go` (add `ExactLineFilterSQL`), `cmd/lokihouse/main.go` (set `TierA`)
+- Modify: `internal/chstore/sqlbuild.go` (add `ExactLineFilterSQL`), `cmd/runakefli/main.go` (set `TierA`)
 
 **Interfaces:**
 - Consumes: `chstore.ResolveStreams`, `chstore.RegexExact`, `pushdown.Leaf`, `logql.Params`.
@@ -616,7 +616,7 @@ GROUP BY stream_id, structured_metadata, bucket
 
 **Files:**
 - Create: `test/oracle/corpus/pushdown.logql`
-- Modify: `test/oracle/oracle_test.go`, `test/oracle/lokihouse.go`, `Makefile`
+- Modify: `test/oracle/oracle_test.go`, `test/oracle/runakefli.go`, `Makefile`
 
 - [ ] **Step 1: Write the corpus** `pushdown.logql`, about 40 queries, `range:`/`instant:` prefixed as in `basic.logql`. Cover:
   - each eligible op
@@ -627,12 +627,12 @@ GROUP BY stream_id, structured_metadata, bucket
   - leaves mixed with ineligible siblings (`count_over_time(… | logfmt [5m])`)
 
 - [ ] **Step 2: Assert tier coverage.**
-  1. Add a debug endpoint `GET /debug/lokihouse/tiera_leaves` that returns `pushdown.TierALeaves`. It is registered only when `LOKIHOUSE_DEBUG=1`, which the oracle sets.
+  1. Add a debug endpoint `GET /debug/runakefli/tiera_leaves` that returns `pushdown.TierALeaves`. It is registered only when `RUNAKEFLI_DEBUG=1`, which the oracle sets.
   2. After the corpus, require that the counter grew by at least the number of eligible leaves in `pushdown.logql` × 2 tenants. Compute that number in the test by parsing each query and counting `Eligible` leaves with a `TierA{}` that needs no connection: `Eligible` is static.
 
 - [ ] **Step 3: Add the Makefile targets** `oracle-all` (modes `off`, `downstream`, `on` on a single node) and `oracle-cluster` (mode `on`).
 
-- [ ] **Step 4: Run.** `make oracle-all && make oracle-cluster`. Expected: PASS. Divergences from Loki that are not lokihouse bugs go into `docs/divergences.md` with their reason, as spec §7.4 requires, and need the owner's approval.
+- [ ] **Step 4: Run.** `make oracle-all && make oracle-cluster`. Expected: PASS. Divergences from Loki that are not runakefli bugs go into `docs/divergences.md` with their reason, as spec §7.4 requires, and need the owner's approval.
 
 - [ ] **Step 5: Commit.** `git commit -am "test(oracle): push-down corpus, per-mode runs and Tier A coverage"`
 

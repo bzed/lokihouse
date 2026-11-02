@@ -24,7 +24,7 @@ start_ch() { # name port config
 # Object Storage now and then answers a PUT with 403; a server that stopped on
 # it is started again with a fresh prefix.
 for attempt in 1 2 3 4 5; do
-  run=lokihouse-bench-ch-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
+  run=runakefli-bench-ch-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
   podman rm -f lhb-rch-s3cache >/dev/null 2>&1
   echo "$run" >>"$prefixes"
   start_ch lhb-rch-s3cache 19102 s3cache-remote.xml

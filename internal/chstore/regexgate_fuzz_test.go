@@ -17,7 +17,7 @@ import (
 // ClickHouse match() on a battery of lines. Zero mismatches required.
 func TestRegexGate_FuzzAgainstClickHouse(t *testing.T) {
 	addr := "localhost:9000"
-	if v := os.Getenv("LOKIHOUSE_TEST_CH_ADDR"); v != "" {
+	if v := os.Getenv("RUNAKEFLI_TEST_CH_ADDR"); v != "" {
 		addr = v
 	}
 	conn, err := clickhouse.Open(&clickhouse.Options{Addr: []string{addr}})

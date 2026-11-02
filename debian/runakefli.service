@@ -1,24 +1,24 @@
 [Unit]
-Description=lokihouse - Loki-compatible log store on ClickHouse
-Documentation=man:lokihouse(1) https://lokihouse.dev/
+Description=runakefli - Loki-compatible log store on ClickHouse
+Documentation=man:runakefli(1) https://runakefli.app/
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=/usr/bin/lokihouse -config.file=/etc/lokihouse/lokihouse.yaml -config.expand-env=true
+ExecStart=/usr/bin/runakefli -config.file=/etc/runakefli/runakefli.yaml -config.expand-env=true
 Restart=on-failure
 RestartSec=5s
 # graceful_shutdown_timeout (30s) plus ruler and ClickHouse shutdown.
 TimeoutStopSec=45s
 DynamicUser=yes
-StateDirectory=lokihouse
+StateDirectory=runakefli
 StateDirectoryMode=0750
-WorkingDirectory=/var/lib/lokihouse
-ConfigurationDirectory=lokihouse
-# Credentials named lokihouse.* from /etc/credstore{,.encrypted} (optional).
-ImportCredential=lokihouse.*
+WorkingDirectory=/var/lib/runakefli
+ConfigurationDirectory=runakefli
+# Credentials named runakefli.* from /etc/credstore{,.encrypted} (optional).
+ImportCredential=runakefli.*
 UMask=0077
 LimitNOFILE=65536
 CapabilityBoundingSet=

@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/api"
+	"github.com/bzed/runakefli/internal/api"
 )
 
 func TestPprofRoutes(t *testing.T) {

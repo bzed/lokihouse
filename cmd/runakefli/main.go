@@ -1,4 +1,4 @@
-// Command lokihouse serves Loki's HTTP API on top of ClickHouse.
+// Command runakefli serves Loki's HTTP API on top of ClickHouse.
 package main
 
 import (
@@ -13,16 +13,16 @@ import (
 
 	"github.com/go-kit/log/level"
 
-	"github.com/bzed/lokihouse/internal/build"
-	"github.com/bzed/lokihouse/internal/config"
-	"github.com/bzed/lokihouse/internal/logging"
-	"github.com/bzed/lokihouse/internal/server"
+	"github.com/bzed/runakefli/internal/build"
+	"github.com/bzed/runakefli/internal/config"
+	"github.com/bzed/runakefli/internal/logging"
+	"github.com/bzed/runakefli/internal/server"
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 // versionInfo formats the build information as Loki's -version output does
-// (see prometheus/common/version.Print), reading from lokihouse's own build
+// (see prometheus/common/version.Print), reading from runakefli's own build
 // vars so the -ldflags values survive the linker.
 func versionInfo(program string) string {
 	info := build.Info()
@@ -37,9 +37,9 @@ func versionInfo(program string) string {
 // run is main without os.Exit, for tests. Exit codes: 0 ok, 1 runtime or
 // config error, 2 usage error.
 func run(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("lokihouse", flag.ContinueOnError)
+	fs := flag.NewFlagSet("runakefli", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	path := fs.String("config.file", "lokihouse.yaml", "configuration file to load")
+	path := fs.String("config.file", "runakefli.yaml", "configuration file to load")
 	expandEnv := fs.Bool("config.expand-env", false, "expand ${VAR} and ${VAR:-default} in the configuration file")
 	showVersion := fs.Bool("version", false, "print version information and exit")
 	migrate := fs.Bool("schema.migrate", false, "migrate the ClickHouse schema to the current version and exit")
@@ -47,17 +47,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *showVersion {
-		fmt.Fprintln(stdout, versionInfo("lokihouse"))
+		fmt.Fprintln(stdout, versionInfo("runakefli"))
 		return 0
 	}
 	cfg, err := config.Load(*path, *expandEnv)
 	if err != nil {
-		fmt.Fprintf(stderr, "lokihouse: %v\n", err)
+		fmt.Fprintf(stderr, "runakefli: %v\n", err)
 		return 1
 	}
 	logger, err := logging.New(stderr, cfg.Server.LogLevel, cfg.Server.LogFormat)
 	if err != nil {
-		fmt.Fprintf(stderr, "lokihouse: %v\n", err)
+		fmt.Fprintf(stderr, "runakefli: %v\n", err)
 		return 1
 	}
 	_ = build.Info() // ensure the build package (and its -ldflags vars) is linked

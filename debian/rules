@@ -28,7 +28,7 @@ export CGO_ENABLED := 0
 
 REVISION := $(shell git rev-parse --short=12 HEAD 2>/dev/null)
 BUILD_DATE := $(shell date -u -d "@$(SOURCE_DATE_EPOCH)" +%Y-%m-%dT%H:%M:%SZ)
-PV := github.com/bzed/lokihouse/internal/build
+PV := github.com/bzed/runakefli/internal/build
 LDFLAGS := -X $(PV).Version=$(DEB_VERSION_UPSTREAM) -X $(PV).Revision=$(REVISION) \
 	-X $(PV).Branch=debian -X $(PV).BuildDate=$(BUILD_DATE) -X $(PV).BuildUser=debian
 
@@ -44,22 +44,22 @@ override_dh_auto_configure:
 	$(GO) mod download
 
 override_dh_auto_build:
-	$(GO) build -buildmode=pie -ldflags "$(LDFLAGS)" -o $(B)/lokihouse ./cmd/lokihouse
-	go-md2man -in docs/man/lokihouse.1.md -out $(B)/lokihouse.1
-	$(GO) version -m $(B)/lokihouse > $(B)/MODULES.txt
+	$(GO) build -buildmode=pie -ldflags "$(LDFLAGS)" -o $(B)/runakefli ./cmd/runakefli
+	go-md2man -in docs/man/runakefli.1.md -out $(B)/runakefli.1
+	$(GO) version -m $(B)/runakefli > $(B)/MODULES.txt
 
 # The shipped configuration is the fully documented example: its active lines
 # are the package defaults, every other option is shown commented out.
 override_dh_install:
 	dh_install
-	install -D -m 0644 lokihouse.example.yaml debian/lokihouse/etc/lokihouse/lokihouse.yaml
+	install -D -m 0644 runakefli.example.yaml debian/runakefli/etc/runakefli/runakefli.yaml
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	# Unit tests need a ClickHouse server (CI runs them separately); check
 	# the binary and the packages that need no database (TestRun_SchemaMigrateFlag does).
-	$(B)/lokihouse -version
-	$(GO) test -count=1 -skip TestRun_SchemaMigrateFlag ./internal/config/ ./internal/logging/ ./cmd/lokihouse/
+	$(B)/runakefli -version
+	$(GO) test -count=1 -skip TestRun_SchemaMigrateFlag ./internal/config/ ./internal/logging/ ./cmd/runakefli/
 endif
 
 override_dh_auto_install:

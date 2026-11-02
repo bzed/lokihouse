@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/querier/plan"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/multitenant"
+	"github.com/bzed/runakefli/internal/multitenant"
 )
 
 var errLastTenant = errors.New("last tenant fails")

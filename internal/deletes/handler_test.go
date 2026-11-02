@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/deletes"
+	"github.com/bzed/runakefli/internal/deletes"
 )
 
 func newHandler(t *testing.T, mutate func(*validation.Limits)) *deletes.Handler {

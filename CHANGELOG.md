@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to lokihouse are recorded here, in the format of
+All notable changes to Rúnakefli (until 0.14.0 named lokihouse) are recorded here, in the format of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Debian package
 changelog (`debian/changelog`) carries the same releases.
 
@@ -9,11 +9,13 @@ changelog (`debian/changelog`) carries the same releases.
 ### Added
 
 - CI: the `docs` workflow mirrors the published site (docs and apt repository) to an S3 bucket and deletes stale objects (secrets `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`).
+- The Debian package `runakefli` breaks, conflicts with and replaces the old `lokihouse` package.
 
 ### Changed
 
-- The website's landing page is rewritten from the README (features, speed, quick start, FAQ), with search and social metadata (Open Graph, JSON-LD, `robots.txt`, a social card, a description per page), a conservative petrol-blue light/dark theme with self-hosted Source fonts (no Google Fonts). The logo drops its purple for a dark petrol heart with Loki's orange-to-yellow accents. The Development page is part of the site; the per-phase status files are removed, and stale text in the operations and about pages is fixed.
-- The documentation and the apt repository moved to <https://lokihouse.dev/> (README, man page, systemd unit, install instructions, example configs); the apt URI changes from `https://bzed.github.io/lokihouse/apt` to `https://lokihouse.dev/apt`, so existing installs must update their `lokihouse.sources`.
+- **Renamed from lokihouse to Rúnakefli (`runakefli`), as a precaution to avoid trademark issues** with Grafana Labs' Loki mark. Everything that carried the old name changes: the binary, the Debian package and systemd unit, the container image (`ghcr.io/bzed/runakefli`), the Go module (`github.com/bzed/runakefli`), the repository, the config file (`/etc/runakefli/runakefli.yaml`) and state directory (`/var/lib/runakefli`), the environment variables (`RUNAKEFLI_*`), the metric names (`runakefli_*`) and the default ClickHouse database (`runakefli`). Loki's own configuration keys, flags, metric names and error messages are unchanged. To upgrade: install the new package (it replaces `lokihouse`), copy your old config file, and either set `clickhouse.database: lokihouse` to keep using the existing database or migrate it; rule files under `/var/lib/lokihouse` are not moved.
+- The documentation and the apt repository moved to <https://runakefli.app/> (the apt URI is now `https://runakefli.app/apt`, the signing key is unchanged).
+- The website's landing page is rewritten from the README (features, speed, quick start, FAQ), with search and social metadata (Open Graph, JSON-LD, `robots.txt`, a social card, a description per page), a conservative petrol-blue light/dark theme with self-hosted Source fonts (no Google Fonts). The logo drops its purple for a dark petrol heart with Loki's orange-to-yellow accents. Loki and Grafana are now marked as trademarks of Grafana Labs, and ClickHouse as a registered trademark of ClickHouse, Inc., on first use in the README, the docs, the site footer, the package description and the social card; "Grafana Loki" is now just "Loki"; page titles, the Open Graph and Twitter tags and the social card do not name Loki (only the meta description and the page text do), and the badges no longer show the Grafana and ClickHouse logos. The Development page is part of the site; the per-phase status files are removed, and stale text in the operations and about pages is fixed.
 
 ## [0.14.0] - 2026-10-28
 

@@ -16,50 +16,50 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
-// StartLokihouse builds bin/lokihouse, starts it against a fresh ClickHouse
+// StartRunakefli builds bin/runakefli, starts it against a fresh ClickHouse
 // database with the extra YAML appended to the generated config, and waits
 // for /ready.
-func StartLokihouse(t *testing.T, extra string) string {
-	return StartLokihouseLimits(t, extra, "")
+func StartRunakefli(t *testing.T, extra string) string {
+	return StartRunakefliLimits(t, extra, "")
 }
 
-// StartLokihouseLimits is StartLokihouse with limits (indented YAML lines)
+// StartRunakefliLimits is StartRunakefli with limits (indented YAML lines)
 // appended inside limits_config.
-func StartLokihouseLimits(t *testing.T, extra, limits string) string {
-	url, _ := startLokihouse(t, chAddr(), chtest.Topology(), extra, limits)
+func StartRunakefliLimits(t *testing.T, extra, limits string) string {
+	url, _ := startRunakefli(t, chAddr(), chtest.Topology(), extra, limits)
 	return url
 }
 
-// StartLokihouseOn is StartLokihouse against the ClickHouse server at addr
+// StartRunakefliOn is StartRunakefli against the ClickHouse server at addr
 // with topology topo instead of the test server.
-func StartLokihouseOn(t *testing.T, addr []string, topo chstore.Topology, extra string) string {
-	url, _ := StartLokihouseDBOn(t, addr, topo, extra)
+func StartRunakefliOn(t *testing.T, addr []string, topo chstore.Topology, extra string) string {
+	url, _ := StartRunakefliDBOn(t, addr, topo, extra)
 	return url
 }
 
-// StartLokihouseDBOn is StartLokihouseOn that also returns the name of the
+// StartRunakefliDBOn is StartRunakefliOn that also returns the name of the
 // database the instance runs on.
-func StartLokihouseDBOn(t *testing.T, addr []string, topo chstore.Topology, extra string) (url, db string) {
-	return startLokihouse(t, addr, topo, extra, "")
+func StartRunakefliDBOn(t *testing.T, addr []string, topo chstore.Topology, extra string) (url, db string) {
+	return startRunakefli(t, addr, topo, extra, "")
 }
 
-func startLokihouse(t *testing.T, addr []string, topo chstore.Topology, extra, limits string) (string, string) {
+func startRunakefli(t *testing.T, addr []string, topo chstore.Topology, extra, limits string) (string, string) {
 	// Build the binary from the repository root (go run sets cwd to the package dir).
 	repo, err := repoRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = os.MkdirAll(filepath.Join(repo, "bin"), 0o755)
-	binPath := filepath.Join(repo, "bin", "lokihouse")
-	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/lokihouse")
+	binPath := filepath.Join(repo, "bin", "runakefli")
+	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/runakefli")
 	cmd.Dir = repo
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("building lokihouse: %v\n%s", err, out)
+		t.Fatalf("building runakefli: %v\n%s", err, out)
 	}
 
 	// Fresh database.
@@ -84,10 +84,10 @@ func startLokihouse(t *testing.T, addr []string, topo chstore.Topology, extra, l
 	})
 
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "lokihouse.yaml")
+	cfgPath := filepath.Join(dir, "runakefli.yaml")
 	port := freePort(t)
 	// Push-down mode for the oracle run; default "on" (Tier A where eligible).
-	pushdown := os.Getenv("LOKIHOUSE_ORACLE_PUSHDOWN")
+	pushdown := os.Getenv("RUNAKEFLI_ORACLE_PUSHDOWN")
 	if pushdown == "" {
 		pushdown = "on"
 	}
@@ -111,10 +111,10 @@ limits_config:
 	}
 
 	run := exec.Command(binPath, "-config.file", cfgPath)
-	logf, _ := os.Create(filepath.Join(dir, "lokihouse.log"))
+	logf, _ := os.Create(filepath.Join(dir, "runakefli.log"))
 	run.Stdout, run.Stderr = logf, logf
 	if err := run.Start(); err != nil {
-		t.Fatalf("start lokihouse: %v", err)
+		t.Fatalf("start runakefli: %v", err)
 	}
 	exited := make(chan struct{})
 	var state *os.ProcessState // set before exited is closed
@@ -125,8 +125,8 @@ limits_config:
 	t.Cleanup(func() {
 		select {
 		case <-exited:
-			t.Errorf("lokihouse exited unexpectedly: %v", state)
-			readLog(t, filepath.Join(dir, "lokihouse.log"))
+			t.Errorf("runakefli exited unexpectedly: %v", state)
+			readLog(t, filepath.Join(dir, "runakefli.log"))
 		default:
 		}
 		_ = run.Process.Kill()
@@ -135,14 +135,14 @@ limits_config:
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	if err := waitForHTTP(url+"/ready", 30*time.Second); err != nil {
-		readLog(t, filepath.Join(dir, "lokihouse.log"))
-		t.Fatalf("lokihouse /ready: %v", err)
+		readLog(t, filepath.Join(dir, "runakefli.log"))
+		t.Fatalf("runakefli /ready: %v", err)
 	}
 	return url, db
 }
 
 func chAddr() []string {
-	if v := os.Getenv("LOKIHOUSE_TEST_CH_ADDR"); v != "" {
+	if v := os.Getenv("RUNAKEFLI_TEST_CH_ADDR"); v != "" {
 		return []string{v}
 	}
 	return []string{"localhost:9000"}

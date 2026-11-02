@@ -67,10 +67,10 @@ func benchRemoteS3(t *testing.T) benchS3 {
 		bucket:   os.Getenv("S3_BUCKET"),
 		key:      os.Getenv("AWS_ACCESS_KEY_ID"),
 		secret:   os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		prefix:   "lokihouse-bench-" + randHex(6),
+		prefix:   "runakefli-bench-" + randHex(6),
 	}
 	if s.endpoint == "" || s.region == "" || s.bucket == "" || s.key == "" || s.secret == "" {
-		t.Fatal("LOKIHOUSE_BENCH_S3_REMOTE needs S3_ENDPOINT, S3_REGION, S3_BUCKET, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (make bench-s3 loads .secrets/s3.env)")
+		t.Fatal("RUNAKEFLI_BENCH_S3_REMOTE needs S3_ENDPOINT, S3_REGION, S3_BUCKET, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (make bench-s3 loads .secrets/s3.env)")
 	}
 	t.Cleanup(func() {
 		c := s.client(t)

@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/querier/plan"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 const addr = "clickhouse"

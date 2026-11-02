@@ -1,4 +1,4 @@
-// Copied from grafana/loki@39c256e50a804c045d5eb4e3c817a31653b535fe pkg/distributor/http.go (the parse part of pushHandler, recordParsedRequest) and pkg/distributor/metrics.go (bytesIngested, expandedBytesIngested, structuredMetadataBytesIngested, linesIngested, distributorLagByUserAgent, streamsPerPushRequest); modifications: a function instead of Distributor methods, collectors are package-level as they were in pkg/loghttp/push before #24739, errors are returned as push.ParseRequest returned them (400, not the distributor's 413), no tenant configs, usage tracker, stream resolver or presumed agent IP (lokihouse passed nil/"" before), no analytics counters, push-stats-count, OTLP attribute reporter or push-stream logging.
+// Copied from grafana/loki@39c256e50a804c045d5eb4e3c817a31653b535fe pkg/distributor/http.go (the parse part of pushHandler, recordParsedRequest) and pkg/distributor/metrics.go (bytesIngested, expandedBytesIngested, structuredMetadataBytesIngested, linesIngested, distributorLagByUserAgent, streamsPerPushRequest); modifications: a function instead of Distributor methods, collectors are package-level as they were in pkg/loghttp/push before #24739, errors are returned as push.ParseRequest returned them (400, not the distributor's 413), no tenant configs, usage tracker, stream resolver or presumed agent IP (runakefli passed nil/"" before), no analytics counters, push-stats-count, OTLP attribute reporter or push-stream logging.
 
 package ingest
 
@@ -22,7 +22,7 @@ import (
 
 // Package-level Prometheus collectors, which AGENTS.md allows. They carry
 // Loki's distributor metric names so dashboards keep working; Loki keeps them
-// in its Distributor, which lokihouse does not construct.
+// in its Distributor, which runakefli does not construct.
 var (
 	bytesIngested = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: constants.Loki,

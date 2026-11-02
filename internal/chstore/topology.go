@@ -6,7 +6,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
-// Topology describes how lokihouse tables are laid out on ClickHouse.
+// Topology describes how runakefli tables are laid out on ClickHouse.
 // The zero value is a single server with plain MergeTree tables.
 type Topology struct {
 	Cluster     string // remote_servers cluster name; empty = single server
@@ -47,7 +47,7 @@ func (t Topology) Engine(base string, params ...string) string {
 	return base + "(" + strings.Join(params, ", ") + ")"
 }
 
-// Settings returns the session settings every lokihouse connection needs
+// Settings returns the session settings every runakefli connection needs
 // for this topology: pushes are acknowledged only once all shards and an
 // insert quorum of replicas hold the rows, so a query right after a push sees them.
 func (t Topology) Settings() clickhouse.Settings {

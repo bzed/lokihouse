@@ -18,9 +18,9 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	"github.com/bzed/lokihouse/internal/ingest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/ingest"
 )
 
 func defaultLimits(t *testing.T) *validation.Overrides {

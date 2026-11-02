@@ -63,4 +63,4 @@ formatters:
   enable: [gofmt, goimports]
   settings:
     goimports:
-      local-prefixes: [github.com/bzed/lokihouse]
+      local-prefixes: [github.com/bzed/runakefli]

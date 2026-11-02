@@ -1,4 +1,4 @@
-// Package build holds lokihouse's build-time version information, following
+// Package build holds runakefli's build-time version information, following
 // Loki's pkg/util/build: the variables are set from -ldflags (Makefile) and
 // exposed so the binary reports them.
 package build

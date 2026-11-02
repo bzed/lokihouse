@@ -97,21 +97,21 @@ func saveProfile(t *testing.T, base, name, dir, tag string) float64 {
 	return heap
 }
 
-// TestSoak runs a mixed workload against lokihouse for LOKIHOUSE_SOAK_DURATION
+// TestSoak runs a mixed workload against runakefli for RUNAKEFLI_SOAK_DURATION
 // (default 10m) and checks that, after a warm-up, the post-GC heap and the
 // goroutine count do not grow. Profiles from the end of the warm-up and from
 // the end are kept for `go tool pprof -base`.
 func TestSoak(t *testing.T) {
-	dur, err := time.ParseDuration(envOr("LOKIHOUSE_SOAK_DURATION", "10m"))
+	dur, err := time.ParseDuration(envOr("RUNAKEFLI_SOAK_DURATION", "10m"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := envOr("LOKIHOUSE_SOAK_OUT", filepath.Join("..", "..", ".cache", "soak"))
+	out := envOr("RUNAKEFLI_SOAK_OUT", filepath.Join("..", "..", ".cache", "soak"))
 	if err := os.MkdirAll(out, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	rules := t.TempDir()
-	house := StartLokihouse(t, fmt.Sprintf("ruler_storage: {backend: filesystem, filesystem: {dir: %s}}\nruler: {rule_path: %s, poll_interval: 5s, evaluation_interval: 5s}\n",
+	house := StartRunakefli(t, fmt.Sprintf("ruler_storage: {backend: filesystem, filesystem: {dir: %s}}\nruler: {rule_path: %s, poll_interval: 5s, evaluation_interval: 5s}\n",
 		filepath.Join(rules, "rules"), filepath.Join(rules, "rules-temp")))
 	putRule(t, house)
 
@@ -150,7 +150,7 @@ func TestSoak(t *testing.T) {
 	// The soak must exercise the speculative stream read: the same selector
 	// repeats on one stable stream, so almost every log query is a hit.
 	spec := func(result string) float64 {
-		v, _ := findMetric(t, house, fmt.Sprintf(`lokihouse_query_stream_speculations_total{result=%q}`, result)) // a series never incremented is absent: 0
+		v, _ := findMetric(t, house, fmt.Sprintf(`runakefli_query_stream_speculations_total{result=%q}`, result)) // a series never incremented is absent: 0
 		return v
 	}
 	if hits, mismatches := spec("hit"), spec("mismatch"); hits < 10*max(mismatches, 1) {

@@ -1,5 +1,5 @@
 # CodeQL configuration (used by .github/workflows/codeql.yml).
-name: lokihouse CodeQL
+name: runakefli CodeQL
 queries:
   - uses: security-and-quality
 paths-ignore:

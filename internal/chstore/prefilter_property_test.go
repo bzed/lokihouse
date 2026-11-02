@@ -17,7 +17,7 @@ import (
 // pairs, if Loki's filter accepts the line, then ClickHouse must evaluate the
 // generated SQL fragment as true for that line (the fragment is necessary, not exact).
 func TestPrefilter_Necessary(t *testing.T) {
-	addr := os.Getenv("LOKIHOUSE_TEST_CH_ADDR")
+	addr := os.Getenv("RUNAKEFLI_TEST_CH_ADDR")
 	if addr == "" {
 		addr = "localhost:9000"
 	}

@@ -1,14 +1,14 @@
 ---
-description: Replace Grafana Loki with lokihouse: what you keep, what is different, a cutover runbook and a verification checklist.
+description: Replace Loki® with Rúnakefli: what you keep, what is different, a cutover runbook and a verification checklist.
 ---
 
 # Migrating from Loki
 
-lokihouse is a **drop-in at the HTTP layer**. The push endpoints, the LogQL
+Rúnakefli is a **drop-in at the HTTP layer**. The push endpoints, the LogQL
 query endpoints, the label/series metadata endpoints, the tail endpoint, the
 delete API and the ruler API all use the same paths, the same JSON shapes and
-the same headers as stock Loki. Point a Grafana datasource (or any other
-client) at lokihouse's base URL instead of Loki's and it works.
+the same headers as stock Loki®. Point a Grafana® datasource (or any other
+client) at Rúnakefli's base URL instead of Loki's and it works.
 
 This page is a full cutover runbook. It covers:
 
@@ -21,11 +21,11 @@ This page is a full cutover runbook. It covers:
 
 ## TL;DR
 
-- Build and install lokihouse **next to** Loki (Loki stays up).
-- **Shadow push**: send a copy of your push traffic to lokihouse while Loki
+- Build and install Rúnakefli **next to** Loki (Loki stays up).
+- **Shadow push**: send a copy of your push traffic to Rúnakefli while Loki
   keeps its own.
 - **Verify** with the LogQL queries you already use.
-- **Flip the Grafana datasource** from Loki's base URL to lokihouse's.
+- **Flip the Grafana datasource** from Loki's base URL to Rúnakefli's.
 - **Stop pushing to Loki** (or keep it as a read-only rollback path).
 - **Decommission Loki** after a soak period.
 
@@ -37,24 +37,24 @@ This page is a full cutover runbook. It covers:
 - Your Alertmanager (the ruler talks to the same URL).
 - Your push clients (same push JSON, same headers, same `X-Scope-OrgID` if
   you use multi-tenancy).
-- Your LogQL queries (same syntax, same engine semantics — lokihouse runs
+- Your LogQL queries (same syntax, same engine semantics — Rúnakefli runs
   Loki's own LogQL engine).
 - Your rule files (the ruler reads the same file format; the storage dir is
   configurable).
 
-**Stop running (Loki components lokihouse replaces):**
+**Stop running (Loki components Rúnakefli replaces):**
 
 - Ingester, distributor, compactor, query-frontend, ruler (if you move the
   ruler too), index-gateway / TSDB index.
-- Object-store access for chunks (lokihouse stores in ClickHouse, not in
+- Object-store access for chunks (Rúnakefli stores in ClickHouse®, not in
   S3/GCS/Azure).
-- The ring / memberlist (lokihouse has no ring; see
+- The ring / memberlist (Rúnakefli has no ring; see
   [Ruler sharding](#ruler-sharding-no-ring) below).
 
 ## What is different (plain-language summary)
 
 These are the same differences the project records in
-[`docs/divergences.md`](https://github.com/bzed/lokihouse/blob/main/docs/divergences.md),
+[`docs/divergences.md`](https://github.com/bzed/runakefli/blob/main/docs/divergences.md),
 restated for a migrator. For each: what you will notice, why, and what to do
 about it.
 
@@ -64,7 +64,7 @@ about it.
 stream* may come back in a different order than Loki.
 
 **Why:** Loki preserves insertion order for equal timestamps inside one
-stream; lokihouse cannot (ClickHouse does not keep insertion order for
+stream; Rúnakefli cannot (ClickHouse does not keep insertion order for
 equal-timestamp rows).
 
 **What to do:** if a UI or downstream process relies on "Loki's insertion
@@ -77,7 +77,7 @@ timestamp rather than by arrival order.
 **What you'll notice:** volume and index-statistics numbers for time ranges
 that cut through an hour can differ from Loki's by roughly 15–30%.
 
-**Why:** Loki pro-rates per *chunk* (10-minute blocks); lokihouse pro-rates
+**Why:** Loki pro-rates per *chunk* (10-minute blocks); Rúnakefli pro-rates
 per *hourly* bucket. Ranges that cover whole hours agree exactly; ranges that
 cut through an hour can differ.
 
@@ -87,40 +87,40 @@ response *shape* exactly and the per-metric total within 30%, which is the
 standard this page uses for "they agree".
 
 **Bytes in `index/stats`:** Loki adds each chunk's structured-metadata symbol
-table to the byte count; lokihouse counts `len(line) + 8 × metadata pairs`
+table to the byte count; Rúnakefli counts `len(line) + 8 × metadata pairs`
 only. For typical JSON metadata this is ≈1.5% — usually below the noise of
 the chart.
 
 **Chunks:** the "chunks" count in `index/stats` is the number of overlapping
-hourly buckets in lokihouse, not Loki chunks. If you have a dashboard on
+hourly buckets in Rúnakefli, not Loki chunks. If you have a dashboard on
 "number of chunks", expect a different number.
 
 ### `index/volume` matches Loki's *compactor* path, not its *querier* path
 
 **What you'll notice:** if your volume dashboards were built against Loki's
 live (querier) volume path, the numbers will shift when you move to
-lokihouse.
+Rúnakefli.
 
 **Why:** Loki has two code paths that both answer "how much volume is this":
 the querier path (used by a live `index/volume` query) sums the on-disk size
 of each flushed chunk, rounded to the nearest KiB; the ingester/compactor
-path counts raw head-block bytes. lokihouse implements the ingester/compactor
+path counts raw head-block bytes. Rúnakefli implements the ingester/compactor
 accounting. The two Loki paths disagree with each other by ~15–30%;
-lokihouse matches the compactor side.
+Rúnakefli matches the compactor side.
 
 **What to do:** treat any existing "Loki volume" dashboard numbers as
 approximate; re-baseline them after the cutover.
 
 ### Delete requests
 
-**Request IDs:** lokihouse generates 8 random hex characters; Loki's format
+**Request IDs:** Rúnakefli generates 8 random hex characters; Loki's format
 differs. If you have tooling that parses Loki's delete-request IDs, it will
 need updating.
 
 **Stats and volume after a delete:** `index/stats`, `index/volume`,
 `patterns` and `detected_labels` ignore deletes in both systems. (Loki's own
 index stats also count unprocessed deletes; after processing, Loki's
-rewritten chunks shrink while lokihouse's materialized view does not.)
+rewritten chunks shrink while Rúnakefli's materialized view does not.)
 
 **Rows written between delete submission and processing:** the processor
 re-resolves the request's selector at processing time, so rows that land
@@ -135,7 +135,7 @@ the rows the query-time filter hid".
 entries that Loki would have delivered live.
 
 **Why:** Loki streams tail entries to the WebSocket client as its ingesters
-receive them (push). lokihouse has no ingester to push from, so its tail
+receive them (push). Rúnakefli has no ingester to push from, so its tail
 client *polls* ClickHouse every second for rows with `ts` newer than
 "now minus a 10-second lookback" for late arrivals, deduplicated by a
 seen-set. Consequently:
@@ -161,44 +161,44 @@ days. The sweeper applies the current configuration to stored data as well, and
 removed rows leave the disk at the end of the sweep.
 
 **What to do:** read [Retention](reference/configuration.md#retention).
-Loki keeps data forever by default, and so does lokihouse: set
+Loki keeps data forever by default, and so does Rúnakefli: set
 `limits_config.retention_period` if you want expiry.
 
-**Warning:** lokihouse enables retention by default
+**Warning:** Rúnakefli enables retention by default
 (`compactor.retention_enabled: true`; Loki's default is `false`). A Loki config
 with `retention_period` set but without `retention_enabled: true` keeps its data
-on Loki but expires it on lokihouse. Set `compactor.retention_enabled: false` to
+on Loki but expires it on Rúnakefli. Set `compactor.retention_enabled: false` to
 keep Loki's behaviour.
 
 ### No per-tenant overrides
 
-**What you'll notice:** lokihouse does not read Loki's runtime configuration
+**What you'll notice:** Rúnakefli does not read Loki's runtime configuration
 (`overrides:` per tenant). `limits_config` applies to every tenant.
 
 **What to do:** if tenants have different limits or retention in Loki, run one
-lokihouse instance (with its own ClickHouse database) per limit profile.
+Rúnakefli instance (with its own ClickHouse database) per limit profile.
 
 ### Ruler sharding — no ring
 
-**What you'll notice:** if you run more than one lokihouse instance, alerts
+**What you'll notice:** if you run more than one Rúnakefli instance, alerts
 and recording-rule samples are **duplicated**.
 
-**Why:** Loki distributes rule groups over a ring of rulers; lokihouse has no
+**Why:** Loki distributes rule groups over a ring of rulers; Rúnakefli has no
 ring. `ruler.enable_sharding: true` and `ruler.evaluation.mode: remote` are
-rejected at startup, and `/ruler/ring` is not served. Every lokihouse
+rejected at startup, and `/ruler/ring` is not served. Every Rúnakefli
 instance with `ruler_storage` configured evaluates *all* rule groups.
 
-**What to do:** configure the ruler on **exactly one** lokihouse instance.
+**What to do:** configure the ruler on **exactly one** Rúnakefli instance.
 The other instance(s) should not set `ruler_storage`. If you need multiple
 rulers for load, that is not yet supported.
 
 ### Ruler `rule_path` default
 
 **What you'll notice:** if you were relying on Loki's default `rule_path`,
-your rule files will not be where lokihouse looks.
+your rule files will not be where Rúnakefli looks.
 
 **Why:** Loki's single-binary default is `/rules` (more precisely
-`<common.path_prefix>/rules-temp`); lokihouse has no `path_prefix`, so its
+`<common.path_prefix>/rules-temp`); Rúnakefli has no `path_prefix`, so its
 default is `rules-temp` **relative to the working directory**.
 
 **What to do:** set `ruler.rule_path` explicitly in your config, pointing at
@@ -207,22 +207,22 @@ them to).
 
 ### Ruler WAL directory guard
 
-**What you'll notice:** lokihouse may **refuse to start** where Loki would
+**What you'll notice:** Rúnakefli may **refuse to start** where Loki would
 have started (and deleted your rules).
 
 **Why:** with remote write enabled, Loki wipes `ruler.wal.dir`
-(`os.RemoveAll`) at every start. lokihouse refuses to start when that
+(`os.RemoveAll`) at every start. Rúnakefli refuses to start when that
 directory is empty or is the working directory, the rule storage directory,
 or `rule_path` — because deleting those would be catastrophic.
 
 **What to do:** set `ruler.wal.dir` to a dedicated, empty-on-startup directory
-(e.g. `/var/lib/lokihouse/ruler-wal`) that is distinct from `rule_path` and
+(e.g. `/var/lib/runakefli/ruler-wal`) that is distinct from `rule_path` and
 the rule storage dir.
 
 ### `/metrics` has fewer series than Loki's
 
 **What you'll notice:** `GET /metrics` works (unless
-`server.register_instrumentation` is `false`), but it serves lokihouse's
+`server.register_instrumentation` is `false`), but it serves Rúnakefli's
 HTTP, push, discard and ruler metrics and the Go runtime metrics, not
 Loki's ingester, chunk store or compactor series. Dashboards and alerts built
 on those will show no data.
@@ -233,35 +233,35 @@ series that exist, and use ClickHouse's own `system.metrics` and
 
 ## Cutover runbook
 
-The steps below assume Loki and lokihouse are running side by side, with the
+The steps below assume Loki and Rúnakefli are running side by side, with the
 same push clients able to reach both. Adjust for your topology (load
 balancer, push gateway, etc.).
 
-### 1. Build and install lokihouse next to Loki
+### 1. Build and install Rúnakefli next to Loki
 
 Follow the [Installation](install/index.md) page. Loki stays up and serving
-traffic. lokihouse starts empty (its ClickHouse database is created on
+traffic. Rúnakefli starts empty (its ClickHouse database is created on
 first start).
 
 ### 2. Shadow push
 
-Point a **copy** of your push traffic at lokihouse's push endpoint while
+Point a **copy** of your push traffic at Rúnakefli's push endpoint while
 Loki keeps its own. The push JSON, headers and `X-Scope-OrgID` (if you use
 multi-tenancy) are identical, so a load balancer or push gateway that
 fan-out to both upstreams is the simplest option.
 
-- If you have a push gateway in front of Loki, add lokihouse as a second
+- If you have a push gateway in front of Loki, add Rúnakefli as a second
   upstream with the same weight.
 - If you push directly from applications, run a short dual-write from the
   push client (or a small proxy) for the verification window.
 
 The goal of this step is to get a representative sample of your real data
-into lokihouse so the verification in step 3 is meaningful.
+into Rúnakefli so the verification in step 3 is meaningful.
 
 ### 3. Verify with the same queries
 
 Pick the LogQL queries you actually use in Grafana. Run each against **both**
-Loki and lokihouse (two Grafana datasources, or two `curl` calls) and compare
+Loki and Rúnakefli (two Grafana datasources, or two `curl` calls) and compare
 results. The project's own differential oracle (`make oracle`) runs the same
 corpus against both and compares byte-for-byte with float tolerance (1e-9
 relative) — that is the bar "they agree" means here.
@@ -283,7 +283,7 @@ Anything outside those is a bug and should be reported.
 ### 4. Flip the Grafana datasource
 
 In Grafana, edit the Loki datasource and change the **URL** from
-`http://loki:3100` (or whatever) to `http://lokihouse:3100`. Everything else
+`http://loki:3100` (or whatever) to `http://runakefli:3100`. Everything else
 — the path prefix, the auth headers, the `X-Scope-OrgID` mapping — stays the
 same. Save and reload a dashboard.
 
@@ -291,7 +291,7 @@ same. Save and reload a dashboard.
 
 Remove Loki from your push load balancer / push gateway, or stop the
 dual-write from step 2. Loki can stay up **read-only** for a transition
-period if you want a rollback path. New data goes only to lokihouse from
+period if you want a rollback path. New data goes only to Rúnakefli from
 this point.
 
 ### 6. Rollback (if needed)
@@ -307,19 +307,19 @@ delete.
 After a soak period (a week to a month, depending on how confident you are),
 remove the Loki deployment: stop the systemd units / pods, cancel the
 object-store billing, and archive the rule files if you have not already
-copied them to lokihouse's ruler storage.
+copied them to Rúnakefli's ruler storage.
 
 ## Verification checklist
 
 Tick these off before you call the migration done:
 
-- [ ] `GET /ready` on lokihouse returns `200` with body `ready\n`.
+- [ ] `GET /ready` on Rúnakefli returns `200` with body `ready\n`.
 - [ ] `GET /loki/api/v1/status/buildinfo` returns the expected version
       (matches the binary you installed).
 - [ ] A push to `/loki/api/v1/push` succeeds (`204` or `200`) and the entry
       is queryable via `/loki/api/v1/query`.
 - [ ] Your N favourite LogQL queries return the same result on Loki and on
-      lokihouse (within float tolerance for metrics; identical for log
+      Rúnakefli (within float tolerance for metrics; identical for log
       streams).
 - [ ] `GET /loki/api/v1/labels` and
       `GET /loki/api/v1/label/{name}/values` return the same label/value
@@ -334,10 +334,10 @@ Tick these off before you call the migration done:
 - [ ] If you use multi-tenancy (`X-Scope-OrgID`): the same tenant isolation
       holds — a query for tenant A does not return tenant B's data.
 - [ ] If you set `retention_period` or `retention_stream`: old data expires on
-      the expected UTC-day boundary (lokihouse retention is whole UTC days,
-      see [Retention](reference/configuration.md#retention)). lokihouse has no
+      the expected UTC-day boundary (Rúnakefli retention is whole UTC days,
+      see [Retention](reference/configuration.md#retention)). Rúnakefli has no
       per-tenant overrides: if you used them, see [Differences from Loki](reference/divergences.md).
-- [ ] Grafana dashboards render correctly against the lokihouse datasource
+- [ ] Grafana dashboards render correctly against the Rúnakefli datasource
       (no missing panels, no "no data" where there should be data).
-- [ ] Alerting: any Loki alert rules you moved to lokihouse's ruler fire
+- [ ] Alerting: any Loki alert rules you moved to Rúnakefli's ruler fire
       and resolve as expected.

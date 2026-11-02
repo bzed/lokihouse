@@ -15,7 +15,7 @@ type Engine interface {
 	Query(ctx context.Context, p logql.Params) logql.Query
 }
 
-// Evaluator implements Loki's pkg/ruler.Evaluator on lokihouse's engine, so
+// Evaluator implements Loki's pkg/ruler.Evaluator on runakefli's engine, so
 // rules get Tier A push-down, Tier B fallback and query-time delete filtering
 // like every other query.
 type Evaluator struct {

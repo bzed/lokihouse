@@ -9,8 +9,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 func TestRetentionPrimitives_RejectUnknownTable(t *testing.T) {
@@ -70,13 +70,13 @@ func TestMigrateV2_MeasuresDiskSpace(t *testing.T) {
 }
 
 func TestRenderSchema_ReplicaPathIsUniquePerSuffix(t *testing.T) {
-	topo := chstore.Topology{Replicated: true, ReplicaPath: "/ch/{shard}/lokihouse", ReplicaName: "{replica}"}
+	topo := chstore.Topology{Replicated: true, ReplicaPath: "/ch/{shard}/runakefli", ReplicaName: "{replica}"}
 	plain, err := chstore.RenderSchema("db", topo)
 	require.NoError(t, err)
-	require.Contains(t, plain[0], "'/ch/{shard}/lokihouse'")
+	require.Contains(t, plain[0], "'/ch/{shard}/runakefli'")
 	mig, err := chstore.RenderSchemaWithSuffix("db", topo, "_migrate")
 	require.NoError(t, err)
-	require.Contains(t, mig[0], "'/ch/{shard}/lokihouse_migrate'")
+	require.Contains(t, mig[0], "'/ch/{shard}/runakefli_migrate'")
 }
 
 func TestOpenConnectionFailureIsReported(t *testing.T) {

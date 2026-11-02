@@ -44,7 +44,7 @@ jobs:
           path: |
             coverage.out
             junit.xml
-      # CODECOV_TOKEN: repository secret from https://app.codecov.io/gh/bzed/lokihouse
+      # CODECOV_TOKEN: repository secret from https://app.codecov.io/gh/bzed/runakefli
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         if: ${{ !cancelled() }}
         with:
@@ -67,7 +67,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: make build && ./bin/lokihouse -version
+      - run: make build && ./bin/runakefli -version
   docs:
     runs-on: ubuntu-24.04
     steps:

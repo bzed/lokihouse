@@ -27,7 +27,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/util/constants"
 	"github.com/prometheus/common/model"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 // Querier answers pattern queries. MaxLines caps the rows read per query
@@ -154,7 +154,7 @@ func (p *Querier) Query(ctx context.Context, req *logproto.QueryPatternsRequest)
 }
 
 // Copied from grafana/loki@39c256e5 pkg/pattern/ingester_querier.go (prunePatterns);
-// modifications: the metrics parameter is dropped (lokihouse has no pattern metrics).
+// modifications: the metrics parameter is dropped (runakefli has no pattern metrics).
 func prunePatterns(resp *logproto.QueryPatternsResponse) *logproto.QueryPatternsResponse {
 	total := make([]int64, len(resp.Series))
 

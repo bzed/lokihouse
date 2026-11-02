@@ -17,9 +17,12 @@
   <rect y="618" width="1200" height="12" fill="url(#bar)"/>
   <image x="80" y="176" width="360" height="295" xlink:href="logo-icon.svg"/>
   <g font-family="Source Serif 4, DejaVu Serif, Georgia, serif" fill="#f2f5f6">
-    <text x="480" y="270" font-size="112" font-weight="700">lokihouse</text>
-    <text x="484" y="350" font-size="38" fill="#e3a64a">Grafana Loki's HTTP API,</text>
-    <text x="484" y="400" font-size="38" fill="#e3a64a">with logs stored in ClickHouse.</text>
-    <text x="484" y="490" font-size="28" opacity="0.85" font-family="Source Sans 3, DejaVu Sans, sans-serif">One Go binary · same LogQL · lokihouse.dev</text>
+    <text x="480" y="270" font-size="112" font-weight="700">Rúnakefli</text>
+    <text x="484" y="362" font-size="54" fill="#e3a64a">Talk LogQL</text>
+    <text x="484" y="426" font-size="54" fill="#e3a64a">to ClickHouse®.</text>
+    <text x="484" y="505" font-size="28" opacity="0.85" font-family="Source Sans 3, DejaVu Sans, sans-serif">One static Go binary · runakefli.app</text>
+  </g>
+  <g font-family="Source Sans 3, DejaVu Sans, sans-serif" font-size="17" fill="#f2f5f6" opacity="0.72">
+    <text x="80" y="589">ClickHouse® is a registered trademark of ClickHouse, Inc. Rúnakefli is an independent project, not affiliated with ClickHouse, Inc.</text>
   </g>
 </svg>

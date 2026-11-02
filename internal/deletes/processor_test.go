@@ -19,9 +19,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	"github.com/bzed/lokihouse/internal/deletes"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/deletes"
 )
 
 // newProcessor builds a Processor over a fresh database with a fixed clock.

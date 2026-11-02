@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const examplePath = "../../lokihouse.example.yaml"
+const examplePath = "../../runakefli.example.yaml"
 
-// TestExampleShowsEveryKey checks that every lokihouse-owned config key is in
-// lokihouse.example.yaml, active or commented out.
+// TestExampleShowsEveryKey checks that every runakefli-owned config key is in
+// runakefli.example.yaml, active or commented out.
 func TestExampleShowsEveryKey(t *testing.T) {
 	b, err := os.ReadFile(examplePath)
 	require.NoError(t, err)
@@ -27,7 +27,7 @@ func TestExampleShowsEveryKey(t *testing.T) {
 			if key == "" || key == "-" {
 				continue
 			}
-			require.Regexp(t, `(?m)^\s*#?\s*`+regexp.QuoteMeta(key)+`:`, example, "config key %s missing from lokihouse.example.yaml", key)
+			require.Regexp(t, `(?m)^\s*#?\s*`+regexp.QuoteMeta(key)+`:`, example, "config key %s missing from runakefli.example.yaml", key)
 			if f.Type.Kind() == reflect.Struct && !lokiOwned[key] && f.Type.PkgPath() == "" {
 				walk(f.Type)
 			}
@@ -60,7 +60,7 @@ func TestExampleWithEveryOptionUncommented(t *testing.T) {
 		out.WriteString(l + "\n")
 	}
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "lokihouse.clickhouse-password"), []byte("x\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "runakefli.clickhouse-password"), []byte("x\n"), 0o600))
 	t.Setenv("CREDENTIALS_DIRECTORY", dir)
 	p := filepath.Join(dir, "all.yaml")
 	require.NoError(t, os.WriteFile(p, []byte(out.String()), 0o600))

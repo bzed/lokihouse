@@ -3,7 +3,7 @@ bin/
 coverage.out
 site/
 debian/.build/
-debian/lokihouse/
+debian/runakefli/
 debian/.debhelper/
 debian/debhelper-build-stamp
 debian/files

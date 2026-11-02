@@ -11,8 +11,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	"github.com/bzed/lokihouse/internal/deletes"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/deletes"
 )
 
 var t0 = time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)

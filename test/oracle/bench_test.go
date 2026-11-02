@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 func envInt(k string, def int) int {
@@ -88,14 +88,14 @@ var benchQueries = []struct{ name, path, query string }{
 type benchStore struct {
 	name string
 	url  string
-	ch   []string // ClickHouse address and database of a lokihouse store; empty for Loki
+	ch   []string // ClickHouse address and database of a runakefli store; empty for Loki
 	db   string
 }
 
-// lokihouseStore starts a lokihouse on the ClickHouse at addr.
-func lokihouseStore(t *testing.T, name string, addr []string) benchStore {
+// runakefliStore starts a runakefli on the ClickHouse at addr.
+func runakefliStore(t *testing.T, name string, addr []string) benchStore {
 	t.Helper()
-	url, db := StartLokihouseDBOn(t, addr, chstore.Topology{}, "")
+	url, db := StartRunakefliDBOn(t, addr, chstore.Topology{}, "")
 	return benchStore{name: name, url: url, ch: addr, db: db}
 }
 
@@ -111,10 +111,10 @@ type benchTable struct {
 type benchRatio struct{ num, den int }
 
 func TestBench(t *testing.T) {
-	lines := envInt("LOKIHOUSE_BENCH_LINES", 200000)
-	streams := envInt("LOKIHOUSE_BENCH_STREAMS", 50)
-	rounds := envInt("LOKIHOUSE_BENCH_ROUNDS", 20)
-	span := envDuration(t, "LOKIHOUSE_BENCH_SPAN", time.Hour)
+	lines := envInt("RUNAKEFLI_BENCH_LINES", 200000)
+	streams := envInt("RUNAKEFLI_BENCH_STREAMS", 50)
+	rounds := envInt("RUNAKEFLI_BENCH_ROUNDS", 20)
+	span := envDuration(t, "RUNAKEFLI_BENCH_SPAN", time.Hour)
 	const warmup = 2
 	// Loki's config template has no ruler storage; give it a local filesystem
 	// backend so it starts. The benchmark does not evaluate rules, so no
@@ -132,41 +132,41 @@ func TestBench(t *testing.T) {
 	// are the plain engine's. The benchmark times Loki as deployed: its default
 	// query tuning (sharding and splitting on), results cache still off. The
 	// unsharded Loki is timed too, to show what the parallelism buys.
-	// LOKIHOUSE_BENCH_S3_REMOTE=1 runs only the object-storage scenario, with
+	// RUNAKEFLI_BENCH_S3_REMOTE=1 runs only the object-storage scenario, with
 	// Loki's data in the remote store named by S3_* and AWS_* (make bench-s3)
 	// and ClickHouse's (test/bench/up-remote.sh) on the same store.
-	remote := os.Getenv("LOKIHOUSE_BENCH_S3_REMOTE") != ""
+	remote := os.Getenv("RUNAKEFLI_BENCH_S3_REMOTE") != ""
 	var stores []benchStore
 	var tables []benchTable
 	if !remote {
 		stores = []benchStore{
 			{name: "Loki", url: StartLokiConfig(t, lokiDefaultQueryTemplate(), ruler())},
 			{name: "Loki (unsharded)", url: StartLoki(t, ruler())},
-			lokihouseStore(t, "lokihouse", chAddr()),
+			runakefliStore(t, "runakefli", chAddr()),
 		}
 		tables = []benchTable{{"Recent data, local disk", []int{0, 1, 2}, []benchRatio{{2, 0}}}}
 	}
 	// The object-storage scenario (test/bench/up.sh): Loki with chunks and
-	// index in S3, flushed and queried from the store only, against lokihouse
+	// index in S3, flushed and queried from the store only, against runakefli
 	// on ClickHouse servers whose MergeTree tables live in S3.
 	// lokiS3Reader, when set, replaces the S3 Loki's writer with its reader
 	// once the data is pushed.
 	var lokiS3Reader func() string
-	if s3 := os.Getenv("LOKIHOUSE_BENCH_S3"); s3 != "" || remote {
-		// LOKIHOUSE_BENCH_STORES picks a subset of loki, lokihouse and
-		// lokihouse-cache (default all three; the remote scenario has no
-		// lokihouse without cache: its uncached reads measure the network
+	if s3 := os.Getenv("RUNAKEFLI_BENCH_S3"); s3 != "" || remote {
+		// RUNAKEFLI_BENCH_STORES picks a subset of loki, runakefli and
+		// runakefli-cache (default all three; the remote scenario has no
+		// runakefli without cache: its uncached reads measure the network
 		// latency to the store, which Loki's embedded cache hides).
 		want := func(k string) bool {
-			v := os.Getenv("LOKIHOUSE_BENCH_STORES")
+			v := os.Getenv("RUNAKEFLI_BENCH_STORES")
 			return v == "" || slices.Contains(strings.Split(v, ","), k)
 		}
-		chS3, chS3Cache := os.Getenv("LOKIHOUSE_BENCH_CH_S3"), os.Getenv("LOKIHOUSE_BENCH_CH_S3_CACHE")
-		if remote && want("lokihouse") && os.Getenv("LOKIHOUSE_BENCH_STORES") != "" {
-			t.Fatal("LOKIHOUSE_BENCH_STORES: the remote scenario runs loki and lokihouse-cache only")
+		chS3, chS3Cache := os.Getenv("RUNAKEFLI_BENCH_CH_S3"), os.Getenv("RUNAKEFLI_BENCH_CH_S3_CACHE")
+		if remote && want("runakefli") && os.Getenv("RUNAKEFLI_BENCH_STORES") != "" {
+			t.Fatal("RUNAKEFLI_BENCH_STORES: the remote scenario runs loki and runakefli-cache only")
 		}
-		if (!remote && want("lokihouse") && chS3 == "") || (want("lokihouse-cache") && chS3Cache == "") {
-			t.Fatal("the S3 scenario needs LOKIHOUSE_BENCH_CH_S3 and LOKIHOUSE_BENCH_CH_S3_CACHE (make bench and make bench-s3 set them)")
+		if (!remote && want("runakefli") && chS3 == "") || (want("runakefli-cache") && chS3Cache == "") {
+			t.Fatal("the S3 scenario needs RUNAKEFLI_BENCH_CH_S3 and RUNAKEFLI_BENCH_CH_S3_CACHE (make bench and make bench-s3 set them)")
 		}
 		var idx []int
 		add := func(s benchStore) int {
@@ -186,11 +186,11 @@ func TestBench(t *testing.T) {
 			writer, lokiS3Reader = startLokiS3(t, s, ruler())
 			loki = add(benchStore{name: "Loki S3", url: writer})
 		}
-		if !remote && want("lokihouse") {
-			house = add(lokihouseStore(t, "lokihouse S3", []string{chS3}))
+		if !remote && want("runakefli") {
+			house = add(runakefliStore(t, "runakefli S3", []string{chS3}))
 		}
-		if want("lokihouse-cache") {
-			cached = add(lokihouseStore(t, "lokihouse S3 + cache", []string{chS3Cache}))
+		if want("runakefli-cache") {
+			cached = add(runakefliStore(t, "runakefli S3 + cache", []string{chS3Cache}))
 		}
 		var ratios []benchRatio
 		for _, h := range []int{house, cached} {
@@ -203,7 +203,7 @@ func TestBench(t *testing.T) {
 			title = "Object storage (remote S3), Loki flushed"
 		}
 		if len(idx) == 0 {
-			t.Fatalf("LOKIHOUSE_BENCH_STORES=%q selects none of loki, lokihouse, lokihouse-cache", os.Getenv("LOKIHOUSE_BENCH_STORES"))
+			t.Fatalf("RUNAKEFLI_BENCH_STORES=%q selects none of loki, runakefli, runakefli-cache", os.Getenv("RUNAKEFLI_BENCH_STORES"))
 		}
 		tables = append(tables, benchTable{title, idx, ratios})
 	}
@@ -238,8 +238,8 @@ func TestBench(t *testing.T) {
 	// Let ClickHouse finish merging the parts the pushes created, so the timed
 	// rounds do not read ingest leftovers (on S3 every part x column is a GET).
 	settle := time.Duration(0)
-	if os.Getenv("LOKIHOUSE_BENCH_SETTLE") != "0" {
-		settle = envDuration(t, "LOKIHOUSE_BENCH_SETTLE", 2*time.Minute)
+	if os.Getenv("RUNAKEFLI_BENCH_SETTLE") != "0" {
+		settle = envDuration(t, "RUNAKEFLI_BENCH_SETTLE", 2*time.Minute)
 	}
 	parts, settled := make([]uint64, len(stores)), make([]bool, len(stores))
 	for i, s := range stores {
@@ -291,7 +291,7 @@ func TestBench(t *testing.T) {
 			outs[i].WriteString("\n")
 		}
 	}
-	p := os.Getenv("LOKIHOUSE_BENCH_OUT")
+	p := os.Getenv("RUNAKEFLI_BENCH_OUT")
 	if p == "" {
 		p = filepath.Join("..", "..", ".cache", "bench", "results.md")
 	}

@@ -15,7 +15,7 @@
 # The optional secret GOOGLE_SITE_VERIFICATION (the verification file's name) makes the
 # deploy job add that file to the site root; it is not kept in the repository.
 #
-# Site URL: https://lokihouse.dev/
+# Site URL: https://runakefli.app/
 
 name: docs
 
@@ -51,7 +51,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SITE_URL: https://lokihouse.dev
+  SITE_URL: https://runakefli.app
 
 jobs:
   build:
@@ -117,7 +117,7 @@ jobs:
           printf '%s\n' "$APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
           sh scripts/build-apt-repo.sh apt-repo trixie=release trixie-snapshot=snapshot
           # the key the repository is signed with must be the published one
-          gpg --armor --export | diff - apt/lokihouse-archive-keyring.asc
+          gpg --armor --export | diff - apt/runakefli-archive-keyring.asc
           rm -rf "$GNUPGHOME"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

@@ -162,9 +162,9 @@ git commit -m "refactor: remove duplicates without per-row allocations"
 
 - [ ] **Step 5: Document**
   - `docs/divergences.md`, query section, new bullet:
-    `- **Duplicate entries in metric queries:** Loki drops an entry as a duplicate when stream, timestamp, line and structured metadata are equal. Metric queries that run in lokihouse's engine let ClickHouse remove duplicates (`FINAL`), which compares a 64-bit hash of line and structured metadata instead (`entry_hash`, the table's merge key). Two different entries are merged only if they share stream, nanosecond timestamp and hash. Background merges already apply the same rule to stored data.`
+    `- **Duplicate entries in metric queries:** Loki drops an entry as a duplicate when stream, timestamp, line and structured metadata are equal. Metric queries that run in runakefli's engine let ClickHouse remove duplicates (`FINAL`), which compares a 64-bit hash of line and structured metadata instead (`entry_hash`, the table's merge key). Two different entries are merged only if they share stream, nanosecond timestamp and hash. Background merges already apply the same rule to stored data.`
   - `CHANGELOG.md` under `## [Unreleased]` → `### Changed`:
-    `- Metric queries that run in lokihouse's own engine (e.g. `| unwrap`, `quantile_over_time`) let ClickHouse remove duplicate entries (`FINAL`) instead of lokihouse; much faster when retried pushes left duplicates in unmerged parts.`
+    `- Metric queries that run in runakefli's own engine (e.g. `| unwrap`, `quantile_over_time`) let ClickHouse remove duplicate entries (`FINAL`) instead of runakefli; much faster when retried pushes left duplicates in unmerged parts.`
 
 - [ ] **Step 6: Cluster run**
 
@@ -268,8 +268,8 @@ the sequential iterator for every worker count.
   Expected: PASS.
 
 - [ ] **Step 6: Document**
-  - `docs/operations.md`, under `## Limits` → `### Query`: a short paragraph: metric queries that lokihouse evaluates itself (parsers, `unwrap`) parse lines on `min(GOMAXPROCS, matching streams)` goroutines *per query*, so concurrent queries multiply the goroutine count while `GOMAXPROCS` (Go follows the cgroup CPU quota) bounds the CPU they use together. Set the `GOMAXPROCS` environment variable to limit it.
-  - `CHANGELOG.md` `### Changed`: `- Metric queries that run in lokihouse's own engine parse and extract samples on up to GOMAXPROCS cores per query.`
+  - `docs/operations.md`, under `## Limits` → `### Query`: a short paragraph: metric queries that runakefli evaluates itself (parsers, `unwrap`) parse lines on `min(GOMAXPROCS, matching streams)` goroutines *per query*, so concurrent queries multiply the goroutine count while `GOMAXPROCS` (Go follows the cgroup CPU quota) bounds the CPU they use together. Set the `GOMAXPROCS` environment variable to limit it.
+  - `CHANGELOG.md` `### Changed`: `- Metric queries that run in runakefli's own engine parse and extract samples on up to GOMAXPROCS cores per query.`
 
 - [ ] **Step 7: Commit**
 
@@ -287,5 +287,5 @@ No code; record the numbers in the final report. Do not edit `docs/benchmark.md`
 - [ ] **Step 1:** `make check`. Expected: PASS, coverage ≥ 85 %.
 - [ ] **Step 2:** `make test-cluster`, `make oracle-all`, `make oracle-cluster`. Expected: PASS.
 - [ ] **Step 3:** `make soak`. Expected: PASS; heap and goroutine profiles flat (no growth from the pipeline).
-- [ ] **Step 4:** `make bench`. Expected: all comparisons pass. `unwrap quantile` lokihouse p50 well below 155 ms (target < 100 ms: the serial producer, about 30 ms, and Loki's engine, about 35 ms, now overlap); `log filter`, `rate regex`, `count_over_time`, `topk`, `bytes_over_time` no slower than the 0.11.0 row in `docs/benchmark.md`.
+- [ ] **Step 4:** `make bench`. Expected: all comparisons pass. `unwrap quantile` runakefli p50 well below 155 ms (target < 100 ms: the serial producer, about 30 ms, and Loki's engine, about 35 ms, now overlap); `log filter`, `rate regex`, `count_over_time`, `topk`, `bytes_over_time` no slower than the 0.11.0 row in `docs/benchmark.md`.
 - [ ] **Step 5:** CPU-profile the bench query (`/debug/pprof/profile` while looping it) and confirm the remaining serial path: `rowReader.next` (Map/string scan) on the producer and `quantileOverTime` on the engine goroutine. Report both with ms per query as input for the next steps (scanning metadata as key/value arrays; time-split leaves).

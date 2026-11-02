@@ -15,7 +15,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/grafana/loki/v3/pkg/logproto"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 // V2Day is the UTC day of the rows NewV2 inserts.

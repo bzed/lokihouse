@@ -24,9 +24,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/api"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	"github.com/bzed/lokihouse/internal/ruler"
+	"github.com/bzed/runakefli/internal/api"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/ruler"
 )
 
 // group is a rule group evaluated every 100ms over {app="a"}.
@@ -48,7 +48,7 @@ type harness struct {
 }
 
 // startRuler starts Loki's ruler over eng with filesystem rule storage in dir,
-// polling and evaluating every 100ms, behind lokihouse's API router. mut, when
+// polling and evaluating every 100ms, behind runakefli's API router. mut, when
 // set, adjusts the ruler config. The ruler is stopped when the test ends; only
 // one ruler may run at a time (Loki keeps its remote-write registry global).
 func startRuler(t *testing.T, dir string, eng ruler.Engine, mut func(*lokiruler.Config)) *harness {

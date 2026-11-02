@@ -1,4 +1,4 @@
-// Package api provides the HTTP API handlers for lokihouse, serving Loki's
+// Package api provides the HTTP API handlers for runakefli, serving Loki's
 // endpoints (push, query, series, labels, tail, deletes, rules) over ClickHouse.
 package api
 
@@ -16,13 +16,13 @@ import (
 	rulerbase "github.com/grafana/loki/v3/pkg/ruler/base"
 	"github.com/grafana/loki/v3/pkg/validation"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/deletes"
-	"github.com/bzed/lokihouse/internal/patterns"
-	"github.com/bzed/lokihouse/internal/pushdown"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/deletes"
+	"github.com/bzed/runakefli/internal/patterns"
+	"github.com/bzed/runakefli/internal/pushdown"
 )
 
-// API is the lokihouse HTTP API server. It wires together the query, push,
+// API is the runakefli HTTP API server. It wires together the query, push,
 // delete, tail and ruler handlers into a single http.Handler.
 type API struct {
 	// Queries executes LogQL queries, choosing between the plain engine and
@@ -45,7 +45,7 @@ type API struct {
 	Tail        http.Handler
 	Rules       *rulerbase.API // Loki's ruler API; nil = ruler disabled
 	// Ready, when set, is called by GET /ready; an error answers 503
-	// (lokihouse is not ready without ClickHouse).
+	// (runakefli is not ready without ClickHouse).
 	Ready func(context.Context) error
 	// MultiTenant fans the index and drilldown endpoints out per tenant
 	// (query.querier.multi_tenant_queries_enabled).
@@ -80,7 +80,7 @@ func (p plainQuerier) Query(_ context.Context, params logql.Params) logql.Query 
 // NewPlainQuerier adapts a *logql.QueryEngine to the api.Querier interface.
 func NewPlainQuerier(e *logql.QueryEngine) Querier { return plainQuerier{e: e} }
 
-// Router returns the http.Handler that serves all lokihouse API endpoints.
+// Router returns the http.Handler that serves all runakefli API endpoints.
 func (a *API) Router() http.Handler {
 	mux := http.NewServeMux()
 	t := a.tenant
@@ -140,9 +140,9 @@ func (a *API) Router() http.Handler {
 		mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
 	}
 
-	// Debug endpoint: Tier A leaf counter (only when LOKIHOUSE_DEBUG=1)
-	if os.Getenv("LOKIHOUSE_DEBUG") == "1" {
-		mux.HandleFunc("GET /debug/lokihouse/tiera_leaves", func(w http.ResponseWriter, _ *http.Request) {
+	// Debug endpoint: Tier A leaf counter (only when RUNAKEFLI_DEBUG=1)
+	if os.Getenv("RUNAKEFLI_DEBUG") == "1" {
+		mux.HandleFunc("GET /debug/runakefli/tiera_leaves", func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(strconv.FormatInt(pushdown.TierALeaves.Load(), 10)))
 		})
 	}

@@ -1,17 +1,17 @@
-Origin: lokihouse
-Label: lokihouse
+Origin: runakefli
+Label: runakefli
 Codename: trixie
 Suite: stable
 Architectures: amd64 arm64
 Components: main
-Description: lokihouse releases
+Description: runakefli releases
 SignWith: yes
 
-Origin: lokihouse
-Label: lokihouse snapshot
+Origin: runakefli
+Label: runakefli snapshot
 Codename: trixie-snapshot
 Suite: testing
 Architectures: amd64 arm64
 Components: main
-Description: lokihouse builds of main
+Description: runakefli builds of main
 SignWith: yes

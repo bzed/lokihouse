@@ -1,17 +1,17 @@
 ---
-description: Every HTTP endpoint lokihouse serves with Grafana Loki compatible paths: push, query, metadata, deletes, tail, ruler and admin.
+description: Every HTTP endpoint Rúnakefli serves with Loki® compatible paths: push, query, metadata, deletes, tail, ruler and admin.
 ---
 
 # HTTP API
 
-Every endpoint lokihouse serves, enumerated from
-[`internal/api/api.go`](https://github.com/bzed/lokihouse/blob/main/internal/api/api.go)
+Every endpoint Rúnakefli serves, enumerated from
+[`internal/api/api.go`](https://github.com/bzed/runakefli/blob/main/internal/api/api.go)
 and the rule/route registration in
-[`internal/api/rules.go`](https://github.com/bzed/lokihouse/blob/main/internal/api/rules.go)
+[`internal/api/rules.go`](https://github.com/bzed/runakefli/blob/main/internal/api/rules.go)
 and
-[`internal/api/lokicodec.go`](https://github.com/bzed/lokihouse/blob/main/internal/api/lokicodec.go).
+[`internal/api/lokicodec.go`](https://github.com/bzed/runakefli/blob/main/internal/api/lokicodec.go).
 
-All `/loki/api/v1/...` paths are Loki-identical. The `/api/prom/...` paths
+All `/loki/api/v1/...` paths are Loki®-identical. The `/api/prom/...` paths
 are the legacy Prometheus-compatible paths Loki also serves.
 
 ## Auth
@@ -93,4 +93,4 @@ Present only when `ruler_storage` is configured.
 | `GET` | `/ready` | **no** | Health check. Returns `ready\n` with HTTP 200. |
 | `GET` | `/loki/api/v1/status/buildinfo` | yes | Build information (version, revision, branch, build date, Go version). |
 | `GET`, `POST` | `/loki/api/v1/format_query` | **no** | Validate / format a LogQL query. Registered without the tenant wrapper, so no `X-Scope-OrgID` is required. |
-| `GET` | `/debug/lokihouse/tiera_leaves` | no | Debug: list Tier A push-down leaves. Development-only; not a stable API. |
+| `GET` | `/debug/runakefli/tiera_leaves` | no | Debug: list Tier A push-down leaves. Development-only; not a stable API. |

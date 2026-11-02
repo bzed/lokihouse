@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 func TestLoad_DefaultsAndOverrides(t *testing.T) {
@@ -49,7 +49,7 @@ func TestLoad_CompactorRetentionEnabled(t *testing.T) {
 		require.NoError(t, err)
 		return c
 	}
-	require.True(t, load("auth_enabled: true\n").Compactor.RetentionEnabled, "lokihouse default is true (Loki's is false)")
+	require.True(t, load("auth_enabled: true\n").Compactor.RetentionEnabled, "runakefli default is true (Loki's is false)")
 	require.False(t, load("compactor: {retention_enabled: false}\n").Compactor.RetentionEnabled)
 }
 
@@ -58,12 +58,12 @@ func TestLoad_Cluster(t *testing.T) {
 	require.NoError(t, os.WriteFile(p, []byte(`
 clickhouse:
   addr: ["ch1:9000", "ch3:9000"]
-  cluster: lokihouse
+  cluster: runakefli
   settings: {insert_quorum: 2, max_execution_time: 60}
 `), 0o600))
 	c, err := Load(p, false)
 	require.NoError(t, err)
-	require.Equal(t, chstore.Topology{Cluster: "lokihouse", Replicated: true}, c.Topology())
+	require.Equal(t, chstore.Topology{Cluster: "runakefli", Replicated: true}, c.Topology())
 	s := c.CHSettings()
 	require.EqualValues(t, 2, s["insert_quorum"]) // explicit setting wins over the topology default
 	require.EqualValues(t, 60, s["max_execution_time"])
@@ -115,7 +115,7 @@ func TestLoad_RulerDisabledByDefault(t *testing.T) {
 	c, err := Load(p, false)
 	require.NoError(t, err)
 	require.False(t, c.RulerEnabled())
-	require.Equal(t, "rules-temp", c.Ruler.RulePath)    // lokihouse default (Loki: /rules)
+	require.Equal(t, "rules-temp", c.Ruler.RulePath)    // runakefli default (Loki: /rules)
 	require.Equal(t, time.Minute, c.Ruler.PollInterval) // Loki default kept
 	require.Equal(t, "local", c.Ruler.Evaluation.Mode)  // Loki default kept
 }
@@ -133,7 +133,7 @@ ruler:
       prom: {url: "http://prom:9090/api/v1/write"}
 ruler_storage:
   backend: filesystem
-  filesystem: {dir: /var/lib/lokihouse/rules}
+  filesystem: {dir: /var/lib/runakefli/rules}
 `), 0o600))
 	c, err := Load(p, false)
 	require.NoError(t, err)
@@ -144,7 +144,7 @@ ruler_storage:
 	require.Equal(t, time.Minute, c.Ruler.EvaluationInterval) // Loki default kept
 	require.Equal(t, "http://prom:9090/api/v1/write", c.Ruler.RemoteWrite.Clients["prom"].URL.String())
 	require.Equal(t, "filesystem", c.RulerStorage.Backend)
-	require.Equal(t, "/var/lib/lokihouse/rules", c.RulerStorage.Filesystem.Directory)
+	require.Equal(t, "/var/lib/runakefli/rules", c.RulerStorage.Filesystem.Directory)
 }
 
 func TestLoad_RulerRejectsUnsupportedModes(t *testing.T) {
@@ -273,13 +273,13 @@ func TestLoad_MultiTenantQueriesKey(t *testing.T) {
 }
 
 func TestLoad_ExampleConfig(t *testing.T) {
-	_, err := Load(filepath.Join("..", "..", "lokihouse.example.yaml"), false)
+	_, err := Load(filepath.Join("..", "..", "runakefli.example.yaml"), false)
 	require.NoError(t, err)
 }
 
 func TestLoad_PackagedConfig(t *testing.T) {
 	t.Setenv("CREDENTIALS_DIRECTORY", t.TempDir())
-	c, err := Load(filepath.Join("..", "..", "lokihouse.example.yaml"), true) // the package installs it as /etc/lokihouse/lokihouse.yaml
+	c, err := Load(filepath.Join("..", "..", "runakefli.example.yaml"), true) // the package installs it as /etc/runakefli/runakefli.yaml
 	require.NoError(t, err)
 	require.Equal(t, "127.0.0.1", c.Server.HTTPListenAddress, "the package listens on localhost by default")
 }

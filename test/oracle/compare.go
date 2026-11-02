@@ -1,6 +1,6 @@
 //go:build oracle
 
-// Package oracle compares lokihouse and Loki responses for the same requests.
+// Package oracle compares runakefli and Loki responses for the same requests.
 package oracle
 
 import (
@@ -35,12 +35,12 @@ func Compare(t *testing.T, name string, a, b []byte) {
 		if !floatTolerantEqual(an, bn) {
 			dir := t.TempDir()
 			_ = os.WriteFile(filepath.Join(dir, "loki.json"), an, 0o644)
-			_ = os.WriteFile(filepath.Join(dir, "lokihouse.json"), bn, 0o644)
+			_ = os.WriteFile(filepath.Join(dir, "runakefli.json"), bn, 0o644)
 			diff, _ := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
 				A:        difflib.SplitLines(string(an)),
 				B:        difflib.SplitLines(string(bn)),
 				FromFile: "loki.json",
-				ToFile:   "lokihouse.json",
+				ToFile:   "runakefli.json",
 			})
 			t.Errorf("%s: responses differ (full dumps in %s)\n%s", name, dir, diff)
 		}

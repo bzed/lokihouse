@@ -1,4 +1,4 @@
-# Lokihouse Phase 6 (Operational Gaps) Implementation Plan
+# Runakefli Phase 6 (Operational Gaps) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -26,7 +26,7 @@
    - `ALTER TABLE … APPLY DELETED MASK` rewrites only the parts that carry a mask. A probe showed the masked part shrinking from 10000 to 5000 rows while the untouched partitions kept their rows. This is the right tool.
 4. **Multi-tenant queries.** Loki's `MultiTenantQuerier` also fans out `IndexStats`, `Volume`, `DetectedLabels` and `Patterns`, using merge helpers that are already in Loki's module graph (`stats.MergeStats`, `seriesvolume.Merge`, `detected.MergeLabels`, `pattern.MergePatternResponses`). Copying them is small and closes the divergence in `docs/divergences.md`. Grafana Logs Drilldown uses all four, so a multi-tenant data source breaks there today. Two things stay out of scope:
    - SQL push-down for multi-tenant queries stays out, because it is single-tenant by construction.
-   - `detected_metric_names` stays out, because lokihouse does not serve it at all.
+   - `detected_metric_names` stays out, because runakefli does not serve it at all.
 
 ## Global Constraints
 
@@ -297,7 +297,7 @@ Expected: PASS.
 `docs/divergences.md`, Ingestion section:
 
 ```markdown
-- **Pushes spanning many days:** Loki accepts a push of any time span that passes its per-entry checks. lokihouse rejects a push touching more than 60 `(UTC day, retention period)` partitions with 400 (`too many partitions: … split it by time range`), stores nothing from it, and counts it under the discard reason `too_many_partitions`. With one retention period that is 60 days. Each partition becomes a separate ClickHouse part, and ClickHouse refuses inserts over 100 partitions. Pushes over 8 partitions are inserted synchronously instead of through the shared async-insert buffer, so a backfill cannot fail other tenants' pushes. Backfills must send at most 60 days per push.
+- **Pushes spanning many days:** Loki accepts a push of any time span that passes its per-entry checks. runakefli rejects a push touching more than 60 `(UTC day, retention period)` partitions with 400 (`too many partitions: … split it by time range`), stores nothing from it, and counts it under the discard reason `too_many_partitions`. With one retention period that is 60 days. Each partition becomes a separate ClickHouse part, and ClickHouse refuses inserts over 100 partitions. Pushes over 8 partitions are inserted synchronously instead of through the shared async-insert buffer, so a backfill cannot fail other tenants' pushes. Backfills must send at most 60 days per push.
 ```
 
 If `docs/reference/http-api.md` documents push responses, add the 400 case there in one line.
@@ -330,7 +330,7 @@ git commit -m "fix(ingest): reject pushes spanning more than 60 partitions, inse
 - Modify: `CHANGELOG.md`
 
 **Interfaces:**
-- Produces: `func (c *Config) CHOptions(db string) *clickhouse.Options`. It returns the options for every lokihouse connection to database `db`.
+- Produces: `func (c *Config) CHOptions(db string) *clickhouse.Options`. It returns the options for every runakefli connection to database `db`.
 - Produces config keys: `clickhouse.dial_timeout` (default `5s`), `clickhouse.read_timeout` (default `5m`), `clickhouse.max_open_conns` (default `100`), `clickhouse.max_idle_conns` (default `20`).
 
 - [ ] **Step 1: Write the failing tests** (append to `internal/config/config_test.go`)
@@ -538,7 +538,7 @@ In the `API` struct in `internal/api/api.go`:
 
 ```go
 	// Ready, when set, is called by GET /ready; an error answers 503
-	// (lokihouse is not ready without ClickHouse).
+	// (runakefli is not ready without ClickHouse).
 	Ready func(context.Context) error
 ```
 
@@ -580,7 +580,7 @@ In `docs/operations.md`, add a section (or extend the existing health-check text
 ```markdown
 ## Health checks
 
-`GET /ready` answers `200 ready` when lokihouse can reach ClickHouse (a ping with a 2 s deadline) and `503 ClickHouse not ready: <error>` otherwise. All lokihouse instances usually share one ClickHouse, so they become unready together; use `/ready` for load-balancer readiness, not for liveness or restarts.
+`GET /ready` answers `200 ready` when runakefli can reach ClickHouse (a ping with a 2 s deadline) and `503 ClickHouse not ready: <error>` otherwise. All runakefli instances usually share one ClickHouse, so they become unready together; use `/ready` for load-balancer readiness, not for liveness or restarts.
 ```
 
 CHANGELOG `### Changed`:
@@ -793,7 +793,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/multitenant"
+	"github.com/bzed/runakefli/internal/multitenant"
 )
 
 // fakeIndex answers per tenant from fixed data and records the tenants it saw.
@@ -921,7 +921,7 @@ package multitenant
 
 // Copied from grafana/loki@bc196286 pkg/querier/multi_tenant_querier.go
 // (IndexStats, Volume, Patterns, DetectedLabels); modifications: wraps
-// lokihouse's IndexStore instead of Loki's querier.Querier, and IndexStats
+// runakefli's IndexStore instead of Loki's querier.Querier, and IndexStats
 // takes the codec's *logproto.IndexStatsRequest instead of *loghttp.RangeQuery.
 
 import (
@@ -1141,7 +1141,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	querier_limits "github.com/grafana/loki/v3/pkg/querier/limits"
 
-	"github.com/bzed/lokihouse/internal/multitenant"
+	"github.com/bzed/runakefli/internal/multitenant"
 )
 
 // tenantIndex answers the index and drilldown endpoints for the single tenant
@@ -1254,7 +1254,7 @@ Expected: PASS. If the oracle has no multi-tenant cases, that is fine. It guards
 `docs/divergences.md`, Query section: replace the multi-tenant bullet with
 
 ```markdown
-- **Multi-tenant queries** (`query.querier.multi_tenant_queries_enabled`): lokihouse reuses Loki's `pkg/querier/multi_tenant_querier.go` fan-out for the log and sample select paths, `label/values*`, `series`, `index/stats`, `index/volume*`, `detected_labels` and `patterns`. lokihouse does not serve `detected_metric_names`. With the flag on, multi-tenant queries always run on the plain engine (no ClickHouse push-down, which is single-tenant by construction).
+- **Multi-tenant queries** (`query.querier.multi_tenant_queries_enabled`): runakefli reuses Loki's `pkg/querier/multi_tenant_querier.go` fan-out for the log and sample select paths, `label/values*`, `series`, `index/stats`, `index/volume*`, `detected_labels` and `patterns`. runakefli does not serve `detected_metric_names`. With the flag on, multi-tenant queries always run on the plain engine (no ClickHouse push-down, which is single-tenant by construction).
 ```
 
 `docs/roadmap.md`: in the "Per-policy ingestion limits" bullet, drop "multi-tenant support for the index, volume, detected and pattern endpoints".
@@ -1289,9 +1289,9 @@ git commit -m "feat(api): multi-tenant index, volume, detected_labels and patter
 ```markdown
 ## When ClickHouse is unavailable
 
-lokihouse keeps no local buffer; ClickHouse is the only state.
+runakefli keeps no local buffer; ClickHouse is the only state.
 
-- **At startup** lokihouse creates its tables, and exits non-zero if ClickHouse is unreachable. The Debian unit restarts it after 5 s (`Restart=on-failure`); under Kubernetes the pod restarts with back-off.
+- **At startup** runakefli creates its tables, and exits non-zero if ClickHouse is unreachable. The Debian unit restarts it after 5 s (`Restart=on-failure`); under Kubernetes the pod restarts with back-off.
 - **Pushes** fail with HTTP 500. Loki clients (Promtail, Alloy, the OpenTelemetry Collector) retry 5xx responses with back-off, so nothing is lost unless an outage outlasts the client's retry budget (for example Promtail's `backoff_config.max_retries`). Size the clients' retries for the longest ClickHouse maintenance window you expect.
 - **Queries, tails and the ruler** fail while ClickHouse is down. Rule evaluations are counted as failed, as in Loki.
 - **Delete processing** logs the error and retries on the next `compactor.compaction_interval`. Query-time filtering keeps pending deletes hidden.

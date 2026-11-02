@@ -1,17 +1,17 @@
 #!/bin/sh
-# Test a built lokihouse image against a throwaway ClickHouse: version, /ready,
+# Test a built runakefli image against a throwaway ClickHouse: version, /ready,
 # push and query. Works with podman or docker.
 #
-#   scripts/docker-test.sh [image]        (default: localhost/lokihouse:test)
+#   scripts/docker-test.sh [image]        (default: localhost/runakefli:test)
 set -eu
 
-image=${1:-localhost/lokihouse:test}
+image=${1:-localhost/runakefli:test}
 engine=${ENGINE:-$(command -v podman || command -v docker)}
 ch_image=${CH_IMAGE:-docker.io/clickhouse/clickhouse-server:26.9}
 id=$$
-net=lokihouse-test-$id
-ch=lokihouse-test-ch-$id
-lh=lokihouse-test-lh-$id
+net=runakefli-test-$id
+ch=runakefli-test-ch-$id
+lh=runakefli-test-lh-$id
 
 cleanup() {
 	$engine rm -f "$lh" "$ch" >/dev/null 2>&1 || true
@@ -19,7 +19,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-$engine run --rm "$image" -version | grep -q '^lokihouse, version '
+$engine run --rm "$image" -version | grep -q '^runakefli, version '
 
 $engine network create "$net" >/dev/null
 $engine run -d --name "$ch" --network "$net" -e CLICKHOUSE_SKIP_USER_SETUP=1 \
@@ -33,12 +33,12 @@ done
 
 port=$(( 20000 + id % 20000 ))
 $engine run -d --name "$lh" --network "$net" -p "127.0.0.1:$port:3100" \
-	-e LOKIHOUSE_CLICKHOUSE_ADDR="$ch:9000" "$image" >/dev/null
+	-e RUNAKEFLI_CLICKHOUSE_ADDR="$ch:9000" "$image" >/dev/null
 i=0
 until curl -fsS "http://127.0.0.1:$port/ready" >/dev/null 2>&1; do
 	i=$((i + 1))
 	if [ $i -ge 30 ]; then
-		echo "lokihouse did not become ready" >&2
+		echo "runakefli did not become ready" >&2
 		$engine logs "$lh" >&2
 		exit 1
 	fi

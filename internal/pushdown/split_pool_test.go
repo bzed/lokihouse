@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 // TestSplitter_ConcurrentMultiLegQueriesNeverDeadlockPool runs C concurrent

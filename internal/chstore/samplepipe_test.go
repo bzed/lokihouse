@@ -17,8 +17,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/querier/plan"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 func openSamples(ctx context.Context, t *testing.T, q *chstore.Querier, qs string, from, to time.Time) iter.SampleIterator {

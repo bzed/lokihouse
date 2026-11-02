@@ -13,8 +13,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 // A single-stream log query is routed to the shard owning the stream: a

@@ -1,4 +1,4 @@
-module github.com/bzed/lokihouse
+module github.com/bzed/runakefli
 
 go 1.27.3
 

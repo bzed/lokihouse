@@ -42,5 +42,5 @@ done
 rm -rf "$out/db" "$out/conf"
 
 # the public key, armored (for humans) and binary (for signed-by=)
-gpg --armor --export >"$out/lokihouse-archive-keyring.asc"
-gpg --export >"$out/lokihouse-archive-keyring.gpg"
+gpg --armor --export >"$out/runakefli-archive-keyring.asc"
+gpg --export >"$out/runakefli-archive-keyring.gpg"

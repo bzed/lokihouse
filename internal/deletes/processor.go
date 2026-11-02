@@ -16,7 +16,7 @@ import (
 	utildeletion "github.com/grafana/loki/v3/pkg/util/deletion"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/bzed/lokihouse/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore"
 )
 
 // Processor physically deletes delete requests that are past their cancel

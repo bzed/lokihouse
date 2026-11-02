@@ -75,8 +75,8 @@ func renderTemplate(tmpl *template.Template, db string, topo Topology, suffix st
 	return out, nil
 }
 
-// Migrate creates all lokihouse tables in db. Safe to run repeatedly,
-// and from several lokihouse instances at once.
+// Migrate creates all runakefli tables in db. Safe to run repeatedly,
+// and from several runakefli instances at once.
 func Migrate(ctx context.Context, conn driver.Conn, db string, topo Topology) error {
 	if topo.Cluster != "" {
 		var n uint64

@@ -12,8 +12,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 // snapshot returns every stored row of logs, streams and stream_stats_hourly in a
@@ -71,7 +71,7 @@ func TestMigrate_RefusesV1(t *testing.T) {
 	before, _, _ := snapshot(t, conn)
 	err := chstore.Migrate(context.Background(), conn, db, chtest.Topology())
 	require.True(t, errors.Is(err, chstore.ErrSchemaV1), "got %v", err)
-	require.ErrorContains(t, err, "lokihouse -schema.migrate")
+	require.ErrorContains(t, err, "runakefli -schema.migrate")
 	after, _, _ := snapshot(t, conn)
 	require.Equal(t, before, after, "a refused migration writes nothing")
 	require.Contains(t, columns(t, conn, db, chtest.Topology().Local("logs")), "retention_days")

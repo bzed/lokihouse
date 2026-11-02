@@ -1,4 +1,4 @@
-// Package logging builds lokihouse's go-kit logger from Loki's server.log_level
+// Package logging builds runakefli's go-kit logger from Loki's server.log_level
 // and server.log_format keys.
 package logging
 

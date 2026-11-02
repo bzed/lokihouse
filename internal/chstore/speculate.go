@@ -15,7 +15,7 @@ import (
 // streamSpeculations counts log queries by the outcome of the speculative
 // read. It is a package-level collector, as AGENTS.md allows.
 var streamSpeculations = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "lokihouse_query_stream_speculations_total",
+	Name: "runakefli_query_stream_speculations_total",
 	Help: "Log queries by outcome of the speculative read on a cached stream set.",
 }, []string{"result"})
 

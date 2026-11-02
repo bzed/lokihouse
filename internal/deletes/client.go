@@ -20,14 +20,14 @@ func NewQueryClient(s *Store, l deletion.Limits, m *deletion.DeleteRequestClient
 // compactorClient adapts the store to the compactor API Loki's cache wraps.
 type compactorClient struct{ *Store }
 
-// GetCacheGenerationNumber returns no generation: lokihouse has no results
+// GetCacheGenerationNumber returns no generation: runakefli has no results
 // cache to invalidate.
 func (compactorClient) GetCacheGenerationNumber(context.Context, string) (string, error) {
 	return "", nil
 }
 
 // Name identifies the client in Loki's logs.
-func (compactorClient) Name() string { return "lokihouse" }
+func (compactorClient) Name() string { return "runakefli" }
 
 // Stop does nothing: the store owns no goroutine.
 func (compactorClient) Stop() {}

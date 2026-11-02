@@ -165,7 +165,7 @@ Expected: all pass; soak heap and goroutine profiles flat.
 
 - [ ] **Step 5: Changelog and commit**
 
-`CHANGELOG.md` `### Changed`: "Log and metric queries that run in lokihouse's own engine read ClickHouse in time windows of at most 250 000 rows: metric queries with parsers (`| json`, `| logfmt`) no longer sort the whole range in ClickHouse memory."
+`CHANGELOG.md` `### Changed`: "Log and metric queries that run in runakefli's own engine read ClickHouse in time windows of at most 250 000 rows: metric queries with parsers (`| json`, `| logfmt`) no longer sort the whole range in ClickHouse memory."
 
 ```bash
 git add internal/chstore CHANGELOG.md

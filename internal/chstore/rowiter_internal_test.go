@@ -16,7 +16,7 @@ import (
 // Two identical rows landing in the same (ts, stream) group must be dropped
 // by rowReader's dedup, exactly like Loki's merge iterator.
 func TestRowReader_DedupesIdenticalRows(t *testing.T) {
-	addr := os.Getenv("LOKIHOUSE_TEST_CH_ADDR")
+	addr := os.Getenv("RUNAKEFLI_TEST_CH_ADDR")
 	if addr == "" {
 		addr = "localhost:9000"
 	}
@@ -35,7 +35,7 @@ func TestRowReader_DedupesIdenticalRows(t *testing.T) {
 // A log query stops after `limit` entries; closing the cursor must cancel the
 // ClickHouse query instead of draining the rest of the result.
 func TestRowReader_CloseCancelsQuery(t *testing.T) {
-	addr := os.Getenv("LOKIHOUSE_TEST_CH_ADDR")
+	addr := os.Getenv("RUNAKEFLI_TEST_CH_ADDR")
 	if addr == "" {
 		addr = "localhost:9000"
 	}
@@ -60,7 +60,7 @@ func TestRowReader_CloseCancelsQuery(t *testing.T) {
 // rowReader in the order of n and returns the yielded (line, metadata) pairs.
 func scanRows(t *testing.T, rows ...string) []string {
 	t.Helper()
-	addr := os.Getenv("LOKIHOUSE_TEST_CH_ADDR")
+	addr := os.Getenv("RUNAKEFLI_TEST_CH_ADDR")
 	if addr == "" {
 		addr = "localhost:9000"
 	}

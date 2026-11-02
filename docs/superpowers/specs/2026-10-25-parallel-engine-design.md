@@ -5,14 +5,14 @@ Date: 2026-10-25. Status: proposed.
 ## Intent
 
 Metric queries that the SQL push-down (Tier A) cannot answer run in
-lokihouse's copy of Loki's engine (Tier B): `unwrap` aggregations,
+runakefli's copy of Loki's engine (Tier B): `unwrap` aggregations,
 `quantile_over_time`, and queries with parsers or label filters that Tier A
 does not cover. Each such query runs on one goroutine. On the benchmark,
-`unwrap quantile` takes 70 ms in lokihouse against 57 ms in Loki, and the
+`unwrap quantile` takes 70 ms in runakefli against 57 ms in Loki, and the
 engine's own aggregation is ≈38 ms of the 70. On longer ranges the gap grows,
-because Loki evaluates pieces of the query in parallel and lokihouse does not.
+because Loki evaluates pieces of the query in parallel and runakefli does not.
 
-lokihouse is an open-source drop-in for Loki, so the target user is anyone
+runakefli is an open-source drop-in for Loki, so the target user is anyone
 who points Grafana at it: dashboards over hours to days, error-ratio panels
 built from binary operations, `unwrap` latency panels. The goal is to use
 the machine's cores for those queries, with the same answers and Loki's
@@ -37,7 +37,7 @@ a row matter:
   (`ShardMapper.quantileOverTimeSharding` is false; sharded quantiles are
   sketches, so they are approximate). Its `unwrap quantile` gain comes from
   **splitting by time** (`split_queries_by_interval`, default `1h`).
-- Stream sharding pays off on `count_over_time`, `rate` and `topk`. lokihouse
+- Stream sharding pays off on `count_over_time`, `rate` and `topk`. runakefli
   already answers those in SQL, 2–4× faster than Loki.
 
 Hence this design: **split engine-run metric range queries by time and
@@ -64,7 +64,7 @@ query (its downstream leaves) in parallel**. Stream sharding is a non-goal
 4. **Loki's knobs.** Honour Loki's existing per-tenant limits:
    `limits_config.split_queries_by_interval` (default `1h`; `0` disables
    splitting) and `limits_config.max_query_parallelism` (default 32, the
-   most legs and leaves a request evaluates at once). lokihouse parses both
+   most legs and leaves a request evaluates at once). runakefli parses both
    already and ignores them today.
 5. **Safe under load.** Parallel pieces must not deadlock the ClickHouse
    connection pool and must not starve ingest, tail or the ruler.
@@ -93,7 +93,7 @@ query (its downstream leaves) in parallel**. Stream sharding is a non-goal
 ## Anti-goals (a failure even if it is faster)
 
 - Any answer that differs from unsplit evaluation. The oracle compares
-  lokihouse with an unsplit Loki, so it catches this.
+  runakefli with an unsplit Loki, so it catches this.
 - A request that deadlocks or times out on the connection pool when it
   would have succeeded sequentially. This is how the sample fan-out failed
   (`REVIEW.md` §0000, F1/R1).
@@ -120,7 +120,7 @@ never split.
 
 Loki's frontend rounds `start` down and `end` up to a multiple of `step`
 before it splits (`alignStartEnd`), so split Loki returns different
-timestamps than unsplit Loki whenever `start` is not step-aligned. lokihouse
+timestamps than unsplit Loki whenever `start` is not step-aligned. runakefli
 keeps the query's own grid instead: evaluation timestamps are
 `start + k·step` for `k = 0 … ⌊(end−start)/step⌋`, exactly as unsplit, and
 legs are contiguous runs of those timestamps. This is what makes Goal 3
@@ -215,7 +215,7 @@ the request and waited for before `Exec` returns.
 - The histogram `loki_query_frontend_partitions` (Loki's name, help and
   buckets, `split_by_interval.go:61-75`) observes the number of legs per
   split query. Loki's `SplitByMetrics` keeps its field unexported, so
-  lokihouse declares its own collector with the same definition.
+  runakefli declares its own collector with the same definition.
 - `Summary.Splits` in the response statistics, as above.
 
 ## Order
@@ -240,7 +240,7 @@ cache in place.
   returns the unsplit partial result and warning.
 - **Degradation:** with the budget exhausted, pieces run inline, the
   results are unchanged, and no request waits for a reservation.
-- **Oracle:** the existing corpus runs with splitting on (lokihouse's
+- **Oracle:** the existing corpus runs with splitting on (runakefli's
   default) against unsplit Loki in all three push-down modes and on the
   cluster. Add corpus range queries that cross several interval boundaries
   with an unaligned `start`.
@@ -249,7 +249,7 @@ cache in place.
   concurrent binary-operation range queries that each split into several
   legs) completes without `acquire conn timeout`.
 - **Benchmark:** `make bench` gains a data-span setting
-  (`LOKIHOUSE_BENCH_SPAN`, default `1h`). Acceptance: `unwrap quantile` at
+  (`RUNAKEFLI_BENCH_SPAN`, default `1h`). Acceptance: `unwrap quantile` at
   the default span is at or below sharded Loki's median, and a `6h` run is
   recorded in `docs/benchmark.md` to show how the gain scales with range.
 - `make check`, `make test-cluster`, `make oracle-all`, `make oracle-cluster`

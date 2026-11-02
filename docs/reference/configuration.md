@@ -1,22 +1,22 @@
 ---
-description: Every lokihouse configuration key with its default: server, clickhouse, query, compactor, ruler, ruler_storage and limits_config.
+description: Every Rúnakefli configuration key with its default: server, clickhouse, query, compactor, ruler, ruler_storage and limits_config.
 ---
 
 # Configuration
 
-lokihouse is configured with a single YAML file, passed with
-`-config.file=<path>` (default `lokihouse.yaml`). Unknown keys are an error
-(strict parsing, as in Loki). With `-config.expand-env`, `${VAR}` and
+Rúnakefli is configured with a single YAML file, passed with
+`-config.file=<path>` (default `runakefli.yaml`). Unknown keys are an error
+(strict parsing, as in Loki®). With `-config.expand-env`, `${VAR}` and
 `${VAR:-default}` are expanded before parsing (Loki's
 `-config.expand-env`).
 
-Defaults below are the values lokihouse uses when a key is omitted, as
-defined in [`internal/config/config.go`](https://github.com/bzed/lokihouse/blob/main/internal/config/config.go).
+Defaults below are the values Rúnakefli uses when a key is omitted, as
+defined in [`internal/config/config.go`](https://github.com/bzed/runakefli/blob/main/internal/config/config.go).
 
-[`lokihouse.example.yaml`](https://github.com/bzed/lokihouse/blob/main/lokihouse.example.yaml)
+[`runakefli.example.yaml`](https://github.com/bzed/runakefli/blob/main/runakefli.example.yaml)
 shows every option with its default and a short comment. The Debian package
-installs it as `/etc/lokihouse/lokihouse.yaml` (a copy stays in
-`/usr/share/doc/lokihouse/examples/`), so the file you edit lists everything
+installs it as `/etc/runakefli/runakefli.yaml` (a copy stays in
+`/usr/share/doc/runakefli/examples/`), so the file you edit lists everything
 you can set. A test loads it with every option uncommented, so it cannot drift
 from the code.
 
@@ -26,8 +26,8 @@ The blocks are: [`server`](#server), [`auth_enabled`](#auth_enabled),
 [retention](#retention)), [`ruler`](#ruler) and [`ruler_storage`](#ruler_storage)
 (Loki's).
 
-The command line has three flags: `-config.file` (default `lokihouse.yaml`),
-`-config.expand-env` and `-version`; see `man lokihouse`.
+The command line has three flags: `-config.file` (default `runakefli.yaml`),
+`-config.expand-env` and `-version`; see `man runakefli`.
 
 ## `server`
 
@@ -53,21 +53,21 @@ HTTP server settings.
 | `auth_enabled` | bool | `true` | When `true` (the default), every API endpoint except `/ready` and `format_query` requires the `X-Scope-OrgID` header. When `false`, no tenancy is enforced and the header is ignored. |
 
 > Note: the default is `true` (tenancy on), matching Loki's single-binary
-> default. The [example config](https://github.com/bzed/lokihouse/blob/main/lokihouse.example.yaml)
+> default. The [example config](https://github.com/bzed/runakefli/blob/main/runakefli.example.yaml)
 > sets it to `false` for a quick local setup.
 
 ## `clickhouse`
 
-Connection and topology settings for the ClickHouse storage.
+Connection and topology settings for the ClickHouse® storage.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `clickhouse.addr` | list of strings | `["localhost:9000"]` | ClickHouse server addresses (native protocol, port 9000). List all nodes for a cluster. |
-| `clickhouse.database` | string | `lokihouse` | The ClickHouse database to use. Created on first start if it does not exist. |
+| `clickhouse.database` | string | `runakefli` | The ClickHouse database to use. Created on first start if it does not exist. |
 | `clickhouse.username` | string | `default` | ClickHouse user. |
 | `clickhouse.password` | string | `""` | ClickHouse password. Mutually exclusive with `clickhouse.password_file`. |
 | `clickhouse.password_file` | string | `""` | Path to a file containing the password (trailing newline stripped). The file should be `0o600`. Mutually exclusive with `clickhouse.password`. |
-| `clickhouse.cluster` | string | `""` (single server) | The ClickHouse `remote_servers` cluster name. Empty = single-server mode. When set, lokihouse creates `*_local` `Replicated*MergeTree` tables `ON CLUSTER` plus `Distributed` tables. |
+| `clickhouse.cluster` | string | `""` (single server) | The ClickHouse `remote_servers` cluster name. Empty = single-server mode. When set, Rúnakefli creates `*_local` `Replicated*MergeTree` tables `ON CLUSTER` plus `Distributed` tables. |
 | `clickhouse.replicated` | bool | `true` | When `clickhouse.cluster` is set: `true` = `Replicated*MergeTree` (replication), `false` = sharding without replication. Ignored in single-server mode. |
 | `clickhouse.replica_path` | string | server's `default_replica_path` | Replicated table path. Optional; the server default is used when omitted. |
 | `clickhouse.replica_name` | string | server's `default_replica_name` | Replica name template. Optional. |
@@ -81,35 +81,35 @@ Connection and topology settings for the ClickHouse storage.
 
 `clickhouse.password` and `clickhouse.password_file` are mutually exclusive; setting both is an
 error. `clickhouse.password_file` is read at startup; if the file is missing or
-unreadable, lokihouse refuses to start. The file's contents are trimmed of
+unreadable, Rúnakefli refuses to start. The file's contents are trimmed of
 trailing `\r\n`.
 
 For production, prefer `clickhouse.password_file` (or systemd credentials) over a
 plain `clickhouse.password:` in the config file, so the secret is not in a world-readable
 file.
 
-The container image's built-in config maps `LOKIHOUSE_CLICKHOUSE_PASSWORD` to
-`clickhouse.password` and `LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE` to
+The container image's built-in config maps `RUNAKEFLI_CLICKHOUSE_PASSWORD` to
+`clickhouse.password` and `RUNAKEFLI_CLICKHOUSE_PASSWORD_FILE` to
 `clickhouse.password_file`; see
 [Container image](../install/index.md#container-image). Outside the image,
 use `${VAR}` in your config together with `-config.expand-env`.
 
 ### ClickHouse user and grants
 
-lokihouse does not need the `default` user. Create a dedicated user and grant it
+Rúnakefli does not need the `default` user. Create a dedicated user and grant it
 only what it uses (tested with ClickHouse 26.9). Replace the database name if
-`clickhouse.database` is not `lokihouse`, and use your own password:
+`clickhouse.database` is not `runakefli`, and use your own password:
 
 ```sql
-CREATE USER lokihouse IDENTIFIED BY '...';
+CREATE USER runakefli IDENTIFIED BY '...';
 
--- Everything lokihouse reads, writes and maintains lives in its own database.
+-- Everything runakefli reads, writes and maintains lives in its own database.
 GRANT SELECT, INSERT, ALTER DELETE,
       CREATE DATABASE, CREATE TABLE, CREATE VIEW
-  ON lokihouse.* TO lokihouse;
+  ON runakefli.* TO runakefli;
 
 -- Retention reads the parts of the tables to find the days to drop.
-GRANT SELECT ON system.parts TO lokihouse;
+GRANT SELECT ON system.parts TO runakefli;
 ```
 
 | Grant | Used for |
@@ -119,7 +119,7 @@ GRANT SELECT ON system.parts TO lokihouse;
 | `CREATE DATABASE`, `CREATE TABLE`, `CREATE VIEW` | Every start runs `CREATE ... IF NOT EXISTS` for the database, the tables and the statistics view. ClickHouse checks the grant even when the object exists, so it cannot be left out. |
 | `SELECT ON system.parts` | The retention sweeper lists the day partitions (`compactor.retention_enabled`). Not needed with `retention_enabled: false`. |
 
-The user must not be `readonly`: lokihouse sets session settings such as
+The user must not be `readonly`: Rúnakefli sets session settings such as
 `async_insert` and writes data. `system.tables` and `system.columns` need no
 grant; ClickHouse shows a user the entries it has access to.
 
@@ -127,29 +127,29 @@ grant; ClickHouse shows a user the entries it has access to.
 `ON CLUSTER` (and `CREATE USER ... ON CLUSTER` unless users are replicated):
 
 ```sql
-GRANT CLUSTER ON *.* TO lokihouse;               -- DDL and deletes are ON CLUSTER
-GRANT TABLE ENGINE ON Distributed TO lokihouse;  -- the Distributed tables
-GRANT REMOTE ON *.* TO lokihouse;                -- the sweeper reads system.parts of all replicas
-GRANT SELECT ON system.clusters TO lokihouse;    -- checks that the cluster exists
+GRANT CLUSTER ON *.* TO runakefli;               -- DDL and deletes are ON CLUSTER
+GRANT TABLE ENGINE ON Distributed TO runakefli;  -- the Distributed tables
+GRANT REMOTE ON *.* TO runakefli;                -- the sweeper reads system.parts of all replicas
+GRANT SELECT ON system.clusters TO runakefli;    -- checks that the cluster exists
 ```
 
-**For `lokihouse -schema.migrate`** (a one-off, see
+**For `runakefli -schema.migrate`** (a one-off, see
 [Upgrading to 0.9](../install/index.md#upgrading-to-09)) use a user with the grants
 above plus `DROP TABLE` on the database, `SELECT` on `system.disks`
 (the free disk space check) and, from schema version 2, `ALTER ADD COLUMN` and `ALTER ADD INDEX`. A separate, temporary user is a good choice:
 
 ```sql
-CREATE USER lokihouse_migrate IDENTIFIED BY '...';
+CREATE USER runakefli_migrate IDENTIFIED BY '...';
 GRANT SELECT, INSERT, ALTER DELETE, CREATE DATABASE, CREATE TABLE, CREATE VIEW, DROP TABLE,
   ALTER ADD COLUMN, ALTER ADD INDEX
-  ON lokihouse.* TO lokihouse_migrate;
-GRANT SELECT ON system.parts TO lokihouse_migrate;
-GRANT SELECT ON system.disks TO lokihouse_migrate;
+  ON runakefli.* TO runakefli_migrate;
+GRANT SELECT ON system.parts TO runakefli_migrate;
+GRANT SELECT ON system.disks TO runakefli_migrate;
 -- on a cluster also the four cluster grants above, ON CLUSTER
 ```
 
 Point `clickhouse.username` / `clickhouse.password_file` of the configuration used for the
-migration at this user, then drop it with `DROP USER lokihouse_migrate`.
+migration at this user, then drop it with `DROP USER runakefli_migrate`.
 
 ## `query`
 
@@ -190,12 +190,12 @@ The most commonly set keys:
 
 | Key | Description |
 | --- | --- |
-| `ruler.rule_path` | Directory for rule files. **Default differs from Loki**: `rules-temp` relative to the working directory (Loki's single-binary default is `<common.path_prefix>/rules-temp`; lokihouse has no `path_prefix`). Set this explicitly. |
+| `ruler.rule_path` | Directory for rule files. **Default differs from Loki**: `rules-temp` relative to the working directory (Loki's single-binary default is `<common.path_prefix>/rules-temp`; Rúnakefli has no `path_prefix`). Set this explicitly. |
 | `ruler.alertmanager_url` | Alertmanager URL for alert notifications. |
 | `ruler.external_url` | External URL of the ruler (used in alert annotations). |
 | `ruler.remote_write` | Recording-rule remote-write configuration (e.g. to Prometheus). |
-| `ruler.wal` | WAL directory for the ruler. **lokihouse refuses to start** if this directory is empty or is the working directory, the rule storage directory, or `ruler.rule_path` (a safety measure; Loki would `os.RemoveAll` it). |
-| `ruler.enable_sharding` | **Rejected at startup.** lokihouse has no ruler ring; this must be `false`. |
+| `ruler.wal` | WAL directory for the ruler. **Rúnakefli refuses to start** if this directory is empty or is the working directory, the rule storage directory, or `ruler.rule_path` (a safety measure; Loki would `os.RemoveAll` it). |
+| `ruler.enable_sharding` | **Rejected at startup.** Rúnakefli has no ruler ring; this must be `false`. |
 | `ruler.evaluation.mode` | `remote` is **rejected at startup** (no ring). Must be `local` (the default). |
 | `ruler.evaluation_interval`, `ruler.poll_interval` | How often rules are evaluated (`1m`) and re-read from storage (`1m`). |
 | `ruler.remote_write.enabled`, `ruler.remote_write.clients` | Send recording-rule samples with remote write, to one or more named clients (`clients: {prom: {url: ...}}`). |
@@ -215,7 +215,7 @@ The ruler only starts when this block is set. Two backends:
 The full set of keys is documented in the
 [Loki ruler storage reference](https://grafana.com/docs/loki/latest/configuration/#ruler_storage).
 
-> **Single-instance rule:** because lokihouse has no ruler ring, every
+> **Single-instance rule:** because Rúnakefli has no ruler ring, every
 > instance with `ruler_storage` configured evaluates **all** rule groups.
 > Configure the ruler on exactly one instance; otherwise alerts and
 > recording-rule samples are duplicated.
@@ -226,13 +226,13 @@ Loki's `validation.Limits` block. Every key Loki accepts is accepted here,
 with Loki's defaults and Loki's validation. The full set is documented in the
 [Loki limits reference](https://grafana.com/docs/loki/latest/configure/#limits_config).
 
-**Limits apply to every tenant.** lokihouse has no per-tenant overrides
+**Limits apply to every tenant.** Rúnakefli has no per-tenant overrides
 (`runtime_config`, `-runtime-config.file`): a tenant cannot have its own
-retention or rate limit. See [Differences from Loki](https://github.com/bzed/lokihouse/blob/main/docs/divergences.md).
+retention or rate limit. See [Differences from Loki](https://github.com/bzed/runakefli/blob/main/docs/divergences.md).
 
-lokihouse acts on the keys listed under [Retention](#retention) and in
+Rúnakefli acts on the keys listed under [Retention](#retention) and in
 [Operations → Limits](../operations.md#limits). The remaining keys are accepted
-and validated, but have no effect: lokihouse has no ingesters, index gateway,
+and validated, but have no effect: Rúnakefli has no ingesters, index gateway,
 bloom components or query frontend for them to configure.
 
 ### Retention
@@ -262,10 +262,10 @@ limits_config:
 
 How it works, and what differs from Loki:
 
-- A sweeper runs on every lokihouse instance every `compactor.compaction_interval`
+- A sweeper runs on every Rúnakefli instance every `compactor.compaction_interval`
   and applies the *current* `retention_period` and `retention_stream`, so a
   change reaches data that is already stored. Nothing is stored per row. The
-  tables are partitioned by UTC day. Nothing expires while no lokihouse
+  tables are partitioned by UTC day. Nothing expires while no Rúnakefli
   instance runs, as with Loki's compactor.
 - Expiry is on UTC midnight and counted from the log line's timestamp, not from
   the time of the push: a row stamped on UTC day D with a retention of N days
@@ -284,12 +284,12 @@ How it works, and what differs from Loki:
 - A push that spans many UTC days creates one partition per day, and at most
   60 are accepted per push (see Differences).
 
-### Other keys lokihouse acts on
+### Other keys Rúnakefli acts on
 
 | Key | Default | Description |
 | --- | --- | --- |
 | `limits_config.deletion_mode` | `filter-and-delete` | `disabled`, `filter-only` or `filter-and-delete`; see [`compactor`](#compactor). |
-| `limits_config.ingestion_rate_mb`, `ingestion_burst_size_mb` | `4`, `6` | Push rate limit, enforced per lokihouse instance. |
+| `limits_config.ingestion_rate_mb`, `ingestion_burst_size_mb` | `4`, `6` | Push rate limit, enforced per Rúnakefli instance. |
 | `limits_config.max_query_series` | `500` | Hard cap on the number of series a metric query may return. `0` removes the cap. |
 | `limits_config.max_query_lookback` | `0s` (no limit) | Maximum lookback for a query. |
 | `limits_config.max_query_length` | `30d1h` | Longest time range of a query. |

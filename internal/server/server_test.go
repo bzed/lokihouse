@@ -24,10 +24,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
-	"github.com/bzed/lokihouse/internal/config"
-	"github.com/bzed/lokihouse/internal/server"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/config"
+	"github.com/bzed/runakefli/internal/server"
 )
 
 const defaultServer = "server: {http_listen_address: 127.0.0.1, http_listen_port: 0, graceful_shutdown_timeout: 10s}\n"
@@ -49,7 +49,7 @@ func testConfig(t *testing.T, serverYAML, extra string) *config.Config {
   cluster: %q
   replicated: %t
 `, o.Addr[0], db, o.Auth.Username, o.Auth.Password, topo.Cluster, topo.Replicated) + extra
-	p := filepath.Join(t.TempDir(), "lokihouse.yaml")
+	p := filepath.Join(t.TempDir(), "runakefli.yaml")
 	require.NoError(t, os.WriteFile(p, []byte(y), 0o600))
 	cfg, err := config.Load(p, false)
 	require.NoError(t, err)
@@ -292,7 +292,7 @@ func TestRun_Metrics(t *testing.T) {
 		fmt.Sprintf(`loki_distributor_lines_received_total{format="loki",is_internal_stream="false",policy="",tenant=%q} 2`, tenant),
 		`loki_discarded_samples_total{`,
 		`loki_ruler_sync_rules_total`,
-		`lokihouse_build_info{`,
+		`runakefli_build_info{`,
 		`loki_query_frontend_partitions_bucket{le="1"}`,
 	} {
 		require.Contains(t, m, want)

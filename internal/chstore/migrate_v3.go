@@ -13,7 +13,7 @@ import (
 
 // ErrSchemaV2 is returned (wrapped) by Migrate for a database that still has schema
 // version 2 (a logs table without line_ascii_escape); run MigrateSchema on it first.
-var ErrSchemaV2 = errors.New("schema version 2: stop all lokihouse instances and run lokihouse -schema.migrate")
+var ErrSchemaV2 = errors.New("schema version 2: stop all runakefli instances and run runakefli -schema.migrate")
 
 // The version 3 additions to logs. They must equal the DDL in schema.sql
 // (TestMigrateSchema_V2ToCurrent compares a migrated and a fresh database).
@@ -65,7 +65,7 @@ func v3Pending(ctx context.Context, conn driver.Conn, db string, topo Topology) 
 // MigrateV3 migrates a schema version 2 database to version 3: it adds the structured-metadata
 // text indexes and the line_ascii_escape column to logs. Nothing is copied or re-indexed;
 // only parts written or merged afterwards carry the new indexes. A no-op on a version 3
-// database. All other lokihouse instances must be stopped.
+// database. All other runakefli instances must be stopped.
 func MigrateV3(ctx context.Context, conn driver.Conn, db string, topo Topology, logger log.Logger) error {
 	pending, err := v3Pending(ctx, conn, db, topo)
 	if err != nil || !pending {
@@ -88,7 +88,7 @@ func MigrateV3(ctx context.Context, conn driver.Conn, db string, topo Topology, 
 
 // MigrateSchema brings a database of any older schema version to the current one and
 // creates anything missing: version 1 tables are copied (MigrateV2, with the current DDL),
-// version 2 tables are altered (MigrateV3). All other lokihouse instances must be stopped.
+// version 2 tables are altered (MigrateV3). All other runakefli instances must be stopped.
 func MigrateSchema(ctx context.Context, conn driver.Conn, db string, topo Topology, logger log.Logger) error {
 	if err := MigrateV2(ctx, conn, db, topo, logger); err != nil {
 		return err

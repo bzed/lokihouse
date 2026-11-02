@@ -17,14 +17,14 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
 
-	"github.com/bzed/lokihouse/internal/pushdown"
+	"github.com/bzed/runakefli/internal/pushdown"
 )
 
 func TestOracle(t *testing.T) {
 	lokiSinks, houseSinks := newRulerSinks(t), newRulerSinks(t)
 	loki := StartLoki(t, rulerYAML(t.TempDir(), lokiSinks))
 	// 15m legs: every 95-minute corpus range query is split into at least 6.
-	house := StartLokihouseLimits(t, rulerYAML(t.TempDir(), houseSinks), "  split_queries_by_interval: 15m\n")
+	house := StartRunakefliLimits(t, rulerYAML(t.TempDir(), houseSinks), "  split_queries_by_interval: 15m\n")
 
 	// Get initial Tier A leaf count (if debug endpoint is available)
 	initialTierALeaves, hasDebug := getTierALeaves(t, house)
@@ -124,7 +124,7 @@ func TestOracle(t *testing.T) {
 	// Assert Tier A coverage: the counter must have grown by at least the number
 	// of eligible leaves in pushdown.logql × 2 tenants. Only check when push-down
 	// is enabled (mode "on").
-	if hasDebug && os.Getenv("LOKIHOUSE_ORACLE_PUSHDOWN") == "" {
+	if hasDebug && os.Getenv("RUNAKEFLI_ORACLE_PUSHDOWN") == "" {
 		finalTierALeaves, _ := getTierALeaves(t, house)
 		growth := finalTierALeaves - initialTierALeaves
 		expected := int64(countEligibleLeaves(t, "corpus/pushdown.logql") * 2) // 2 tenants
@@ -217,7 +217,7 @@ func WaitQueryable(t *testing.T, loki string, base time.Time) {
 // Returns the count and whether the endpoint was available.
 func getTierALeaves(t *testing.T, house string) (int64, bool) {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, house+"/debug/lokihouse/tiera_leaves", nil)
+	req, err := http.NewRequest(http.MethodGet, house+"/debug/runakefli/tiera_leaves", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

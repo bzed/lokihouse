@@ -1,4 +1,4 @@
-// Package server wires lokihouse's components together and runs them until
+// Package server wires runakefli's components together and runs them until
 // the context ends, then shuts them down in order: HTTP (draining in-flight
 // requests), the ruler, the background loops and the ClickHouse connection.
 package server
@@ -27,17 +27,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/bzed/lokihouse/internal/api"
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/config"
-	"github.com/bzed/lokihouse/internal/deletes"
-	"github.com/bzed/lokihouse/internal/ingest"
-	"github.com/bzed/lokihouse/internal/multitenant"
-	"github.com/bzed/lokihouse/internal/patterns"
-	"github.com/bzed/lokihouse/internal/pushdown"
-	"github.com/bzed/lokihouse/internal/retention"
-	lhruler "github.com/bzed/lokihouse/internal/ruler"
-	lhtail "github.com/bzed/lokihouse/internal/tail"
+	"github.com/bzed/runakefli/internal/api"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/config"
+	"github.com/bzed/runakefli/internal/deletes"
+	"github.com/bzed/runakefli/internal/ingest"
+	"github.com/bzed/runakefli/internal/multitenant"
+	"github.com/bzed/runakefli/internal/patterns"
+	"github.com/bzed/runakefli/internal/pushdown"
+	"github.com/bzed/runakefli/internal/retention"
+	lhruler "github.com/bzed/runakefli/internal/ruler"
+	lhtail "github.com/bzed/runakefli/internal/tail"
 )
 
 // deleteClientMetrics are Loki's delete-request lookup counters, registered
@@ -60,7 +60,7 @@ type Options struct {
 	Listening func(net.Addr)
 }
 
-// Run starts lokihouse and blocks until ctx is done or the HTTP server fails.
+// Run starts runakefli and blocks until ctx is done or the HTTP server fails.
 // In-flight requests run on a context that is not cancelled by ctx; they get
 // server.graceful_shutdown_timeout to finish.
 func Run(ctx context.Context, cfg *config.Config, opts Options) error {
@@ -96,7 +96,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 		a.Pprof = true
 		a.Metrics = promhttp.HandlerFor(prometheus.Gatherers{prometheus.DefaultGatherer, rulerReg}, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError})
 		// A second Run in one process (tests) finds the collector registered.
-		if err := prometheus.Register(version.NewCollector("lokihouse")); err != nil {
+		if err := prometheus.Register(version.NewCollector("runakefli")); err != nil {
 			if are := (prometheus.AlreadyRegisteredError{}); !errors.As(err, &are) {
 				dels.Stop()
 				closeConn()
@@ -163,7 +163,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) error {
 	if opts.Listening != nil {
 		opts.Listening(ln.Addr())
 	}
-	level.Info(logger).Log("msg", "lokihouse listening", "addr", ln.Addr().String()) //nolint:gosec // G104: logger Log error is not actionable (as in Loki)
+	level.Info(logger).Log("msg", "runakefli listening", "addr", ln.Addr().String()) //nolint:gosec // G104: logger Log error is not actionable (as in Loki)
 	sdNotify(logger, daemon.SdNotifyReady)
 
 	var serveErr error
@@ -211,8 +211,8 @@ func openClickHouse(ctx context.Context, cfg *config.Config) (driver.Conn, error
 // migrateReadTimeout lets the table copies of MigrateSchema run for hours.
 const migrateReadTimeout = 24 * time.Hour
 
-// MigrateSchema migrates the ClickHouse schema to the current version (lokihouse
-// -schema.migrate). Every other lokihouse instance must be stopped.
+// MigrateSchema migrates the ClickHouse schema to the current version (runakefli
+// -schema.migrate). Every other runakefli instance must be stopped.
 func MigrateSchema(ctx context.Context, cfg *config.Config, logger log.Logger) error {
 	opts := cfg.CHOptions("default")
 	opts.ReadTimeout = migrateReadTimeout
@@ -227,7 +227,7 @@ func MigrateSchema(ctx context.Context, cfg *config.Config, logger log.Logger) e
 	return err
 }
 
-// newAPI builds the HTTP API over conn (moved unchanged from cmd/lokihouse).
+// newAPI builds the HTTP API over conn (moved unchanged from cmd/runakefli).
 func newAPI(cfg *config.Config, conn driver.Conn, store *deletes.Store, dels deletion.DeleteRequestsClient, limits *validation.Overrides, logger log.Logger, rulerReg prometheus.Registerer) (*api.API, *chstore.Querier) {
 	q := &chstore.Querier{Conn: conn, Deletes: dels, StreamCache: chstore.NewStreamSetCache()}
 	// When multi-tenant queries are enabled, log/metric queries fan out per

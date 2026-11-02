@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Label filters reach ClickHouse indexes: pre-parser filters such as `| trace_id="x"` through new structured-metadata indexes (exact enough for Tier A), and string-equality filters after `| json` / `| logfmt` through the existing `line_text` index. Existing databases are migrated offline by `lokihouse -schema.migrate`.
+**Goal:** Label filters reach ClickHouse indexes: pre-parser filters such as `| trace_id="x"` through new structured-metadata indexes (exact enough for Tier A), and string-equality filters after `| json` / `| logfmt` through the existing `line_text` index. Existing databases are migrated offline by `runakefli -schema.migrate`.
 
 **Architecture:** Schema version 3 adds to `logs` two text indexes over `mapKeys`/`mapValues(structured_metadata)` and the `line_ascii_escape` flag (true when a line hides an ASCII letter or digit behind a `\u` escape). New databases get them from `schema.sql`; `MigrateV3` adds them to version 2 databases with `ALTER TABLE` (no data copy). `MetadataFilterSQL` maps Loki's `ExtractTestableLabelMatchers` (bloom extractor) to `structured_metadata` conditions. `ParsedFilterSQL` turns post-parser equality filters into `line LIKE` conditions over the value's verbatim runs, OR the flag. Both are necessary conditions for Tier B; Tier A accepts pre-parser equality filters as exact and falls back when a resolved stream carries the label.
 
@@ -20,7 +20,7 @@
 - Only `=` with a non-empty value is pushed as a value condition; label names starting with `__` are never pushed.
 - Index DDL: `INDEX sm_keys mapKeys(structured_metadata) TYPE text(tokenizer = 'array') GRANULARITY 1` and `INDEX sm_vals mapValues(structured_metadata) TYPE text(tokenizer = 'array') GRANULARITY 1`.
 - Escape flag DDL (in SQL, so the literal doubles the backslashes): `line_ascii_escape Bool MATERIALIZED match(line, '\\\\u00(3[0-9]|4[1-9a-fA-F]|5[0-9aA]|6[1-9a-fA-F]|7[0-9aA])')` and `INDEX line_ascii_escape_idx line_ascii_escape TYPE minmax GRANULARITY 1`. The regex matches exactly the `\u` escapes of `0–9 A–Z a–z`; Go's `\u003c` (`<`) and `\u0026` (`&`) and non-ASCII escapes do not set it.
-- Migration is offline (all lokihouse instances stopped) and copies no data. Existing rows are not backfilled: they contain no `\u` data (owner), ClickHouse computes the materialized flag on read for old parts, so it is correct for them, and the new indexes cover parts written or merged after the migration.
+- Migration is offline (all runakefli instances stopped) and copies no data. Existing rows are not backfilled: they contain no `\u` data (owner), ClickHouse computes the materialized flag on read for old parts, so it is correct for them, and the new indexes cover parts written or merged after the migration.
 - `make check`, `make test-cluster`, `make oracle-all`, `make oracle-cluster`, `make soak` pass.
 
 ## Review Focus
@@ -76,11 +76,11 @@ git commit -m "feat: schema v3 indexes structured metadata and flags escaped ASC
 
 **Files:**
 - Create: `internal/chstore/migrate_v3.go`, `internal/chstore/migrate_v3_test.go`, `internal/chstore/chtest/v2.go`
-- Modify: `internal/chstore/migrate_v2.go` (`MigrateV2` stops calling `Migrate`; `hasRetentionDays` becomes `hasColumn`), `internal/chstore/schema.go` (`Migrate` refuses version 2), `internal/chstore/migrate_v2_test.go` (call `MigrateSchema`), `internal/server/server.go` (`MigrateSchema` calls `chstore.MigrateSchema`), `docs/man/lokihouse.1.md`, `docs/install/index.md`, `debian/README.Debian` (wherever `-schema.migrate` is described: it now also upgrades version 2, without a copy)
+- Modify: `internal/chstore/migrate_v2.go` (`MigrateV2` stops calling `Migrate`; `hasRetentionDays` becomes `hasColumn`), `internal/chstore/schema.go` (`Migrate` refuses version 2), `internal/chstore/migrate_v2_test.go` (call `MigrateSchema`), `internal/server/server.go` (`MigrateSchema` calls `chstore.MigrateSchema`), `docs/man/runakefli.1.md`, `docs/install/index.md`, `debian/README.Debian` (wherever `-schema.migrate` is described: it now also upgrades version 2, without a copy)
 
 **Interfaces:**
 - Produces:
-  - `var ErrSchemaV2 = errors.New("schema version 2: stop all lokihouse instances and run lokihouse -schema.migrate")` — returned (wrapped, with the database name) by `Migrate` when the storage `logs` exists without `line_ascii_escape`.
+  - `var ErrSchemaV2 = errors.New("schema version 2: stop all runakefli instances and run runakefli -schema.migrate")` — returned (wrapped, with the database name) by `Migrate` when the storage `logs` exists without `line_ascii_escape`.
   - `func hasColumn(ctx context.Context, conn driver.Conn, db, table, column string) (bool, error)` — replaces `hasRetentionDays` (callers pass `topo.Local(name)`, `"retention_days"`).
   - `func MigrateV3(ctx context.Context, conn driver.Conn, db string, topo Topology, logger log.Logger) error` — no-op unless the storage `logs` exists without the column; then one `ALTER TABLE <db>.<local logs> <OnCluster> ADD COLUMN IF NOT EXISTS …, ADD INDEX IF NOT EXISTS sm_keys …, ADD INDEX IF NOT EXISTS sm_vals …, ADD INDEX IF NOT EXISTS line_ascii_escape_idx …` with setting `alter_sync = 2`, and on a cluster `ALTER TABLE <db>.logs <OnCluster> ADD COLUMN IF NOT EXISTS line_ascii_escape <same definition>` on the Distributed table. No `MATERIALIZE`. Logs `"msg", "migrated table", "table", "logs", "to", 3`.
   - `func MigrateSchema(ctx context.Context, conn driver.Conn, db string, topo Topology, logger log.Logger) error` — `MigrateV2` (version 1 tables are copied with the current DDL, so they come out as version 3), then `MigrateV3`, then `Migrate`. `server.MigrateSchema` calls it instead of `MigrateV2`.
@@ -112,7 +112,7 @@ Expected: PASS.
 
 `CHANGELOG.md`:
 - `### Added`: "Schema version 3: text indexes on structured-metadata keys and values (`sm_keys`, `sm_vals`) and the `line_ascii_escape` column."
-- `### Changed`: "**Breaking:** after upgrading, run `lokihouse -schema.migrate` once with every instance stopped. From version 2 it only alters `logs` (no copy, no extra disk space); a normal start against a version 2 database exits 1 and names the command. Existing data is not re-indexed."
+- `### Changed`: "**Breaking:** after upgrading, run `runakefli -schema.migrate` once with every instance stopped. From version 2 it only alters `logs` (no copy, no extra disk space); a normal start against a version 2 database exits 1 and names the command. Existing data is not re-indexed."
 
 ```bash
 git add internal/chstore internal/server docs debian/README.Debian CHANGELOG.md

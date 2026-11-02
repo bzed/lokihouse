@@ -1,12 +1,13 @@
 ---
-description: Where lokihouse deliberately differs from Grafana Loki, and why; the canonical list is kept in the repository.
+title: Divergences
+description: Where Rúnakefli deliberately differs from Loki®, and why; the canonical list is kept in the repository.
 ---
 
 # Divergences from Loki
 
-The canonical, detailed list of behavioural differences between lokihouse
-and stock Loki lives in
-[`docs/divergences.md`](https://github.com/bzed/lokihouse/blob/main/docs/divergences.md)
+The canonical, detailed list of behavioural differences between Rúnakefli
+and stock Loki® lives in
+[`docs/divergences.md`](https://github.com/bzed/runakefli/blob/main/docs/divergences.md)
 in the repository. That document is written for the team; each entry carries
 the reason and the test evidence.
 
@@ -19,7 +20,7 @@ what you will notice, why, and what to do about it — see
 | Audience | Read |
 | --- | --- |
 | Migrator (plain language) | [Migrating from Loki → "What is different"](../migrating.md#what-is-different-plain-language-summary) |
-| Contributor / team (detailed, with reasons and test evidence) | [`docs/divergences.md`](https://github.com/bzed/lokihouse/blob/main/docs/divergences.md) in the repo |
-| Design rationale (why the architecture produces these differences) | [`docs/superpowers/specs/2026-10-10-clickhouse-loki-design.md`](https://github.com/bzed/lokihouse/blob/main/docs/superpowers/specs/2026-10-10-clickhouse-loki-design.md) |
+| Contributor / team (detailed, with reasons and test evidence) | [`docs/divergences.md`](https://github.com/bzed/runakefli/blob/main/docs/divergences.md) in the repo |
+| Design rationale (why the architecture produces these differences) | [`docs/superpowers/specs/2026-10-10-clickhouse-loki-design.md`](https://github.com/bzed/runakefli/blob/main/docs/superpowers/specs/2026-10-10-clickhouse-loki-design.md) |
 
 This page is a thin index; it does not duplicate the content.

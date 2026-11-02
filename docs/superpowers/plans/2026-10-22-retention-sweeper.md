@@ -4,7 +4,7 @@
 
 **Goal:** A changed `retention_period` / `retention_stream` applies to all stored data, via a sweeper, with a schema migration for existing databases.
 
-**Architecture:** Schema v2 drops `retention_days` (column, TTL, partition key part) from `logs`, `streams`, `stream_stats_hourly`; tables are partitioned by UTC day only. A new `internal/retention` sweeper (Loki's `compactor.retention_enabled`) drops expired day partitions and lightweight-deletes per-stream expired days. `lokihouse -schema.migrate` copies v1 tables into v2 tables and exchanges them.
+**Architecture:** Schema v2 drops `retention_days` (column, TTL, partition key part) from `logs`, `streams`, `stream_stats_hourly`; tables are partitioned by UTC day only. A new `internal/retention` sweeper (Loki's `compactor.retention_enabled`) drops expired day partitions and lightweight-deletes per-stream expired days. `runakefli -schema.migrate` copies v1 tables into v2 tables and exchanges them.
 
 **Tech Stack:** Go, clickhouse-go v2, ClickHouse 26.9, Loki `pkg/compactor/retention`, `pkg/validation`.
 
@@ -22,7 +22,7 @@
 
 ## Review Focus
 
-- A normal start against a v1 database must exit 1 with `schema version 1: stop all lokihouse instances and run lokihouse -schema.migrate` and write nothing. Test in Task 2.
+- A normal start against a v1 database must exit 1 with `schema version 1: stop all runakefli instances and run runakefli -schema.migrate` and write nothing. Test in Task 2.
 - A migration killed half-way must finish on the next `-schema.migrate` run with no lost and no duplicated rows. Test in Task 2.
 - A migration on a database without enough free disk space must refuse before copying, not fill the disk. Test in Task 2.
 - More streams than one `IN` batch (> 5 000) must still all be swept. Test in Task 3.
@@ -56,14 +56,14 @@
 
 **Files:**
 - Create: `internal/chstore/migrate_v2.go`, `internal/chstore/migrate_v2_test.go`
-- Modify: `internal/chstore/schema.go` (`Migrate` refuses v1), `internal/server/server.go` (new `MigrateSchema`), `cmd/lokihouse/main.go` (flag), `docs/man/lokihouse.1.md`
-- Test: `internal/chstore/migrate_v2_test.go`, `cmd/lokihouse/main_test.go`, `internal/server/server_test.go`
+- Modify: `internal/chstore/schema.go` (`Migrate` refuses v1), `internal/server/server.go` (new `MigrateSchema`), `cmd/runakefli/main.go` (flag), `docs/man/runakefli.1.md`
+- Test: `internal/chstore/migrate_v2_test.go`, `cmd/runakefli/main_test.go`, `internal/server/server_test.go`
 
 **Interfaces:**
 - Consumes: `renderSchema(db, topo, suffix)` from Task 1.
-- Produces: `var ErrSchemaV1 = errors.New("schema version 1: stop all lokihouse instances and run lokihouse -schema.migrate")`; `Migrate` returns it wrapped when the storage `logs` table has a `retention_days` column (`system.columns`).
+- Produces: `var ErrSchemaV1 = errors.New("schema version 1: stop all runakefli instances and run runakefli -schema.migrate")`; `Migrate` returns it wrapped when the storage `logs` table has a `retention_days` column (`system.columns`).
 - Produces: `func MigrateV2(ctx context.Context, conn driver.Conn, db string, topo Topology, logger log.Logger) error` — migrates every v1 table, then calls `Migrate`. A no-op on a v2 database.
-- Produces: `func MigrateSchema(ctx context.Context, cfg *config.Config, logger log.Logger) error` in `internal/server`; `cmd/lokihouse` gains `-schema.migrate` ("migrate the ClickHouse schema to the current version and exit"), exit 0 on success, 1 on error.
+- Produces: `func MigrateSchema(ctx context.Context, cfg *config.Config, logger log.Logger) error` in `internal/server`; `cmd/runakefli` gains `-schema.migrate` ("migrate the ClickHouse schema to the current version and exit"), exit 0 on success, 1 on error.
 
 - [ ] **Step 1: Write the failing tests** (ClickHouse-backed; a helper `newV1(t)` renders `testdata/schema_v1.sql` with the v1 template funcs into a fresh database and inserts, for two tenants, rows with `retention_days` 0 and 7 across 3 days, the matching `streams` rows, and lets the view fill `stream_stats_hourly`):
   - `TestMigrate_RefusesV1`: `Migrate` on `newV1` returns an error matching `errors.Is(err, ErrSchemaV1)`; row counts unchanged.
@@ -71,21 +71,21 @@
   - `TestMigrateV2_Idempotent`: a second `MigrateV2` changes nothing (same counts, no error).
   - `TestMigrateV2_ResumesAfterCrash`: on `newV1`, create `logs_migrate` (Task 1 suffix) and insert half the rows into it, then run `MigrateV2`; the result equals `CopiesEverything`'s (no duplicates: compare `count()` and `uniqExact` of the sorting key). Second variant: `logs` already exchanged (v2) while the old-data table `logs_migrate` still exists; `MigrateV2` drops it.
   - `TestMigrateV2_DiskSpace`: `checkFreeSpace(need, free uint64) error` returns an error containing `not enough free disk space` when `free < need`, nil otherwise.
-  - `TestRun_SchemaMigrateFlag` (`cmd/lokihouse`): `run([]string{"-config.file", p, "-schema.migrate"}, …)` returns 0 against a v1 database, and a plain `run` against a v1 database returns 1 with stderr containing `lokihouse -schema.migrate`.
-- [ ] **Step 2: Run** `go test ./internal/chstore/ -run 'Migrate'` and `go test ./cmd/lokihouse/`. Expected: FAIL.
+  - `TestRun_SchemaMigrateFlag` (`cmd/runakefli`): `run([]string{"-config.file", p, "-schema.migrate"}, …)` returns 0 against a v1 database, and a plain `run` against a v1 database returns 1 with stderr containing `runakefli -schema.migrate`.
+- [ ] **Step 2: Run** `go test ./internal/chstore/ -run 'Migrate'` and `go test ./cmd/runakefli/`. Expected: FAIL.
 - [ ] **Step 3: Implement `MigrateV2`** in `migrate_v2.go`. Per table in order `logs`, `streams`, `stream_stats_hourly`, decided by whether `topo.Local(name)` has `retention_days`:
   1. v2 and `<name>_migrate` storage table exists: drop it (`DROP TABLE … SYNC`, ON CLUSTER) and its Distributed. Continue.
   2. v1: drop `stream_stats_hourly_local_mv` / `stream_stats_hourly_mv` (`topo.Local("stream_stats_hourly")+"_mv"`) if it exists; drop a leftover `<name>_migrate`; create it from `renderSchema(db, topo, "_migrate")` (only that table's statements); `checkFreeSpace(bytes of the table from system.parts, min free_space of system.disks)` (on a cluster: `clusterAllReplicas`); `INSERT INTO <Dist or table>_migrate (<v2 columns>) SELECT <v2 columns> FROM <name>` with `parallel_distributed_insert_select=2` on a cluster; `EXCHANGE TABLES <storage> AND <storage>_migrate` (ON CLUSTER); drop `<name>_migrate` (now old data).
   Columns: logs `tenant, stream_id, ts, line, structured_metadata`; streams `tenant, day, stream_id, labels, labels_str`; stats `tenant, stream_id, hour, entries, bytes, min_ts, max_ts`. Log one line per table (`msg="migrated table"`, `table`, `rows`). Then call `Migrate` (recreates the view). In `Migrate`, before creating tables, return `fmt.Errorf("%w (database %s)", ErrSchemaV1, db)` for a v1 database.
-- [ ] **Step 4: Wire the flag.** `server.MigrateSchema` opens the admin connection like `openClickHouse` and calls `chstore.MigrateV2`; `cmd/lokihouse` calls it instead of `server.Run` when `-schema.migrate` is set. Man page: add the option.
-- [ ] **Step 5: Run** `go test -race ./internal/chstore/ ./internal/server/ ./cmd/lokihouse/` and `make test-cluster`. Expected: PASS on both.
-- [ ] **Step 6: Commit** `feat: schema v1 to v2 migration (-schema.migrate)` with the `CHANGELOG.md` line (Changed, breaking: run `lokihouse -schema.migrate` once after upgrading, with all instances stopped; needs free disk space for a copy of the largest table).
+- [ ] **Step 4: Wire the flag.** `server.MigrateSchema` opens the admin connection like `openClickHouse` and calls `chstore.MigrateV2`; `cmd/runakefli` calls it instead of `server.Run` when `-schema.migrate` is set. Man page: add the option.
+- [ ] **Step 5: Run** `go test -race ./internal/chstore/ ./internal/server/ ./cmd/runakefli/` and `make test-cluster`. Expected: PASS on both.
+- [ ] **Step 6: Commit** `feat: schema v1 to v2 migration (-schema.migrate)` with the `CHANGELOG.md` line (Changed, breaking: run `runakefli -schema.migrate` once after upgrading, with all instances stopped; needs free disk space for a copy of the largest table).
 
 ### Task 3: Retention sweeper
 
 **Files:**
 - Create: `internal/chstore/retention.go`, `internal/chstore/retention_test.go`, `internal/retention/sweeper.go`, `internal/retention/sweeper_test.go`, `internal/retention/main_test.go` (goleak)
-- Modify: `internal/chstore/deleterows.go` (`ApplyDeletedMask` takes the table), `internal/deletes/processor.go` (caller), `internal/config/config.go`, `internal/server/server.go`, `lokihouse.example.yaml`, `docs/reference/configuration.md` (the key row; `docs_test.go` enforces it)
+- Modify: `internal/chstore/deleterows.go` (`ApplyDeletedMask` takes the table), `internal/deletes/processor.go` (caller), `internal/config/config.go`, `internal/server/server.go`, `runakefli.example.yaml`, `docs/reference/configuration.md` (the key row; `docs_test.go` enforces it)
 - Test: the files above, `internal/config/config_test.go`
 
 **Interfaces:**
@@ -120,26 +120,26 @@
   3. If `maxDays > 0`: for each table, `DropDay` every day from `DayPartitions` with `day + maxDays <= today`.
   4. For each stream from `StreamsUpTo(today - 1 day)` with effective `d` where `d > 0 && (maxDays == 0 || d < maxDays)`: group by `(tenant, d)`; per group and `streamBatch`, `DaysWithRows(…, today - d days)`; if any, `DeleteDays` on the three tables and remember the tables for `ApplyDeletedMask`.
   5. `ApplyDeletedMask` per touched table. Errors are collected (`errors.Join`), each step continues, so one failing tenant does not stop the others.
-- [ ] **Step 4: Wire it.** `Load` default `RetentionEnabled = true`; `server.Run` starts `(&retention.Sweeper{…, Interval: cfg.Compactor.CompactionInterval}).Run(bg)` in the existing `loops` group when enabled; it stops with `stopLoops`. Log `msg="retention sweep"` with `dropped_days`, `deleted_stream_days` at info when non-zero. Add `compactor.retention_enabled` to `lokihouse.example.yaml` (commented, `# retention_enabled: true  # Loki's default is false`, and one line on what it does) and to the `compactor` table in `docs/reference/configuration.md`.
+- [ ] **Step 4: Wire it.** `Load` default `RetentionEnabled = true`; `server.Run` starts `(&retention.Sweeper{…, Interval: cfg.Compactor.CompactionInterval}).Run(bg)` in the existing `loops` group when enabled; it stops with `stopLoops`. Log `msg="retention sweep"` with `dropped_days`, `deleted_stream_days` at info when non-zero. Add `compactor.retention_enabled` to `runakefli.example.yaml` (commented, `# retention_enabled: true  # Loki's default is false`, and one line on what it does) and to the `compactor` table in `docs/reference/configuration.md`.
 - [ ] **Step 5: Run** `go test -race ./internal/retention/ ./internal/chstore/ ./internal/deletes/ ./internal/config/ ./internal/server/` and `make test-cluster`. Expected: PASS.
-- [ ] **Step 6: Commit** `feat(retention): apply retention_period and retention_stream to stored data` with the `CHANGELOG.md` lines (Added: sweeper and `compactor.retention_enabled`, default `true` where Loki's is `false`; Changed: a changed retention now applies to stored data). Add the divergence to `docs/divergences.md`: `compactor.retention_enabled` defaults to `true`; a Loki config with `retention_period` but no `retention_enabled` expires data on lokihouse that Loki keeps.
+- [ ] **Step 6: Commit** `feat(retention): apply retention_period and retention_stream to stored data` with the `CHANGELOG.md` lines (Added: sweeper and `compactor.retention_enabled`, default `true` where Loki's is `false`; Changed: a changed retention now applies to stored data). Add the divergence to `docs/divergences.md`: `compactor.retention_enabled` defaults to `true`; a Loki config with `retention_period` but no `retention_enabled` expires data on runakefli that Loki keeps.
 
 ### Task 4: Documentation (retention, runbook, upgrade, schema promise)
 
 **Files:**
 - Modify: `docs/reference/configuration.md` (Retention section), `docs/operations.md`, `docs/divergences.md`, `docs/migrating.md`, `docs/install/index.md`, `docs/index.md`, `README.md`, `debian/README.Debian`, `CHANGELOG.md`
 
-- [ ] **Step 1: Rewrite `### Retention`** in `configuration.md`: retention is on by default (`compactor.retention_enabled: true`, unlike Loki) and `false` turns it off; the sweeper applies the *current* config every `compactor.compaction_interval`, so changes reach existing data; semantics (UTC day D removed when `D + N <= today`, from the entry's timestamp); whole-day drops when no rule is shorter than the longest period, lightweight deletes plus `APPLY DELETED MASK` for stream rules; nothing expires while no lokihouse runs.
-- [ ] **Step 2: Add `## Retention` to `operations.md`** with (a) why retention is not stored per row (spec item 1: key columns cannot be mutated, so a stored value could never follow the config), (b) the runbook: free space at once with `ALTER TABLE <db>.logs_local ON CLUSTER <c> DROP PARTITION ID '20260801'` (same for `streams_local`, `stream_stats_hourly_local`; no `_local`/`ON CLUSTER` on a single server), and how to check: `SELECT partition, sum(rows) FROM system.parts WHERE database='lokihouse' AND table='logs_local' AND active GROUP BY partition ORDER BY partition`, (c) the sweeper runs on every instance and is idempotent.
-- [ ] **Step 3: Upgrade note** in `install/index.md` (new `## Upgrading to 0.9`): stop every instance, `lokihouse -config.file /etc/lokihouse/lokihouse.yaml -config.expand-env -schema.migrate`, needs free disk space for a copy of the largest table, then start. Mirror it in `debian/README.Debian`.
+- [ ] **Step 1: Rewrite `### Retention`** in `configuration.md`: retention is on by default (`compactor.retention_enabled: true`, unlike Loki) and `false` turns it off; the sweeper applies the *current* config every `compactor.compaction_interval`, so changes reach existing data; semantics (UTC day D removed when `D + N <= today`, from the entry's timestamp); whole-day drops when no rule is shorter than the longest period, lightweight deletes plus `APPLY DELETED MASK` for stream rules; nothing expires while no runakefli runs.
+- [ ] **Step 2: Add `## Retention` to `operations.md`** with (a) why retention is not stored per row (spec item 1: key columns cannot be mutated, so a stored value could never follow the config), (b) the runbook: free space at once with `ALTER TABLE <db>.logs_local ON CLUSTER <c> DROP PARTITION ID '20260801'` (same for `streams_local`, `stream_stats_hourly_local`; no `_local`/`ON CLUSTER` on a single server), and how to check: `SELECT partition, sum(rows) FROM system.parts WHERE database='runakefli' AND table='logs_local' AND active GROUP BY partition ORDER BY partition`, (c) the sweeper runs on every instance and is idempotent.
+- [ ] **Step 3: Upgrade note** in `install/index.md` (new `## Upgrading to 0.9`): stop every instance, `runakefli -config.file /etc/runakefli/runakefli.yaml -config.expand-env -schema.migrate`, needs free disk space for a copy of the largest table, then start. Mirror it in `debian/README.Debian`.
 - [ ] **Step 4: Remove the "schema may change without a migration" statements** from `docs/index.md:8`, `README.md:20`, `docs/install/index.md:306-307`, replacing them with: schema changes ship with a migration (`-schema.migrate`).
-- [ ] **Step 5: Divergences and migrating.** Replace the `Retention` divergence: retention is applied by a sweeper on day partitions, whole UTC days, at most 65 535 days, removed rows leave disk at the end of the sweep; the old "changing it does not affect stored data" sentence goes. Update the `### Retention` section of `migrating.md` the same way, and warn there that a Loki config with `retention_period` set but without `retention_enabled: true` expires data on lokihouse (set `retention_enabled: false` to keep Loki's behaviour).
+- [ ] **Step 5: Divergences and migrating.** Replace the `Retention` divergence: retention is applied by a sweeper on day partitions, whole UTC days, at most 65 535 days, removed rows leave disk at the end of the sweep; the old "changing it does not affect stored data" sentence goes. Update the `### Retention` section of `migrating.md` the same way, and warn there that a Loki config with `retention_period` set but without `retention_enabled: true` expires data on runakefli (set `retention_enabled: false` to keep Loki's behaviour).
 - [ ] **Step 6: Verify** `make docs` (mkdocs strict) and `go test ./internal/config/` (docs key coverage). Expected: PASS. **Commit** `docs: retention sweeper, runbook, schema migration`.
 
 ### Task 5: Full verification
 
 - [ ] **Step 1:** `make check` — PASS, coverage ≥ 85 %.
 - [ ] **Step 2:** `make test-cluster` — PASS.
-- [ ] **Step 3:** `make oracle-all` and `make oracle-cluster` — PASS (the oracle's Loki runs with `retention_enabled: true`; lokihouse must not expire oracle data: the fixtures are recent).
+- [ ] **Step 3:** `make oracle-all` and `make oracle-cluster` — PASS (the oracle's Loki runs with `retention_enabled: true`; runakefli must not expire oracle data: the fixtures are recent).
 - [ ] **Step 4:** `make soak` — heap and goroutine profiles flat (sweeper loop added).
 - [ ] **Step 5:** Manual upgrade rehearsal: start a 0.8.0 binary on a fresh database, push data, stop it, run the new binary without the flag (exit 1, message names `-schema.migrate`), run `-schema.migrate` (exit 0), start normally, query the old data back.

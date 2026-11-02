@@ -52,7 +52,7 @@ func (h lokiHandler) Do(ctx context.Context, req queryrangebase.Request) (queryr
 	}
 }
 
-// logQuery runs a log/range query on lokihouse's engine and returns Loki's
+// logQuery runs a log/range query on runakefli's engine and returns Loki's
 // queryrange response, as the querier does for the frontend.
 func (h lokiHandler) logQuery(ctx context.Context, req queryrangebase.Request) (queryrangebase.Response, error) {
 	params, err := queryrange.ParamsFromRequest(req)

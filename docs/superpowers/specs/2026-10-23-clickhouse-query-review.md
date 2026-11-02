@@ -49,7 +49,7 @@ production `logs` DDL, rows read taken from `system.query_log`.
    structured-metadata keys the grouping can see.
 7. **Structured-metadata indexes** `sm_keys`, `sm_vals` and the `line_ascii_escape`
    flag on `logs` (schema version 3). New databases get them from `schema.sql`;
-   version 2 databases are migrated offline by `lokihouse -schema.migrate`
+   version 2 databases are migrated offline by `runakefli -schema.migrate`
    with `ALTER TABLE` (no copy). Stored rows are not backfilled: they hold no
    `\u`-escaped data, and new parts are indexed as they are written or merged.
 8. **Pre-parser label filters** (`{…} | trace_id="x"`) push

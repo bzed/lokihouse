@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-// endpointCase is one Phase 3 API call compared between Loki and lokihouse.
+// endpointCase is one Phase 3 API call compared between Loki and runakefli.
 // check, when set, replaces the default CompareMut.
 type endpointCase struct {
 	name   string
@@ -126,7 +126,7 @@ func checkStats(t *testing.T, loki, house []byte) {
 		t.Fatalf("loki: %v: %s", err, loki)
 	}
 	if err := json.Unmarshal(house, &b); err != nil {
-		t.Fatalf("lokihouse: %v: %s", err, house)
+		t.Fatalf("runakefli: %v: %s", err, house)
 	}
 	if a.Streams != b.Streams || a.Entries != b.Entries || !within(float64(a.Bytes), float64(b.Bytes), 0.02) {
 		t.Errorf("index/stats differ:\nloki=%s\nhouse=%s", loki, house)
@@ -142,7 +142,7 @@ func within(a, b, rel float64) bool {
 
 // checkVolume compares index/volume(_range). The volume *value* is a documented
 // divergence (docs/divergences.md): a live query goes through Loki's querier,
-// which sums KB<<10 per flushed 10m chunk, while lokihouse uses raw head-block
+// which sums KB<<10 per flushed 10m chunk, while runakefli uses raw head-block
 // bytes per hourly bucket — so per-point values differ by ~15-30% structurally.
 // We therefore check the response *shape* exactly (result type, metric set,
 // timestamps, point count) and the per-metric volume *total* within 30%.
@@ -331,7 +331,7 @@ func lokiCount(t *testing.T, loki, tenant, query string, start, end time.Time) u
 
 // deletesOracle exercises the delete API end-to-end: push a stream, delete a
 // subset of its lines, then compare the filtered query results and the delete
-// list between Loki and lokihouse. It uses a fresh tenant (tenant-del) that is
+// list between Loki and runakefli. It uses a fresh tenant (tenant-del) that is
 // never queried before the delete request exists: Loki caches a tenant's delete
 // list for 5 minutes from its first lookup, so a pre-delete query would cache
 // the (empty) list and the delete would not take effect during the test.
@@ -351,7 +351,7 @@ func deletesOracle(t *testing.T, loki, house string, base time.Time) {
 	PushBoth(t, []string{loki, house}, body)
 
 	// Send the delete request to both stores. The end must be in the past
-	// relative to the store's clock: Loki (and lokihouse, copied from Loki)
+	// relative to the store's clock: Loki (and runakefli, copied from Loki)
 	// reject delete requests whose end is in the future. The data spans
 	// [base, base+20s]; base-24h..base+2m covers it with margin so it is safely
 	// in the past on both stores' clocks.

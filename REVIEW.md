@@ -26,11 +26,11 @@ Question: the branch's benchmark is not better than `main`'s, and
 Method: two worktrees under `/tmp`, `main` (`8099b8e`) and the branch
 (`37ee42f`). `make bench` ran three times on each, alternating, against the
 single node on `localhost:9000` (ClickHouse 26.9). Then three throwaway
-probes ran against lokihouse alone, with the bench data set (200 000 lines,
+probes ran against Rúnakefli alone, with the bench data set (200 000 lines,
 5 streams match `{env="prod"}`, 100 000 samples): a latency probe with a CPU
 profile, a drain timer patched into `SelectSamples`, and a concurrency probe
 (1–32 clients). The probes are not committed. Copies are at
-`/tmp/claude-1000/-home-bzed-workspace-vibe-lokihouse/2856d47f-d30a-406a-bc21-3246c8115d6f/scratchpad/zz_probe_test.go`
+`/tmp/claude-1000/-home-bzed-workspace-vibe-runakefli/2856d47f-d30a-406a-bc21-3246c8115d6f/scratchpad/zz_probe_test.go`
 and `…/zz_probe_conc_test.go`.
 
 **Verdict: drop the sample fan-out, here and on `main`. Keep the
@@ -46,7 +46,7 @@ has to be reverted there.
 
 ### What `make bench` shows
 
-lokihouse p50 on `main` vs. the branch's min–max, three runs each (5, 10
+Rúnakefli p50 on `main` vs. the branch's min–max, three runs each (5, 10
 and 10 rounds per query):
 
 | query | `main` | branch, default | branch, single connection |
@@ -177,7 +177,7 @@ follow-up after a CI failure). Method: as before. I read every changed
 line, then ran the new regression test against both the old and the new
 code, on a single node and on the 2×2 cluster, in worktrees under `/tmp`.
 The probe is not committed. A copy is at
-`/tmp/claude-1000/-home-bzed-workspace-vibe-lokihouse/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review5_test.go`.
+`/tmp/claude-1000/-home-bzed-workspace-vibe-runakefli/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review5_test.go`.
 
 **Verdict: merge-ready.** All the fixes I claimed are verified. Two
 optional notes follow (N5, N6).
@@ -243,7 +243,7 @@ pass.
 | `test-cluster` (`go test -count=1 ./...` on the cluster) | PASS: every package, chstore 383.9 s |
 | oracle `off` / `downstream` / `on` | PASS (109.4 s / 104.7 s / 108.7 s) |
 | oracle, cluster | PASS (57.4 s) |
-| soak, `LOKIHOUSE_SOAK_DURATION=4m` | PASS (242.6 s) |
+| soak, `RUNAKEFLI_SOAK_DURATION=4m` | PASS (242.6 s) |
 
 Not run: `make bench`, the full 10-minute soak.
 
@@ -265,7 +265,7 @@ Commits: `918a35c` (R2), `ad38085` (R1, R3), `4bba64c` (R5), `9919600`
 every changed line, then re-ran the earlier probes plus three new ones
 against HEAD, in a worktree under `/tmp`, on a single node and on the 2×2
 cluster. The probes are not committed. Copies are at
-`/tmp/claude-1000/-home-bzed-workspace-vibe-lokihouse/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review2_test.go`
+`/tmp/claude-1000/-home-bzed-workspace-vibe-runakefli/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review2_test.go`
 and `…/scratchpad/zz_review3_test.go`.
 
 **Verdict: merge-ready once one test is fixed.** R1 and R2 are fixed and
@@ -427,7 +427,7 @@ through ch1.
 | `test-cluster`, run 2 | PASS (chstore 383 s) |
 | oracle `off` / `downstream` / `on` | PASS (138.6 s / 103.8 s / 46.6 s) |
 | oracle, cluster | PASS (57.7 s) |
-| soak, `LOKIHOUSE_SOAK_DURATION=4m` (median plus the new end-heap check) | PASS (242.7 s) |
+| soak, `RUNAKEFLI_SOAK_DURATION=4m` (median plus the new end-heap check) | PASS (242.7 s) |
 
 Not run: `make bench`, the full 10-minute soak. (My own first cluster pass
 broke on a shell-quoting mistake in the gate script and was discarded; the
@@ -455,7 +455,7 @@ Fix commits: `de5cc68` (F2), `a321011` (F3, F5, F7), `702ab64` (F1, F6),
 changed line, then probed the claims that can only be checked live. The
 probes were throwaway tests in a separate worktree under `/tmp`, run on
 the 2×2 test cluster, and were not committed. A copy is kept at
-`/tmp/claude-1000/-home-bzed-workspace-vibe-lokihouse/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review2_test.go`.
+`/tmp/claude-1000/-home-bzed-workspace-vibe-runakefli/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review2_test.go`.
 
 **Verdict: not merge-ready yet, but close.** F2, F3, F4, F6, F7 and F8 are
 fixed. F1 is fixed for the case it was reported on (independent concurrent
@@ -589,11 +589,11 @@ the branch is correct at normal load; none of them exercises R1 or R2.
 
 | Gate | Result |
 |---|---|
-| `LOKIHOUSE_TEST_CH_CLUSTER=lokihouse make check` | PASS: golangci-lint 0 issues, govulncheck clean (allowlisted `GO-2026-5115` only), total coverage **88.5 %** |
+| `RUNAKEFLI_TEST_CH_CLUSTER=runakefli make check` | PASS: golangci-lint 0 issues, govulncheck clean (allowlisted `GO-2026-5115` only), total coverage **88.5 %** |
 | `go test -race -count=1 ./internal/chstore/...` (cluster) | PASS (300 s), including the new pool and fan-out tests |
 | oracle `off` / `downstream` / `on` | PASS (104.0 s / 42.4 s / 41.5 s) |
 | oracle, cluster | PASS (52.3 s) |
-| soak, `LOKIHOUSE_SOAK_DURATION=4m` (new median criterion) | PASS (242.5 s) |
+| soak, `RUNAKEFLI_SOAK_DURATION=4m` (new median criterion) | PASS (242.5 s) |
 
 Not run: `make bench`, the full 10-minute soak.
 
@@ -657,8 +657,8 @@ window plan. The docs are behind the code in three places.
 ## 2. Verification results (executed in this review)
 
 All AGENTS.md gates for a query/SQL change pass. Every gate ran against the
-local 2×2 cluster (`LOKIHOUSE_TEST_CH_ADDR=localhost:19001`). The cluster
-oracle also set `LOKIHOUSE_TEST_CH_CLUSTER=lokihouse`; the three
+local 2×2 cluster (`RUNAKEFLI_TEST_CH_ADDR=localhost:19001`). The cluster
+oracle also set `RUNAKEFLI_TEST_CH_CLUSTER=runakefli`; the three
 `oracle-all` modes ran against ch1 without it. No dedicated single server
 on `localhost:9000` is published here, so ch1 stood in for it. The gates
 prove that the branch is correct on small data; they do not cover F1–F3,
@@ -667,16 +667,16 @@ queries.
 
 | Gate | Command | Result |
 |---|---|---|
-| fmt, vet, lint, vuln, coverage | `LOKIHOUSE_TEST_CH_CLUSTER=lokihouse make check` | PASS: golangci-lint 0 issues; govulncheck clean (only the existing allowlisted `GO-2026-5115`); all packages pass; total coverage **88.4 %** (min 85 %) |
+| fmt, vet, lint, vuln, coverage | `RUNAKEFLI_TEST_CH_CLUSTER=runakefli make check` | PASS: golangci-lint 0 issues; govulncheck clean (only the existing allowlisted `GO-2026-5115`); all packages pass; total coverage **88.4 %** (min 85 %) |
 | race, chstore, cluster | `go test -race -count=1 ./internal/chstore/...` | PASS (309 s) |
-| oracle, pushdown off | `LOKIHOUSE_ORACLE_PUSHDOWN=off go test -tags oracle ./test/oracle/...` | PASS (49.5 s) |
-| oracle, downstream | `LOKIHOUSE_ORACLE_PUSHDOWN=downstream …` | PASS (47.3 s) |
+| oracle, pushdown off | `RUNAKEFLI_ORACLE_PUSHDOWN=off go test -tags oracle ./test/oracle/...` | PASS (49.5 s) |
+| oracle, downstream | `RUNAKEFLI_ORACLE_PUSHDOWN=downstream …` | PASS (47.3 s) |
 | oracle, on | `go test -tags oracle ./test/oracle/...` | PASS (106.9 s) |
-| oracle, cluster | `LOKIHOUSE_TEST_CH_CLUSTER=lokihouse go test -tags oracle ./test/oracle/...` | PASS (58.8 s) |
+| oracle, cluster | `RUNAKEFLI_TEST_CH_CLUSTER=runakefli go test -tags oracle ./test/oracle/...` | PASS (58.8 s) |
 
 Not run: `make bench` (60 min), `make soak`, the mkdocs build.
 
-Live ClickHouse checks (cluster `lokihouse`, 2 shards × 2 replicas,
+Live ClickHouse checks (cluster `runakefli`, 2 shards × 2 replicas,
 `clickhouse-server 26.9.14.10`), run from throwaway tests in a separate
 worktree under `/tmp`:
 
@@ -694,7 +694,7 @@ worktree under `/tmp`:
 | 12 concurrent 16-stream queries, default pool (100/20, 5 s), 3 000-row blocks | fan-out: **8/12 failed** `acquire conn timeout`; global read (`SetSampleFanoutMax(0)`): 0/12 (F1) |
 
 The repro test is kept at
-`/tmp/claude-1000/-home-bzed-workspace-vibe-lokihouse/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review_pool_test.go`.
+`/tmp/claude-1000/-home-bzed-workspace-vibe-runakefli/f67d784b-eada-4098-8770-1687c6456c80/scratchpad/zz_review_pool_test.go`.
 It is not committed.
 
 ## 3. Workload summary (architecture-advisor)
@@ -909,7 +909,7 @@ line)`, the *extracted* sample labels plus the line (`pkg/chunkenc/memchunk.go:1
 `unordered.go:364` at `bc1962860a16`). Loki's `mergeSampleIterator`
 dedups by this hash within one stream hash and timestamp. The two
 definitions differ when a query drops the metadata (`| drop …`): Loki's
-hashes collide, while `entry_hash` stays distinct. lokihouse currently
+hashes collide, while `entry_hash` stays distinct. Rúnakefli currently
 feeds no sample merge that dedups (`internal/multitenant` uses the sort
 iterators), so the difference is not observable, and calling the commit
 a refactor is defensible. Record the reason in a comment, so a future
@@ -921,7 +921,7 @@ difference. Category: **derived**.
 `1117235` rewrites `docs/benchmark.md` with an unreleased run. The page and
 the previous plan say it records release runs, and the README summary
 (`8690724`) still shows the 0.12.0 numbers, so the two now disagree. The
-text also says lokihouse is "faster than Loki on every query except `log
+text also says Rúnakefli is "faster than Loki on every query except `log
 filter`", but `labels` and `series` (0 s vs 2 ms) are behind too. Consider
 reverting `1117235` and re-running at the next release, or labelling the
 section as a pre-release measurement.

@@ -1,22 +1,26 @@
-# mkdocs configuration for the lokihouse documentation site.
+# mkdocs configuration for the runakefli documentation site.
 #
 # The site is a stable "current" set of pages. The canonical divergences list
 # (docs/divergences.md) lives in the repo and is linked to from the site, not
 # duplicated on it.
 #
 # CI (see .github/workflows/docs.yml) runs `mkdocs build --strict` and
-# deploys to GitHub Pages and mirrors the site to https://lokihouse.dev/.
+# deploys to GitHub Pages and mirrors the site to https://runakefli.app/.
 #
 # NOTE: before the first deploy, the repo's Pages setting must be configured:
 #   Settings → Pages → Source: "GitHub Actions" (branch: main)
 
-site_name: lokihouse
-site_description: lokihouse is a Grafana Loki-compatible log server. It speaks Loki's HTTP API and LogQL and stores and queries the logs in ClickHouse.
-site_url: https://lokihouse.dev/
+site_name: Rúnakefli
+site_description: Rúnakefli (runakefli) is a Loki®-compatible log server. It speaks the Loki® HTTP API and LogQL and stores and queries the logs in ClickHouse®.
+site_url: https://runakefli.app/
 site_author: Bernd Zeimetz
+copyright: >-
+  Loki® and Grafana® are trademarks of Grafana Labs; ClickHouse® is a registered
+  trademark of ClickHouse, Inc. Rúnakefli is an independent project, not
+  affiliated with, endorsed or sponsored by them.
 
-repo_name: bzed/lokihouse
-repo_url: https://github.com/bzed/lokihouse
+repo_name: bzed/runakefli
+repo_url: https://github.com/bzed/runakefli
 
 theme:
   name: material
@@ -51,10 +55,14 @@ extra_css:
   - stylesheets/extra.css
 
 extra:
+  # Open Graph and Twitter text: no third-party marks (the meta description may name them)
+  social_description: >-
+    Log storage on ClickHouse® that speaks LogQL: one static Go binary, Debian
+    packages and container images.
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/bzed/lokihouse
-      name: lokihouse on GitHub
+      link: https://github.com/bzed/runakefli
+      name: runakefli on GitHub
 
 markdown_extensions:
   - admonition
@@ -96,7 +104,7 @@ nav:
   - Installation: install/index.md
   - Operations: operations.md
   - Benchmark: benchmark.md
-  - Migrating from Loki: migrating.md
+  - Migrating to Rúnakefli: migrating.md
   - Roadmap: roadmap.md
   - Reference:
       - Configuration: reference/configuration.md

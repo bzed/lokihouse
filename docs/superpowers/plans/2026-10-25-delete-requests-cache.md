@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go; Loki `pkg/compactor/deletion` at the pinned commit (`bc1962860a16`); ClickHouse 26.9; testify; goleak.
 
-**Spec:** `docs/benchmark.md` (Result: the `log filter` cause), `docs/divergences.md` (Delete requests: "Query-time delete visibility"), and the measured request timeline: per `log filter` request lokihouse runs `delete_requests` (≈2 ms to the next query), then stream resolution (≈2 ms), then the 3 ms read. Each runs only after the previous one returns.
+**Spec:** `docs/benchmark.md` (Result: the `log filter` cause), `docs/divergences.md` (Delete requests: "Query-time delete visibility"), and the measured request timeline: per `log filter` request runakefli runs `delete_requests` (≈2 ms to the next query), then stream resolution (≈2 ms), then the 3 ms read. Each runs only after the previous one returns.
 
 **Not in this plan:** running the delete lookup and the stream resolution concurrently. After this change the lookup is an in-memory map read for every query except a tenant's first, so overlapping it with stream resolution saves nothing measurable. The remaining gap after this plan is stream resolution itself (≈2 ms on `streams`), which is a separate investigation.
 
@@ -43,7 +43,7 @@
 - Consumes: `(*deletes.Store).GetAllDeleteRequestsForUser(ctx, userID string, forQuerytimeFiltering bool, tr *deletion.TimeRange) ([]deletionproto.DeleteRequest, error)` (exists).
 - Produces:
   - `func NewQueryClient(s *Store, l deletion.Limits, m *deletion.DeleteRequestClientMetrics, opts ...deletion.DeleteRequestsStoreOption) (deletion.DeleteRequestsClient, error)`: returns `deletion.NewPerTenantDeleteRequestsClient(cached, l)`, where `cached` is `deletion.NewDeleteRequestsClient(compactorClient{s}, m, "querier", opts...)`. The caller must call `Stop()`.
-  - Unexported `type compactorClient struct{ *Store }` satisfying `deletion.CompactorClient`: `GetCacheGenerationNumber(ctx, userID) (string, error)` returns `"", nil` (lokihouse has no results cache to invalidate); `Name() string` returns `"lokihouse"`; `Stop()` does nothing (the store owns no goroutine). Doc comment on each method says why.
+  - Unexported `type compactorClient struct{ *Store }` satisfying `deletion.CompactorClient`: `GetCacheGenerationNumber(ctx, userID) (string, error)` returns `"", nil` (runakefli has no results cache to invalidate); `Name() string` returns `"runakefli"`; `Stop()` does nothing (the store owns no goroutine). Doc comment on each method says why.
 
 The tests use `newStore(t)` from `store_test.go` and a fake limits type in the test file:
 
@@ -169,7 +169,7 @@ Expected: `ok` for all four. goleak reports no `deleteRequestsClient.updateLoop`
 - [ ] **Step 5: Update the docs in the same commit**
 
 - `CHANGELOG.md`, `## [Unreleased]` → `### Changed`: "Queries look up a tenant's pending delete requests through Loki's delete-requests cache, refreshed every 5 minutes, instead of querying ClickHouse every time: as in Loki, a new or cancelled delete request can take up to 5 minutes to change query results."
-- `docs/divergences.md:55`: delete the "Query-time delete visibility" entry. lokihouse now behaves like Loki, so it is no longer a divergence. Keep the oracle's workaround described where `test/oracle/phase3_test.go:291-296` already documents it.
+- `docs/divergences.md:55`: delete the "Query-time delete visibility" entry. runakefli now behaves like Loki, so it is no longer a divergence. Keep the oracle's workaround described where `test/oracle/phase3_test.go:291-296` already documents it.
 
 - [ ] **Step 6: Run the gates**
 
@@ -190,8 +190,8 @@ git commit -m "feat: serve query-time delete filtering from Loki's delete-reques
 
 - [ ] **Step 1: Run the benchmark twice**
 
-Run: `make bench` twice, with `LOKIHOUSE_LOKI_BIN` pointing at the cached Loki binary.
-Expected: `log filter` lokihouse median ≈ 6.5–7 ms (from 8.7 ms), ratio ≈ 1.0. No other query slower than the recorded table by more than its p90 spread. Both runs pass every `Compare`.
+Run: `make bench` twice, with `RUNAKEFLI_LOKI_BIN` pointing at the cached Loki binary.
+Expected: `log filter` runakefli median ≈ 6.5–7 ms (from 8.7 ms), ratio ≈ 1.0. No other query slower than the recorded table by more than its p90 spread. Both runs pass every `Compare`.
 
 - [ ] **Step 2: Update `docs/benchmark.md`**
 
@@ -212,8 +212,8 @@ the measurement decided whether it belongs in a plan.
 
 | Gap to Loki (sharded) | Cause | Measured | Verdict |
 |---|---|---|---|
-| `unwrap quantile`, 70 ms against 57 ms | lokihouse's engine (Loki's code) runs single-threaded per query, ≈38 ms of the 70 ms; Loki shards the query and evaluates the shards in parallel. Unsharded Loki is level (68 ms) | CPU profile: engine ≈38 ms/query, Go read and extraction pipelined with it | **Worth its own design and plan.** Reuse Loki's `logql.NewShardMapper` + `logql.NewDownstreamEngine` with a local downstreamer that evaluates shard legs in parallel on lokihouse's querier. The querier must honour `SelectSampleParams` shards (it ignores them today) by filtering resolved streams by shard. Open questions for the design: the number of shards (Loki derives it from index stats); the connection budget for concurrent legs (legs are independent, so they can queue on the pool but not deadlock it, unlike the dropped fan-out, but each leg holds one connection); oracle coverage of sharded results. Estimate (derived, not measured): with 5 series the engine part drops to ≈8–10 ms, about 40 ms in total |
-| `log filter`, remaining ≈2 ms after this plan | stream resolution on `streams` before the read | client-side p50: `SELECT 1` 0.35 ms; resolution 1.43 ms as today, 1.44 ms with `LIMIT 1 BY`, 1.22 ms without `GROUP BY`; server reads 1 mark and 10 rows | **No query-level fix.** The SQL forms differ by ≤ 0.2 ms; the rest is ClickHouse's per-query floor. Only an in-process stream index would remove it, and lokihouse instances cannot see each other's new streams without a shared invalidation channel. Not worth it for ≈1 ms |
+| `unwrap quantile`, 70 ms against 57 ms | runakefli's engine (Loki's code) runs single-threaded per query, ≈38 ms of the 70 ms; Loki shards the query and evaluates the shards in parallel. Unsharded Loki is level (68 ms) | CPU profile: engine ≈38 ms/query, Go read and extraction pipelined with it | **Worth its own design and plan.** Reuse Loki's `logql.NewShardMapper` + `logql.NewDownstreamEngine` with a local downstreamer that evaluates shard legs in parallel on runakefli's querier. The querier must honour `SelectSampleParams` shards (it ignores them today) by filtering resolved streams by shard. Open questions for the design: the number of shards (Loki derives it from index stats); the connection budget for concurrent legs (legs are independent, so they can queue on the pool but not deadlock it, unlike the dropped fan-out, but each leg holds one connection); oracle coverage of sharded results. Estimate (derived, not measured): with 5 series the engine part drops to ≈8–10 ms, about 40 ms in total |
+| `log filter`, remaining ≈2 ms after this plan | stream resolution on `streams` before the read | client-side p50: `SELECT 1` 0.35 ms; resolution 1.43 ms as today, 1.44 ms with `LIMIT 1 BY`, 1.22 ms without `GROUP BY`; server reads 1 mark and 10 rows | **No query-level fix.** The SQL forms differ by ≤ 0.2 ms; the rest is ClickHouse's per-query floor. Only an in-process stream index would remove it, and runakefli instances cannot see each other's new streams without a shared invalidation channel. Not worth it for ≈1 ms |
 | `labels` 1.6 ms against 0.4 ms; `series` 1.8 ms against 1.5 ms | one ClickHouse query against Loki's in-memory ingester index | the all-streams query: 1.10 ms client-side | **Leave.** Same floor as above; the absolute gap is ≈1 ms |
 | Go time between round trips | stream resolution → read start | ≈0.3 ms (query_log timeline) | **Leave** |
 

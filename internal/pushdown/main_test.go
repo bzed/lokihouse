@@ -14,7 +14,7 @@ func TestMain(m *testing.M) {
 
 func leakIgnores() []goleak.Option {
 	// The bce-sdk-go logger goroutine is started in the package's init and
-	// lives for the process; it is not lokihouse's to stop.
+	// lives for the process; it is not runakefli's to stop.
 	return []goleak.Option{
 		goleak.IgnoreTopFunction("github.com/baidubce/bce-sdk-go/util/log.NewLogger.func1"),
 	}

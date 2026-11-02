@@ -12,6 +12,6 @@ func TestCompactorClient_Stubs(t *testing.T) {
 	gen, err := c.GetCacheGenerationNumber(t.Context(), "t1")
 	require.NoError(t, err)
 	require.Empty(t, gen)
-	require.Equal(t, "lokihouse", c.Name())
+	require.Equal(t, "runakefli", c.Name())
 	c.Stop()
 }

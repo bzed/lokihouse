@@ -58,7 +58,7 @@ func tailOracle(t *testing.T, loki, house string) {
 	// now..now+19ms and the dial happens after the count wait).
 	startS := strconv.FormatInt(now.Add(-30*time.Second).UnixNano(), 10)
 	clients := map[string]*websocket.Conn{}
-	for name, u := range map[string]string{"loki": loki, "lokihouse": house} {
+	for name, u := range map[string]string{"loki": loki, "runakefli": house} {
 		base := strings.TrimSuffix(u, "/")
 		q := url.Values{"query": {`{app="tail"}`}, "start": {startS}, "limit": {"100"}}
 		wsURL := "ws" + strings.TrimPrefix(base, "http") + "/loki/api/v1/tail?" + q.Encode()
@@ -86,11 +86,11 @@ func tailOracle(t *testing.T, loki, house string) {
 
 	// 4. Compare the sorted (labels, ts, line) lists; require n from each.
 	lk := normTail(got["loki"])
-	lh := normTail(got["lokihouse"])
+	lh := normTail(got["runakefli"])
 	requireEq := func(a, b []string, what string) {
 		t.Helper()
 		if len(a) != len(b) {
-			t.Fatalf("%s: loki %d entries vs lokihouse %d", what, len(a), len(b))
+			t.Fatalf("%s: loki %d entries vs runakefli %d", what, len(a), len(b))
 		}
 		for i := range a {
 			if a[i] != b[i] {
@@ -99,10 +99,10 @@ func tailOracle(t *testing.T, loki, house string) {
 		}
 	}
 	if len(lk) != n || len(lh) != n {
-		t.Fatalf("tail: loki returned %d entries, lokihouse returned %d, want %d each", len(lk), len(lh), n)
+		t.Fatalf("tail: loki returned %d entries, runakefli returned %d, want %d each", len(lk), len(lh), n)
 	}
 	requireEq(lk, lh, "tail")
-	t.Logf("tailOracle: %d entries matched between loki and lokihouse", n)
+	t.Logf("tailOracle: %d entries matched between loki and runakefli", n)
 }
 
 // waitTailCount polls the instant count_over_time until the store reports want

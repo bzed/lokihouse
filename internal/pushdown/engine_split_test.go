@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/multitenant"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/multitenant"
 )
 
 func splitEngine(t *testing.T, mode Mode) (*Engine, *logql.QueryEngine, *SplitMetrics, time.Time) {

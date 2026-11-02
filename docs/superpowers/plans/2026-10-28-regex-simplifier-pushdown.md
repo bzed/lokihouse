@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Loki `pkg/logql/log` at the pinned `LOKI_COMMIT`, `github.com/grafana/regexp/syntax` (already in Loki's module graph, currently `// indirect`), ClickHouse 26.9.
 
-**Spec:** No separate spec file. The analysis (2026-10-27/28 session) found the following. For `sum(rate({app=~"app[1-3]"} |~ "level=(warn|error)" [1m]))`, lokihouse emits `line LIKE '%level=%' AND match(line, 'level=(warn|error)')`. The `LIKE` matches every line, and `match()` runs on all of them. `(line LIKE '%level=warn%' OR line LIKE '%level=error%')` measured 15–20 % faster in ClickHouse, on local disk, S3 + cache and uncached S3 alike. An OR of `LIKE`s on the same text index can skip granules when the needles are selective. Loki itself evaluates this filter as `contains("level=warn") || contains("level=error")` (`parseRegexpFilter` → `RegexSimplifier`), so the new SQL equals Loki's semantics by construction.
+**Spec:** No separate spec file. The analysis (2026-10-27/28 session) found the following. For `sum(rate({app=~"app[1-3]"} |~ "level=(warn|error)" [1m]))`, runakefli emits `line LIKE '%level=%' AND match(line, 'level=(warn|error)')`. The `LIKE` matches every line, and `match()` runs on all of them. `(line LIKE '%level=warn%' OR line LIKE '%level=error%')` measured 15–20 % faster in ClickHouse, on local disk, S3 + cache and uncached S3 alike. An OR of `LIKE`s on the same text index can skip granules when the needles are selective. Loki itself evaluates this filter as `contains("level=warn") || contains("level=error")` (`parseRegexpFilter` → `RegexSimplifier`), so the new SQL equals Loki's semantics by construction.
 
 ## Global Constraints
 
@@ -19,16 +19,16 @@
 - SQL arguments are bound parameters (`?`); literals are escaped with the existing `escapedLike`.
 - `make check` passes (gofmt/goimports, vet, golangci-lint, govulncheck, `-race` tests, coverage ≥ 85 %).
 - The change touches query/SQL code, so `make test-cluster`, `make oracle-all` and `make oracle-cluster` pass too.
-- ClickHouse-backed tests need a server (`podman run -d -p 9000:9000 -e CLICKHOUSE_SKIP_USER_SETUP=1 docker.io/clickhouse/clickhouse-server:26.9`, or `LOKIHOUSE_TEST_CH_ADDR`). Another benchmark may be running on this host. Use your own container on a free port and do not touch `lhb-*`, `ch1`–`ch4` or `keeper`.
-- Known oracle failure, not caused by this plan: the six `TestOracle/p3/*/index_stats_*` tests fail on `main` (`bf8e4fd`) in every oracle mode and in `oracle-cluster` (Loki reports fewer chunks and entries than lokihouse). Every other oracle case must pass. Do not try to fix or skip those six here.
-- The oracle's Loki at the pinned commit is already built at `/home/bzed/workspace/vibe/lokihouse/test/oracle/.cache/loki-bin/loki-39c256e50a80`. Pass it with `LOKIHOUSE_LOKI_BIN=…` from a worktree instead of rebuilding.
+- ClickHouse-backed tests need a server (`podman run -d -p 9000:9000 -e CLICKHOUSE_SKIP_USER_SETUP=1 docker.io/clickhouse/clickhouse-server:26.9`, or `RUNAKEFLI_TEST_CH_ADDR`). Another benchmark may be running on this host. Use your own container on a free port and do not touch `lhb-*`, `ch1`–`ch4` or `keeper`.
+- Known oracle failure, not caused by this plan: the six `TestOracle/p3/*/index_stats_*` tests fail on `main` (`bf8e4fd`) in every oracle mode and in `oracle-cluster` (Loki reports fewer chunks and entries than runakefli). Every other oracle case must pass. Do not try to fix or skip those six here.
+- The oracle's Loki at the pinned commit is already built at `/home/bzed/workspace/vibe/runakefli/test/oracle/.cache/loki-bin/loki-39c256e50a80`. Pass it with `RUNAKEFLI_LOKI_BIN=…` from a worktree instead of rebuilding.
 - `CHANGELOG.md` gets one line under `## [Unreleased]` → `### Changed`, in the same commit as the behaviour change.
 - No entry in `docs/divergences.md`: results stay equal to Loki's. If the property test finds a case where they differ, the regex must fall back to the old path (do not add a divergence).
 
 ## Review Focus
 
 1. **Case-insensitive regexes** (`(?i)error|warn`, `f|f(?i)oo`): Loki uses case-folding contains filters, which ILIKE does not reproduce (k/s folding). Expected: these fall back to today's path (`ok == false`). Task 1 tests `(?i)error|warn`.
-2. **Regexes Loki reduces to `TrueFilter` / `ExistsFilter`** (`.*`, `.+`, `(?:)`). Expected: fall back, and never emit SQL that drops or keeps lines Loki keeps or drops. `foo|.*` is the trap, and it is a **Loki bug** at the pinned commit (verified 2026-10-28 with `log.NewFilter`). `newOrFilter` drops a `TrueFilter` leg instead of making the OR true, so Loki filters `foo|.*`, `.*|foo` and `foo|(?:)` as `contains("foo")` and drops `"bar"`, although the regex matches every line. lokihouse already returns Loki's result today, because `RegexExact` rejects `.` and the query runs in Loki's engine. The helper must keep reproducing Loki (`LIKE '%foo%'`): a correct answer would be an undocumented divergence. Task 1 tests the unit case. Task 2 adds oracle corpus cases, so a future Loki bump that fixes the bug fails the oracle until the pushdown follows.
+2. **Regexes Loki reduces to `TrueFilter` / `ExistsFilter`** (`.*`, `.+`, `(?:)`). Expected: fall back, and never emit SQL that drops or keeps lines Loki keeps or drops. `foo|.*` is the trap, and it is a **Loki bug** at the pinned commit (verified 2026-10-28 with `log.NewFilter`). `newOrFilter` drops a `TrueFilter` leg instead of making the OR true, so Loki filters `foo|.*`, `.*|foo` and `foo|(?:)` as `contains("foo")` and drops `"bar"`, although the regex matches every line. runakefli already returns Loki's result today, because `RegexExact` rejects `.` and the query runs in Loki's engine. The helper must keep reproducing Loki (`LIKE '%foo%'`): a correct answer would be an undocumented divergence. Task 1 tests the unit case. Task 2 adds oracle corpus cases, so a future Loki bump that fixes the bug fails the oracle until the pushdown follows.
 3. **Literals with LIKE metacharacters** (`50%_x`, a backslash): must be escaped. Expected: `%50\%\_x%`. Task 1 tests it, and the ClickHouse property test includes `%`/`_` in its lines.
 4. **`!~` with a simplifiable regex on empty and non-ASCII lines** (`""`, `"ä"`, `"\xff"`). Expected: identical keep/drop to Loki's `log.NewFilter(re, LineMatchNotRegexp)`. Task 1's ClickHouse property test runs every regex in both polarities over such lines.
 5. **Non-ASCII literal regexes** (`fehler|ä`), which `RegexExact` rejects today. Expected: they become exact pushdowns, and ClickHouse's byte-wise `LIKE` agrees with Loki's `bytes.Contains`. Task 1's property test includes `fehler|ä`. Task 2 asserts that `ExactFilterSQL` accepts it.
@@ -88,7 +88,7 @@ Return `ok == false` when parsing fails, `Simplify` reports false, `f.Matches(co
 Run: `go test ./internal/chstore -run TestSimplifiedRegexSQL -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Write the ClickHouse property test** `TestSimplifiedRegexSQL_MatchesLoki`. Connect as `prefilter_property_test.go` does (`LOKIHOUSE_TEST_CH_ADDR`, default `localhost:9000`).
+- [ ] **Step 5: Write the ClickHouse property test** `TestSimplifiedRegexSQL_MatchesLoki`. Connect as `prefilter_property_test.go` does (`RUNAKEFLI_TEST_CH_ADDR`, default `localhost:9000`).
   - Regexes: every `ok` entry above plus `err|error`, `ab(cc|dd)`, `x(?:)|y`, `a .*(bb|cc)`, `foo(.*bar|baz)`. The last two must come back `ok == false`. The test skips regexes the helper rejects, but asserts that these two are rejected.
   - Lines: 300 seeded-random concatenations (`rand.NewSource(42)`) of `{"level=warn", "level=error", "GET", "POST", "DELETE", "error", "err", "foo", "50%_x", "y", "ä", "\xff", "%", "_", "abcc", "abdd", "a x bb", "foo x bar", "foobaz", " "}`, plus `""`.
   - For each regex and each polarity (`log.LineMatchRegexp`, `log.LineMatchNotRegexp`), compute `want[i] = log.NewFilter(re, ty).Filter([]byte(line))`. Get ClickHouse's answers with one `SELECT arrayMap(line -> <f.SQL>, ?)` per regex and polarity (args: `f.Args…`, then the lines).
@@ -96,7 +96,7 @@ Expected: PASS.
 
 - [ ] **Step 6: Run it** (ClickHouse running)
 
-Run: `LOKIHOUSE_TEST_CH_ADDR=127.0.0.1:<port> go test ./internal/chstore -run TestSimplifiedRegexSQL -count=1 -race`
+Run: `RUNAKEFLI_TEST_CH_ADDR=127.0.0.1:<port> go test ./internal/chstore -run TestSimplifiedRegexSQL -count=1 -race`
 Expected: PASS. If a case mismatches, make `simplifiedRegexSQL` return `ok == false` for that shape. Do not change the expected values.
 
 - [ ] **Step 7: `go mod tidy`, then commit**
@@ -152,7 +152,7 @@ Expected: FAIL on the changed entries (old `LIKE … AND match(…)` / `NOT matc
 
 - [ ] **Step 4: Run the package tests**
 
-Run: `LOKIHOUSE_TEST_CH_ADDR=127.0.0.1:<port> go test ./internal/chstore ./internal/pushdown -count=1 -race`
+Run: `RUNAKEFLI_TEST_CH_ADDR=127.0.0.1:<port> go test ./internal/chstore ./internal/pushdown -count=1 -race`
 Expected: PASS, including `TestLineFilterSQL_UsesTextIndex` (rows read < rows/2 for `needle|haystack`) and `TestPrefilter_Necessary`. Other tests that pin SQL for a simplifiable regex may still expect the old SQL: `line LIKE ?` without parentheses, or `match(` in a generated query. Update those expectations to the new shape. Change code only if the semantics differ.
 
 - [ ] **Step 5: Extend the oracle corpus**

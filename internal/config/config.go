@@ -1,4 +1,4 @@
-// Package config loads and validates the lokihouse YAML configuration file.
+// Package config loads and validates the runakefli YAML configuration file.
 // It supports strict YAML parsing (unknown keys are an error), environment variable
 // expansion, and password_file for ClickHouse credentials.
 package config
@@ -21,11 +21,11 @@ import (
 	"github.com/grafana/loki/v3/pkg/validation"
 	yaml "go.yaml.in/yaml/v4"
 
-	"github.com/bzed/lokihouse/internal/chstore"
-	"github.com/bzed/lokihouse/internal/ruler"
+	"github.com/bzed/runakefli/internal/chstore"
+	"github.com/bzed/runakefli/internal/ruler"
 )
 
-// Config is the top-level lokihouse configuration.
+// Config is the top-level runakefli configuration.
 type Config struct {
 	Server struct {
 		HTTPListenAddress           string         `yaml:"http_listen_address"`
@@ -93,7 +93,7 @@ func Load(path string, expandEnv bool) (*Config, error) {
 	c.Server.GracefulShutdownTimeout = 30 * time.Second
 	c.Server.RegisterInstrumentation = true // Loki/dskit default
 	c.ClickHouse.Addr = []string{"localhost:9000"}
-	c.ClickHouse.Database = "lokihouse"
+	c.ClickHouse.Database = "runakefli"
 	c.ClickHouse.Username = "default"
 	c.ClickHouse.Replicated = true
 	// clickhouse-go's own defaults (30s dial, 10 connections) cap one instance

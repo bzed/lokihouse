@@ -8,7 +8,7 @@ import (
 	dskitlog "github.com/grafana/dskit/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bzed/lokihouse/internal/logging"
+	"github.com/bzed/runakefli/internal/logging"
 )
 
 func TestNew_LevelAndFormat(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 
-	"github.com/bzed/lokihouse/internal/chstore/chtest"
+	"github.com/bzed/runakefli/internal/chstore/chtest"
 )
 
 // settleParts waits until the store's ClickHouse database has no merge running
@@ -87,11 +87,11 @@ func partsLine(stores []benchStore, parts []uint64, settled []bool) string {
 func TestPartsLine(t *testing.T) {
 	stores := []benchStore{
 		{name: "Loki"},
-		{name: "lokihouse", db: "a"},
-		{name: "lokihouse S3 + cache", db: "b"},
+		{name: "runakefli", db: "a"},
+		{name: "runakefli S3 + cache", db: "b"},
 	}
 	if got, want := partsLine(stores, []uint64{0, 3, 4}, []bool{true, true, false}),
-		"ClickHouse active logs parts at timing start: lokihouse 3, lokihouse S3 + cache 4 (not settled)"; got != want {
+		"ClickHouse active logs parts at timing start: runakefli 3, runakefli S3 + cache 4 (not settled)"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 	if got := partsLine(stores[:1], []uint64{0}, []bool{true}); got != "" {

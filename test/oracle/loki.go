@@ -37,14 +37,14 @@ func freePort(t *testing.T) int {
 // the pinned commit once. The default path names the commit, so a binary built
 // before the pin moved is never reused.
 func lokiBin(t *testing.T) string {
-	bin := envOr("LOKIHOUSE_LOKI_BIN", filepath.Join(".cache", "loki-bin", "loki-"+lokiCommit[:12]))
+	bin := envOr("RUNAKEFLI_LOKI_BIN", filepath.Join(".cache", "loki-bin", "loki-"+lokiCommit[:12]))
 	if ab, err := filepath.Abs(bin); err == nil {
 		bin = ab
 	}
 	if fileExists(bin) {
 		return bin
 	}
-	src := envOr("LOKIHOUSE_LOKI_SRC", filepath.Join(".cache", "loki-src"))
+	src := envOr("RUNAKEFLI_LOKI_SRC", filepath.Join(".cache", "loki-src"))
 	if ab, err := filepath.Abs(src); err == nil {
 		src = ab
 	}

@@ -1,10 +1,10 @@
-# lokihouse example configuration: every option, with its default.
+# runakefli example configuration: every option, with its default.
 #
-# The Debian package installs this file as /etc/lokihouse/lokihouse.yaml; the
+# The Debian package installs this file as /etc/runakefli/runakefli.yaml; the
 # uncommented lines are what the package runs with. A commented option shows
 # its default value; uncomment it to change it. Unknown keys are an error.
 #
-# Reference: man lokihouse, https://lokihouse.dev/reference/configuration/
+# Reference: man runakefli, https://runakefli.app/reference/configuration/
 #
 # The service runs with -config.expand-env, so ${VAR} and ${VAR:-default} are
 # expanded before the file is parsed. Durations take Loki's syntax (30s, 5m,
@@ -28,14 +28,14 @@ server:
 
 clickhouse:
   # addr: ["localhost:9000"]      # native protocol; list every node of a cluster
-  # database: lokihouse           # created on first start
+  # database: runakefli           # created on first start
   # username: default
   # Set at most one of password and password_file. Prefer password_file: store
   # the password as a systemd credential
-  #   systemd-creds encrypt --name=lokihouse.clickhouse-password - \
-  #     /etc/credstore.encrypted/lokihouse.clickhouse-password
+  #   systemd-creds encrypt --name=runakefli.clickhouse-password - \
+  #     /etc/credstore.encrypted/runakefli.clickhouse-password
   # and uncomment (a trailing newline in the file is stripped):
-  # password_file: ${CREDENTIALS_DIRECTORY}/lokihouse.clickhouse-password
+  # password_file: ${CREDENTIALS_DIRECTORY}/runakefli.clickhouse-password
   # password: ""
   # Connection pool and timeouts.
   # dial_timeout: 5s              # connecting, and waiting for a free pooled connection
@@ -68,9 +68,9 @@ query:
 #   delete_max_interval: 24h
 
 # Loki's limits_config. Loki's keys and defaults; the values apply to every
-# tenant (lokihouse has no per-tenant overrides, see docs/divergences.md).
-# Shown here are the keys lokihouse acts on; every other Loki key is accepted
-# but has no effect, because lokihouse has no ingesters, index gateway or
+# tenant (runakefli has no per-tenant overrides, see docs/divergences.md).
+# Shown here are the keys runakefli acts on; every other Loki key is accepted
+# but has no effect, because runakefli has no ingesters, index gateway or
 # query frontend. Full list: https://grafana.com/docs/loki/latest/configure/#limits_config
 limits_config:
   # Retention. The sweeper (compactor.retention_enabled) removes data in whole UTC
@@ -83,7 +83,7 @@ limits_config:
   #     period: 24h
   # deletion_mode: filter-and-delete      # disabled | filter-only | filter-and-delete
 
-  # Ingestion (rate limits are per lokihouse instance, not per cluster).
+  # Ingestion (rate limits are per runakefli instance, not per cluster).
   # ingestion_rate_mb: 4
   # ingestion_burst_size_mb: 6
   # max_line_size: 256KB
@@ -114,11 +114,11 @@ limits_config:
   # volume_enabled: true                  # /loki/api/v1/index/volume*
 
 # Loki's ruler (alerting and recording rules), with Loki's own keys. It runs
-# only when ruler_storage is set, and on one lokihouse instance only (there is
+# only when ruler_storage is set, and on one runakefli instance only (there is
 # no ruler ring, see docs/divergences.md). Uncomment this block and
 # ruler_storage together.
 # ruler:
-#   rule_path: /var/lib/lokihouse/rules-temp    # default: rules-temp (relative to the working directory)
+#   rule_path: /var/lib/runakefli/rules-temp    # default: rules-temp (relative to the working directory)
 #   evaluation_interval: 1m
 #   poll_interval: 1m                           # how often rules are re-read from storage
 #   alertmanager_url: http://alertmanager:9093  # default: none
@@ -159,7 +159,7 @@ limits_config:
 #     clients:
 #       prom: {url: http://prometheus:9090/api/v1/write}
 #   wal:
-#     dir: /var/lib/lokihouse/ruler-wal         # WIPED at every start; must be a directory of its own
+#     dir: /var/lib/runakefli/ruler-wal         # WIPED at every start; must be a directory of its own
 #     truncate_frequency: 1h
 #     min_age: 5m
 #     max_age: 4h
@@ -169,5 +169,5 @@ limits_config:
 #   # sharding_algo, ring, search_pending_for.
 # ruler_storage:
 #   backend: filesystem                         # filesystem: read/write rule files; local: read-only rule files
-#   filesystem: {dir: /var/lib/lokihouse/rules}
-#   # local: {directory: /etc/lokihouse/rules}  # for backend: local
+#   filesystem: {dir: /var/lib/runakefli/rules}
+#   # local: {directory: /etc/runakefli/rules}  # for backend: local

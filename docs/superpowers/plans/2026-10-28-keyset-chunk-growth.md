@@ -88,7 +88,7 @@ Expected: PASS, including `TestKeyset_SameResultForAnyChunkSize`, `TestKeyset_Su
 - [ ] **Step 7: Add the changelog line** under `## [Unreleased]` → `### Changed`:
 
 ```markdown
-- Log queries whose lines are mostly dropped by filters evaluated in lokihouse (for example `| logfmt | status >= 500`) read ClickHouse in growing chunks (4× per chunk, up to 10 000 rows) instead of fixed chunks of the query limit, so they need fewer round trips.
+- Log queries whose lines are mostly dropped by filters evaluated in runakefli (for example `| logfmt | status >= 500`) read ClickHouse in growing chunks (4× per chunk, up to 10 000 rows) instead of fixed chunks of the query limit, so they need fewer round trips.
 ```
 
 - [ ] **Step 8: Run `make check`**
@@ -130,7 +130,7 @@ git commit -m "perf: grow keyset chunks 4x per round trip up to 10000 rows"
 
 - [ ] **Step 1: Check the working tree.** `git status --short README.md docs/benchmark.md` must be empty. If not, stop and ask the user.
 - [ ] **Step 2: Run** `make bench` (no other benchmark on the host at the same time; check with `pgrep -af 'oracle.test.*TestBench'`).
-  Expected: `logfmt filter` lokihouse median well below the previous ~29–32 ms (target ≈ 20 ms). `log filter` is unchanged (its single read already fits in one chunk).
+  Expected: `logfmt filter` runakefli median well below the previous ~29–32 ms (target ≈ 20 ms). `log filter` is unchanged (its single read already fits in one chunk).
 - [ ] **Step 3: Confirm the cause** on `localhost:19100` before the bench database is dropped, or from the run's `system.query_log`. A `logfmt filter` request issues one stream lookup and 2 `logs` queries, with `LIMIT 1000` then `LIMIT 4000`.
 - [ ] **Step 4: Update `docs/benchmark.md`** with the new tables (date, one-run caveat as in the existing sections). Rewrite the `logfmt filter` sentences to the new ratios, and note in one sentence why: growing chunks, 2 round trips instead of 4.
 - [ ] **Step 5: Commit**

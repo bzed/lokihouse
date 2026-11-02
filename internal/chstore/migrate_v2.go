@@ -14,7 +14,7 @@ import (
 
 // ErrSchemaV1 is returned (wrapped) by Migrate for a database that still has
 // schema version 1 (a retention_days column); run MigrateV2 on it first.
-var ErrSchemaV1 = errors.New("schema version 1: stop all lokihouse instances and run lokihouse -schema.migrate")
+var ErrSchemaV1 = errors.New("schema version 1: stop all runakefli instances and run runakefli -schema.migrate")
 
 const migrateSuffix = "_migrate"
 
@@ -37,7 +37,7 @@ func checkFreeSpace(need, free uint64) error {
 // copied tables are created with the current DDL. Call MigrateSchema to finish the job
 // (it also creates anything missing). It copies each table into <table>_migrate, exchanges
 // the two and drops the old data. It is resumable after a crash and a no-op on a version
-// 2 database. All other lokihouse instances must be stopped.
+// 2 database. All other runakefli instances must be stopped.
 func MigrateV2(ctx context.Context, conn driver.Conn, db string, topo Topology, logger log.Logger) error {
 	for _, name := range []string{"logs", "streams", "stream_stats_hourly"} {
 		v1, err := hasColumn(ctx, conn, db, topo.Local(name), "retention_days")

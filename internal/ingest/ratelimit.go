@@ -8,8 +8,8 @@ import (
 )
 
 // Copied from grafana/loki@39c256e5 pkg/distributor/ingestion_rate_strategy.go
-// (localStrategy); modifications: tenant-only keys (lokihouse has no policies),
-// also used for Loki's "global" strategy (lokihouse has no distributor ring:
+// (localStrategy); modifications: tenant-only keys (runakefli has no policies),
+// also used for Loki's "global" strategy (runakefli has no distributor ring:
 // one instance holds the whole limit, see docs/divergences.md).
 type localStrategy struct{ limits *validation.Overrides }
 

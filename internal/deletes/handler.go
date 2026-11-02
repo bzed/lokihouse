@@ -27,9 +27,9 @@ import (
 //     GetDeleteRequest/RemoveDeleteRequest);
 //   - max_interval is validated exactly as Loki does, but requests are stored
 //     unsharded: the shards only drive Loki's compactor, which the listing merges
-//     back, and lokihouse has no compactor to feed;
+//     back, and runakefli has no compactor to feed;
 //   - the metrics are dropped;
-//   - the gate is a Gate method wrapping the next handler, since lokihouse's
+//   - the gate is a Gate method wrapping the next handler, since runakefli's
 //     tenant wrapper is applied by the API router;
 //   - the gate reads Limits.DeletionMode(tenant).
 const (
@@ -123,7 +123,7 @@ func (h *Handler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = shardByInterval // drives Loki's compactor shards; lokihouse stores unsharded
+	_ = shardByInterval // drives Loki's compactor shards; runakefli stores unsharded
 	w.Header().Set("X-Delete-Request-ID", requestID)
 	w.WriteHeader(http.StatusNoContent)
 }

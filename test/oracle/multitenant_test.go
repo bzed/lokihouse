@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// multiTenantOracle compares Loki and lokihouse for a query whose
+// multiTenantOracle compares Loki and runakefli for a query whose
 // X-Scope-OrgID names both fixture tenants ("tenant-a|tenant-b"): the same data
 // and queries on both stores, compared for equality.
 func multiTenantOracle(t *testing.T, loki, house string, start, end time.Time) {

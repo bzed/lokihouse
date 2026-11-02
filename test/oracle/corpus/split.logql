@@ -1,4 +1,4 @@
-# Splitting: TestOracle runs lokihouse with split_queries_by_interval 15m, so
+# Splitting: TestOracle runs runakefli with split_queries_by_interval 15m, so
 # each range query below crosses at least 6 boundaries. unaligned: shifts start
 # by 17s and uses a 45s step; web is logfmt (bytes), api is JSON (latency_ms).
 unaligned:quantile_over_time(0.95, {app="api"} | json | unwrap latency_ms [5m]) by (app)

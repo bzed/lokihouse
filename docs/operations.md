@@ -1,12 +1,12 @@
 ---
-description: Run lokihouse in production: per-tenant limits, health checks, deletes and retention, metrics, profiling and what happens when ClickHouse is unavailable.
+description: Run Rúnakefli in production: per-tenant limits, health checks, deletes and retention, metrics, profiling and what happens when ClickHouse® is unavailable.
 ---
 
 # Operations
 
 ## Limits
 
-lokihouse enforces Loki's `limits_config` keys at the points below. A tenant is
+Rúnakefli enforces Loki®'s `limits_config` keys at the points below. A tenant is
 the value of the `X-Scope-OrgID` header.
 
 ### Ingestion
@@ -41,16 +41,16 @@ decompressed, Loki's defaults); they are not configurable.
 | `query_timeout` | Loki engine `Eval` | A timed-out query is a `504`. |
 | `max_query_series` | Loki engine | `400` if the result would exceed the cap (default `500`). |
 | `max_query_range` | Loki engine | `400` if the range is wider than allowed. |
-| `split_queries_by_interval` | lokihouse engine | Metric range queries that lokihouse evaluates itself are cut into legs at wall-clock multiples of the interval, never finer than the largest `[range]`; `0` disables. Instant, log and multi-tenant queries are never split. |
-| `max_query_parallelism` | lokihouse engine | Legs of one request evaluated at once; further legs run on the request's own goroutine. |
+| `split_queries_by_interval` | Rúnakefli engine | Metric range queries that Rúnakefli evaluates itself are cut into legs at wall-clock multiples of the interval, never finer than the largest `[range]`; `0` disables. Instant, log and multi-tenant queries are never split. |
+| `max_query_parallelism` | Rúnakefli engine | Legs of one request evaluated at once; further legs run on the request's own goroutine. |
 
-Metric queries that lokihouse evaluates itself (parsers, `unwrap`) parse lines on
+Metric queries that Rúnakefli evaluates itself (parsers, `unwrap`) parse lines on
 `min(GOMAXPROCS, matching streams)` goroutines *per query*, so concurrent queries
 multiply the goroutine count while `GOMAXPROCS` (Go follows the cgroup CPU quota)
 bounds the CPU they use together. Set the `GOMAXPROCS` environment variable to
 limit it.
 
-Pieces of a split query reserve ClickHouse connections from a budget of half of
+Pieces of a split query reserve ClickHouse® connections from a budget of half of
 `clickhouse.max_open_conns` and never wait for it: when the budget or the
 request's `max_query_parallelism` is used up, the leg runs on the request's own
 goroutine. Under load, queries degrade to sequential evaluation instead of
@@ -60,50 +60,50 @@ queueing.
 overrides. Where a request names several tenants (multi-tenant queries), the
 smallest positive value is used, as in Loki.
 
-See the [divergences](https://github.com/bzed/lokihouse/blob/main/docs/divergences.md#ingestion)
+See the [divergences](https://github.com/bzed/runakefli/blob/main/docs/divergences.md#ingestion)
 for the rate-limit strategy difference.
 
 ## Health checks
 
-`GET /ready` answers `200 ready` when lokihouse can reach ClickHouse (a ping with a 2 s deadline) and `503 ClickHouse not ready: <error>` otherwise. All lokihouse instances usually share one ClickHouse, so they become unready together; use `/ready` for load-balancer readiness, not for liveness or restarts.
+`GET /ready` answers `200 ready` when Rúnakefli can reach ClickHouse (a ping with a 2 s deadline) and `503 ClickHouse not ready: <error>` otherwise. All Rúnakefli instances usually share one ClickHouse, so they become unready together; use `/ready` for load-balancer readiness, not for liveness or restarts.
 
 ## Deletes and disk space
 
 A processed delete request removes rows with lightweight `DELETE`s and then runs `ALTER TABLE logs_local APPLY DELETED MASK` (ON CLUSTER on a cluster), which rewrites only the parts that hold deleted rows. Deleted lines therefore leave the disk at the end of the compactor pass that processed the request, as with Loki's compactor. The rewrite costs I/O proportional to the affected parts; it runs once per pass, not once per request.
 
-### `delete_requests` created by lokihouse 0.6.0 or earlier
+### `delete_requests` created by Rúnakefli 0.6.0 or earlier
 
-Up to 0.6.0, `delete_requests` was created as `ReplacingMergeTree` without its `version` column. A merge then keeps the last-inserted status of a request, not the newest one. When instances' clocks disagree, a cancelled request can come back as processed, or a processed one as received. lokihouse does not change existing tables. To rebuild the table on a single server, stop every lokihouse instance and run (database `lokihouse`):
+Up to 0.6.0, `delete_requests` was created as `ReplacingMergeTree` without its `version` column. A merge then keeps the last-inserted status of a request, not the newest one. When instances' clocks disagree, a cancelled request can come back as processed, or a processed one as received. Rúnakefli does not change existing tables. To rebuild the table on a single server, stop every Rúnakefli instance and run (database `runakefli`):
 
 ```sql
-CREATE TABLE lokihouse.delete_requests_new AS lokihouse.delete_requests
+CREATE TABLE runakefli.delete_requests_new AS runakefli.delete_requests
   ENGINE = ReplacingMergeTree(version) ORDER BY (tenant, request_id);
-INSERT INTO lokihouse.delete_requests_new SELECT * FROM lokihouse.delete_requests;
-EXCHANGE TABLES lokihouse.delete_requests AND lokihouse.delete_requests_new;
-DROP TABLE lokihouse.delete_requests_new;
+INSERT INTO runakefli.delete_requests_new SELECT * FROM runakefli.delete_requests;
+EXCHANGE TABLES runakefli.delete_requests AND runakefli.delete_requests_new;
+DROP TABLE runakefli.delete_requests_new;
 ```
 
 On a cluster, do the same for `delete_requests_local` with `ON CLUSTER` and `ReplicatedReplacingMergeTree(version)`, and run the `INSERT … SELECT` on one replica of each shard.
 
 ## Retention
 
-Retention is applied by a sweeper that runs on every lokihouse instance every `compactor.compaction_interval` (see [Retention](reference/configuration.md#retention)). It applies the current configuration to all stored data and is idempotent, so several instances can sweep at the same time. Nothing expires while no lokihouse instance runs.
+Retention is applied by a sweeper that runs on every Rúnakefli instance every `compactor.compaction_interval` (see [Retention](reference/configuration.md#retention)). It applies the current configuration to all stored data and is idempotent, so several instances can sweep at the same time. Nothing expires while no Rúnakefli instance runs.
 
 The retention is not stored with each row. ClickHouse cannot change the columns of a table's partition or sorting key (`ALTER ... UPDATE` refuses them), so a stored value could never follow a configuration change.
 
-To free space at once, drop the day partitions you no longer need (database `lokihouse`; on a single server use the table names without `_local` and without `ON CLUSTER`):
+To free space at once, drop the day partitions you no longer need (database `runakefli`; on a single server use the table names without `_local` and without `ON CLUSTER`):
 
 ```sql
-ALTER TABLE lokihouse.logs_local ON CLUSTER <cluster> DROP PARTITION ID '20260801';
-ALTER TABLE lokihouse.streams_local ON CLUSTER <cluster> DROP PARTITION ID '20260801';
-ALTER TABLE lokihouse.stream_stats_hourly_local ON CLUSTER <cluster> DROP PARTITION ID '20260801';
+ALTER TABLE runakefli.logs_local ON CLUSTER <cluster> DROP PARTITION ID '20260801';
+ALTER TABLE runakefli.streams_local ON CLUSTER <cluster> DROP PARTITION ID '20260801';
+ALTER TABLE runakefli.stream_stats_hourly_local ON CLUSTER <cluster> DROP PARTITION ID '20260801';
 ```
 
 To see which days are stored:
 
 ```sql
 SELECT partition, sum(rows) FROM system.parts
-WHERE database = 'lokihouse' AND table = 'logs_local' AND active
+WHERE database = 'runakefli' AND table = 'logs_local' AND active
 GROUP BY partition ORDER BY partition;
 ```
 
@@ -120,8 +120,8 @@ registry plus the ruler's private registry (when the ruler is enabled).
 | `loki_distributor_lines_received_total` | counter | `tenant`, `is_internal_stream`, `policy`, `format` | Lines received per push (Loki's shared distributor collectors). |
 | `loki_discarded_samples_total` | counter | `tenant`, `reason` | Samples discarded by push validation. |
 | `go_goroutines`, `process_*`, etc. | — | — | Standard Go runtime metrics from the default registry. |
-| `lokihouse_build_info` | gauge | `version` | Build version string. |
-| `lokihouse_query_stream_speculations_total` | counter | `result` | Log queries by outcome of the speculative read on a cached stream set. `hit`: the cached stream set was still current, the read started without waiting for the stream lookup; `mismatch`: it was stale and the read was redone; `miss`: no cached set. |
+| `runakefli_build_info` | gauge | `version` | Build version string. |
+| `runakefli_query_stream_speculations_total` | counter | `result` | Log queries by outcome of the speculative read on a cached stream set. `hit`: the cached stream set was still current, the read started without waiting for the stream lookup; `mismatch`: it was stale and the read was redone; `miss`: no cached set. |
 
 Ruler metrics (when enabled): `loki_ruler_*` series collected in a private
 registry and exposed through the same `/metrics` endpoint.
@@ -133,7 +133,7 @@ profiler is served on the HTTP port at `/debug/pprof/*`, with no tenant. Use
 `go tool pprof` to fetch and diff profiles:
 
 ```console
-$ go tool pprof http://lokihouse:3100/debug/pprof/heap
+$ go tool pprof http://runakefli:3100/debug/pprof/heap
 $ go tool pprof -base warm-heap.pb.gz end-heap.pb.gz   # diff two heap snapshots
 ```
 
@@ -153,15 +153,15 @@ the listed tenants, as Loki's multi-tenant querier does. The `__tenant_id__`
 label is always set on returned streams and series so the sources can be
 told apart. The index stats, volume, `detected_labels` and `patterns`
 endpoints fan out as well; `detected_metric_names` is not served (see the
-[divergences](https://github.com/bzed/lokihouse/blob/main/docs/divergences.md#query)).
+[divergences](https://github.com/bzed/runakefli/blob/main/docs/divergences.md#query)).
 Multi-tenant queries run on the plain engine, not the ClickHouse pushdown
 path.
 
 ## When ClickHouse is unavailable
 
-lokihouse keeps no local buffer; ClickHouse is the only state.
+Rúnakefli keeps no local buffer; ClickHouse is the only state.
 
-- **At startup** lokihouse creates its tables, and exits non-zero if ClickHouse is unreachable. The Debian unit restarts it after 5 s (`Restart=on-failure`); under Kubernetes the pod restarts with back-off.
+- **At startup** Rúnakefli creates its tables, and exits non-zero if ClickHouse is unreachable. The Debian unit restarts it after 5 s (`Restart=on-failure`); under Kubernetes the pod restarts with back-off.
 - **Pushes** fail with HTTP 500. Loki clients (Promtail, Alloy, the OpenTelemetry Collector) retry 5xx responses with back-off, so nothing is lost unless an outage outlasts the client's retry budget (for example Promtail's `backoff_config.max_retries`). Size the clients' retries for the longest ClickHouse maintenance window you expect.
 - **Queries, tails and the ruler** fail while ClickHouse is down. Rule evaluations are counted as failed, as in Loki.
 - **Delete processing** logs the error and retries on the next `compactor.compaction_interval`. Query-time filtering keeps pending deletes hidden.
