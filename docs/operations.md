@@ -1,3 +1,7 @@
+---
+description: Run lokihouse in production: per-tenant limits, health checks, deletes and retention, metrics, profiling and what happens when ClickHouse is unavailable.
+---
+
 # Operations
 
 ## Limits
@@ -56,8 +60,8 @@ queueing.
 overrides. Where a request names several tenants (multi-tenant queries), the
 smallest positive value is used, as in Loki.
 
-See [Differences from Loki](divergences.md#hardening-phase-5) for the rate-limit
-strategy difference.
+See the [divergences](https://github.com/bzed/lokihouse/blob/main/docs/divergences.md#ingestion)
+for the rate-limit strategy difference.
 
 ## Health checks
 
@@ -147,10 +151,11 @@ comma-separated list of org IDs in `X-Scope-OrgID` (e.g. `tenant-a,tenant-b`)
 on the query, series and label endpoints and returns the merged result over
 the listed tenants, as Loki's multi-tenant querier does. The `__tenant_id__`
 label is always set on returned streams and series so the sources can be
-told apart. Index stats, volume, `detected_labels` and `detected_metric_names`
-endpoints do not fan out and keep the single-tenant resolution (see
-`divergences.md`). Multi-tenant queries run on the plain engine, not the
-ClickHouse pushdown path.
+told apart. The index stats, volume, `detected_labels` and `patterns`
+endpoints fan out as well; `detected_metric_names` is not served (see the
+[divergences](https://github.com/bzed/lokihouse/blob/main/docs/divergences.md#query)).
+Multi-tenant queries run on the plain engine, not the ClickHouse pushdown
+path.
 
 ## When ClickHouse is unavailable
 

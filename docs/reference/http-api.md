@@ -1,3 +1,7 @@
+---
+description: Every HTTP endpoint lokihouse serves with Grafana Loki compatible paths: push, query, metadata, deletes, tail, ruler and admin.
+---
+
 # HTTP API
 
 Every endpoint lokihouse serves, enumerated from

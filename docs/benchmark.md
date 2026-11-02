@@ -1,3 +1,7 @@
+---
+description: Query latency of lokihouse against Grafana Loki on identical data, with every answer compared with Loki; method, environment and caveats.
+---
+
 # Benchmark
 
 `make bench` (`test/oracle/bench_test.go`, build tags `oracle bench`) measures

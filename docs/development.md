@@ -1,4 +1,14 @@
+---
+description: How lokihouse is built, tested and released - the CI workflows, release steps, the signed apt repository and its key, the container image, local testing and leak checks.
+---
+
 # Development
+
+For people who build, test and release lokihouse. The rules every change has to
+follow (error handling, tests, lint, changelog, commit style) are in
+[`AGENTS.md`](https://github.com/bzed/lokihouse/blob/main/AGENTS.md), and
+[`CONTRIBUTING.md`](https://github.com/bzed/lokihouse/blob/main/CONTRIBUTING.md)
+says how to contribute.
 
 ## CI
 
@@ -16,22 +26,27 @@ GitHub Actions (`.github/workflows/`), all on `ubuntu-24.04`:
 
 Release steps (maintainer):
 
-1. `dch -v <x.y.z>` and set the distribution to `trixie`.
-2. Commit.
-3. `git tag -s v<x.y.z>`.
-4. Push the tag.
+1. In `CHANGELOG.md`, move `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD`.
+2. `dch -v <x.y.z>` and set the distribution to `trixie`.
+3. Commit.
+4. `git tag -s v<x.y.z>`.
+5. Push the tag. `release.yml` fails if the tag, the top of `debian/changelog`
+   and the `CHANGELOG.md` section disagree.
 
-One-time repository settings (maintainer, not the implementer): Settings →
-Pages → Source "GitHub Actions"; the `github-pages` environment must allow
-deployments from `main` and from `v*` tags; the secret `APT_GPG_PRIVATE_KEY`;
-the optional secret `GOOGLE_SITE_VERIFICATION` (the file name Google Search Console
-gives, `google<hex>.html`; `docs.yml` writes that file to the site root, it is not in
-the repository); the secrets `S3_ENDPOINT` (host only), `S3_BUCKET`,
-`S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` (`docs.yml` mirrors the site to that
-S3 bucket and deletes stale objects; for now on every push to `main`, later only
-for releases);
-branch protection requiring `checks`, `test`, `build`, `docs`, `deb` and the
-`docker` image job.
+One-time repository settings (maintainer, not the implementer):
+
+- Settings → Pages → Source "GitHub Actions"; the `github-pages` environment
+  must allow deployments from `main` and from `v*` tags.
+- The secret `APT_GPG_PRIVATE_KEY`, see below.
+- The secrets `S3_ENDPOINT` (host only), `S3_BUCKET`, `S3_ACCESS_KEY_ID` and
+  `S3_SECRET_ACCESS_KEY`: `docs.yml` mirrors the site to that S3 bucket and
+  deletes stale objects. For now this happens on every push to `main`, later
+  only for releases.
+- The optional secret `GOOGLE_SITE_VERIFICATION`, the file name Google Search
+  Console gives (`google<hex>.html`). `docs.yml` writes that file to the site
+  root; it is not in the repository.
+- Branch protection requiring `checks`, `test`, `build`, `docs`, `deb` and the
+  `docker` image job.
 
 ## The apt repository and its key
 

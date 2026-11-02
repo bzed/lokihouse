@@ -1,0 +1,32 @@
+/* Landing page */
+.lh-hero {
+  text-align: center;
+  padding: 1rem 0 0.5rem;
+}
+.lh-hero img {
+  width: 160px;
+  height: 160px;
+}
+.lh-hero h1 {
+  color: var(--md-default-fg-color);
+  margin: 0.4rem 0 0;
+  font-size: 2.6rem;
+}
+.lh-hero .lh-tagline {
+  font-size: 1.25rem;
+  margin: 0.2rem auto 1.2rem;
+  max-width: 36rem;
+}
+.lh-hero .md-button {
+  margin: 0.2rem;
+}
+.lh-badges {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+.lh-badges img {
+  margin: 0 0.1rem;
+}
+.md-typeset .grid.cards > ul > li {
+  border-radius: 0.3rem;
+}

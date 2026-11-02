@@ -1,9 +1,8 @@
 # mkdocs configuration for the lokihouse documentation site.
 #
-# The site is a stable "current" set of pages, not a per-phase changelog.
-# The per-phase status docs (docs/phase1-status.md … docs/phase4-status.md)
-# and the canonical divergences list (docs/divergences.md) live in the repo
-# and are linked to from the site, not duplicated on it.
+# The site is a stable "current" set of pages. The canonical divergences list
+# (docs/divergences.md) lives in the repo and is linked to from the site, not
+# duplicated on it.
 #
 # CI (see .github/workflows/docs.yml) runs `mkdocs build --strict` and
 # deploys to GitHub Pages and mirrors the site to https://lokihouse.dev/.
@@ -12,21 +11,64 @@
 #   Settings → Pages → Source: "GitHub Actions" (branch: main)
 
 site_name: lokihouse
-site_description: Grafana Loki's HTTP API, backed by ClickHouse
+site_description: lokihouse is a Grafana Loki-compatible log server. It speaks Loki's HTTP API and LogQL and stores and queries the logs in ClickHouse.
 site_url: https://lokihouse.dev/
+site_author: Bernd Zeimetz
 
 repo_name: bzed/lokihouse
 repo_url: https://github.com/bzed/lokihouse
 
 theme:
   name: material
+  custom_dir: docs/overrides
+  # no Google Fonts: faster pages, no third-party requests
+  font: false
   logo: assets/logo-icon.svg
   favicon: assets/logo-icon.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: pink
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: pink
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
   features:
+    - content.code.copy
     - navigation.sections
     - navigation.top
     - search.suggest
     - search.highlight
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/bzed/lokihouse
+      name: lokihouse on GitHub
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
 
 strict: true
 
@@ -37,22 +79,20 @@ strict: true
 
 docs_dir: docs
 
-# The repo's docs/ folder also holds developer-facing docs (per-phase status,
-# the design spec, the implementation plans, the canonical divergences
-# list). Those are not part of the public site; they are linked to via
-# absolute GitHub URLs in the site pages. exclude_docs keeps them out of
-# the published site without moving them out of docs/.
+# The repo's docs/ folder also holds files that are not part of the public
+# site: the canonical divergences list, the design spec and the implementation
+# plans (docs/superpowers/), the man page source and the pip requirements of the
+# docs build. The site links to them via absolute GitHub URLs. exclude_docs keeps
+# them out of the published site without moving them out of docs/.
 exclude_docs: |
-  phase1-status.md
-  phase2-status.md
-  phase3-status.md
-  phase4-status.md
-  phase5-status.md
   /divergences.md
   /superpowers/
+  /overrides/
+  /man/
+  /requirements.txt
 
 nav:
-  - Index: index.md
+  - Home: index.md
   - Installation: install/index.md
   - Operations: operations.md
   - Benchmark: benchmark.md
@@ -62,4 +102,5 @@ nav:
       - Configuration: reference/configuration.md
       - HTTP API: reference/http-api.md
       - Divergences: reference/divergences.md
+  - Development: development.md
   - About: about.md

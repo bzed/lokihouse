@@ -5,8 +5,6 @@ reason. Entries are grouped by topic.
 
 ## Ingestion
 
-*Implemented in [phase 5](https://github.com/bzed/lokihouse/blob/main/docs/phase5-status.md), [phase 6](https://github.com/bzed/lokihouse/blob/main/docs/phase6-status.md); see the status file for background.*
-
 - **`ingestion_rate_strategy: global`:** Loki's `global` strategy divides the limit over the healthy distributors in the ring, so the ring as a whole enforces the limit. lokihouse has no distributor ring; `ingestion_rate_strategy` is not honoured and the limit is always enforced *per lokihouse instance* (the `local` behaviour). With several lokihouse instances behind a load balancer, each enforces the full `ingestion_rate_mb`, so the cluster total can be N times the configured limit.
 - **No per-tenant overrides:** Loki reads per-tenant limits from a runtime configuration file (`-runtime-config.file`, `overrides:`). lokihouse has no runtime configuration: the `limits_config` block applies to every tenant, including `retention_period` and `retention_stream`. Use separate lokihouse instances (or databases) for tenants that need different limits.
 - **Retention:** Loki's compactor deletes expired chunks. lokihouse applies retention with a sweeper (every `compactor.compaction_interval`, on every instance) on UTC day partitions: whole UTC days, counted from the entry's timestamp, at most 65535 days (see the [configuration reference](https://lokihouse.dev/reference/configuration/#retention)). The current configuration applies to stored data too. Removed rows leave the disk at the end of the sweep.
@@ -15,8 +13,6 @@ reason. Entries are grouped by topic.
 - **Pushes spanning many days:** Loki accepts a push of any time span that passes its per-entry checks. lokihouse rejects a push touching more than 60 UTC days with 400 (`too many partitions: … split it by time range`), stores nothing from it, and counts it under the discard reason `too_many_partitions`. Each day becomes a separate ClickHouse part, and ClickHouse refuses inserts over 100 partitions. Pushes over 8 days are inserted synchronously instead of through the shared async-insert buffer, so a backfill cannot fail other tenants' pushes. Backfills must send at most 60 days per push.
 
 ## Query
-
-*Implemented in [phase 1](https://github.com/bzed/lokihouse/blob/main/docs/phase1-status.md), [phase 5](https://github.com/bzed/lokihouse/blob/main/docs/phase5-status.md), [phase 6](https://github.com/bzed/lokihouse/blob/main/docs/phase6-status.md); see the status file for background.*
 
 - **Tie order inside one stream and timestamp:** Loki keeps insertion order; lokihouse cannot. The oracle compares such groups as multisets.
 - **`/loki/api/v1/series` `match` parameter:** Loki's own docs show the single-matcher form `?match={...}`, which `loghttp.ParseSeriesQuery` reads from `r.Form["match"]` — populated only after `ParseForm`. Loki's handler relies on the net/http server (or a prior parse) to fill `r.Form`; lokihouse calls `r.ParseForm()` explicitly in its `series` handler so the `match` key is honoured. The `match[]` form works in both stores without `ParseForm` (Loki reads that key straight from the URL query), so existing clients are unaffected.
@@ -27,13 +23,9 @@ reason. Entries are grouped by topic.
 
 ## Tail
 
-*Implemented in [phase 3](https://github.com/bzed/lokihouse/blob/main/docs/phase3-status.md); see the status file for background.*
-
 - **Delivery:** Loki streams entries to a `/loki/api/v1/tail` WebSocket client as its ingesters receive them (push). lokihouse has no ingester to push from, so its tail client *polls* ClickHouse (every second by default) for rows with `ts` newer than now minus a 10 s lookback for late arrivals, deduplicated by a seen-set. Consequently an entry pushed later with a timestamp older than the current poll window, or with a timestamp before the tail started, is not sent live (it is reachable by a normal range query instead). History (rows before the tail start) is served by Loki's `Tailer` history path in both stores, not by the live client.
 
 ## Index statistics and volume (`index/stats`, `index/volume`, `index/volume_range`)
-
-*Implemented in [phase 3](https://github.com/bzed/lokihouse/blob/main/docs/phase3-status.md); see the status file for background.*
 
 - **Granularity:** Loki pro-rates per chunk (bounds = first/last entry of the chunk); lokihouse pro-rates per hourly bucket (bounds = first/last entry in that hour). Ranges that cover all data in a bucket/chunk agree; ranges cutting through a chunk can differ.
 - **Duplicates:** Loki's head block drops exact duplicates before counting; the materialized view counts every inserted row, so client retries of the same push count twice.
@@ -44,20 +36,14 @@ reason. Entries are grouped by topic.
 
 ## Metadata
 
-*Implemented in [phase 3](https://github.com/bzed/lokihouse/blob/main/docs/phase3-status.md); see the status file for background.*
-
 - **`detected_labels` after a Loki flush:** Loki answers `detected_labels` from ingester memory and, for flushed data, from the TSDB index, which only becomes readable once it is built and synced; for minutes after a flush Loki returns an empty set. lokihouse reads the stored rows and has no such gap. The oracle therefore compares `detected_labels` before it forces Loki's flush (`detectedLabelsCases`).
 
 ## Delete requests
-
-*Implemented in [phase 3](https://github.com/bzed/lokihouse/blob/main/docs/phase3-status.md), [phase 6](https://github.com/bzed/lokihouse/blob/main/docs/phase6-status.md); see the status file for background.*
 
 - **Request IDs:** lokihouse uses 8 random hex characters; the format and the IDs differ from Loki.
 - **Rows written between delete submission and processing:** the processor re-resolves the request's selector at processing time, so rows that land inside the request's `[start, end]` window *after* the request was created are also deleted. They were not hidden by the query-time filter before they existed, so this is a (narrow, intentional) difference from "exactly the rows query-time filtering hid"; it matches Loki's compactor, which also re-reads the index when processing.
 
 ## Ruler
-
-*Implemented in [phase 4](https://github.com/bzed/lokihouse/blob/main/docs/phase4-status.md), [phase 5](https://github.com/bzed/lokihouse/blob/main/docs/phase5-status.md); see the status file for background.*
 
 - **No ruler ring (sharding):** Loki distributes rule groups over a ring of rulers; lokihouse has no ring. `ruler.enable_sharding: true` and `ruler.evaluation.mode: remote` are rejected at startup, and `/ruler/ring` is not served. Every lokihouse instance with `ruler_storage` configured evaluates *all* rule groups, so configure it on exactly one instance; otherwise alerts and recording-rule samples are duplicated.
 - **`ruler.rule_path` default:** `rules-temp` relative to the working directory instead of Loki's `/rules` (Loki's single binary uses `<common.path_prefix>/rules-temp`; lokihouse has no `path_prefix`).
@@ -65,7 +51,5 @@ reason. Entries are grouped by topic.
 - **WAL directory guard:** with remote write enabled, Loki wipes `ruler.wal.dir` (`os.RemoveAll`) at every start. lokihouse refuses to start when that directory is empty or contains the working directory, the rule storage directory or `rule_path`; Loki would delete them.
 
 ## Observability
-
-*Implemented in [phase 5](https://github.com/bzed/lokihouse/blob/main/docs/phase5-status.md); see the status file for background.*
 
 - **HTTP request metrics `method` label:** dskit labels `loki_request_duration_seconds` and `loki_inflight_requests` with the raw request method, so a client can create one series per invented method (unbounded cardinality from untrusted input). lokihouse keeps the standard methods (`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `CONNECT`, `OPTIONS`, `TRACE`) and labels every other method `other`. Dashboards that only use standard methods are unaffected.

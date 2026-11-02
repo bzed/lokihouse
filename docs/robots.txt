@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+# the apt repository is for apt, not for search engines
+Disallow: /apt/
+
+Sitemap: https://lokihouse.dev/sitemap.xml

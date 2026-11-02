@@ -1,3 +1,7 @@
+---
+description: Install lokihouse on Debian 13 from the signed apt repository, as a container image, or from source, with ClickHouse credentials and a systemd unit.
+---
+
 # Installing lokihouse
 
 > **Release candidate.** lokihouse is feature complete but not yet proven in production. CI builds the packages and

@@ -1,3 +1,7 @@
+---
+description: Every lokihouse configuration key with its default: server, clickhouse, query, compactor, ruler, ruler_storage and limits_config.
+---
+
 # Configuration
 
 lokihouse is configured with a single YAML file, passed with

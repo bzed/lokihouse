@@ -149,8 +149,7 @@ Full documentation: **<https://lokihouse.dev/>**
 - [Operations](docs/operations.md) and [benchmarks](docs/benchmark.md)
 - Design: [`docs/superpowers/specs/2026-10-10-clickhouse-loki-design.md`](docs/superpowers/specs/2026-10-10-clickhouse-loki-design.md)
 - Known differences from Loki: [`docs/divergences.md`](docs/divergences.md)
-- What is left to do: [`docs/roadmap.md`](docs/roadmap.md); status per phase:
-  `docs/phase*-status.md`
+- What is left to do: [`docs/roadmap.md`](docs/roadmap.md)
 
 ## Development
 

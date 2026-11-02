@@ -1,3 +1,7 @@
+---
+description: Where lokihouse deliberately differs from Grafana Loki, and why; the canonical list is kept in the repository.
+---
+
 # Divergences from Loki
 
 The canonical, detailed list of behavioural differences between lokihouse

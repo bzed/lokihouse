@@ -1,3 +1,7 @@
+---
+description: Replace Grafana Loki with lokihouse: what you keep, what is different, a cutover runbook and a verification checklist.
+---
+
 # Migrating from Loki
 
 lokihouse is a **drop-in at the HTTP layer**. The push endpoints, the LogQL

@@ -1,3 +1,7 @@
+---
+description: About lokihouse: AGPL-3.0 license, source code, project status and links to the design document.
+---
+
 # About / License
 
 lokihouse is a single Go service that is wire-compatible with Grafana
@@ -14,13 +18,10 @@ AGPL-3.0-only. See the
 
 - **Repository:** <https://github.com/bzed/lokihouse>
 - **Design spec:** [`docs/superpowers/specs/2026-10-10-clickhouse-loki-design.md`](https://github.com/bzed/lokihouse/blob/main/docs/superpowers/specs/2026-10-10-clickhouse-loki-design.md)
-- **Per-phase status:** [`docs/phase1-status.md`](https://github.com/bzed/lokihouse/blob/main/docs/phase1-status.md) … [`docs/phase4-status.md`](https://github.com/bzed/lokihouse/blob/main/docs/phase4-status.md)
 - **Canonical divergences list:** [`docs/divergences.md`](https://github.com/bzed/lokihouse/blob/main/docs/divergences.md)
 
 ## Status
 
-lokihouse is a **release candidate**. Phases 1–6 are complete (foundation,
-SQL push-down, remaining APIs, ruler, hardening, operational gaps). What is
-missing before a stable release is production experience and a schema
-migration path. See the per-phase status docs in the repository for the detailed
-exit criteria and benchmark results.
+lokihouse is a **release candidate**: it is feature complete and passes the
+Loki compatibility oracle. What is missing before a stable release is
+production experience. See the [roadmap](roadmap.md) for what is still open.
