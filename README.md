@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/logo.svg" alt="runakefli logo" width="160" height="160">
 
-  <h1>Rúnakefli</h1>
+  <h1>Rúnakefli <small>[ˈruːnaˌkɛvli]</small></h1>
   <p><strong>The Loki® HTTP API, with logs stored in ClickHouse®.</strong></p>
 
   [![CI](https://github.com/bzed/runakefli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bzed/runakefli/actions/workflows/ci.yml)

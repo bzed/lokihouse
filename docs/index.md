@@ -8,7 +8,7 @@ hide:
 <div class="lh-hero" markdown>
 <div class="lh-hero__text" markdown>
 
-# Rúnakefli
+# Rúnakefli <small class="lh-ipa" title="Pronunciation in IPA">[ˈruːnaˌkɛvli]</small>
 
 <p class="lh-tagline"><strong>The Loki® HTTP API, with logs stored in ClickHouse®.</strong></p>
 <p class="lh-lede">Point Grafana®, Alloy or Promtail at it as if it were Loki.</p>

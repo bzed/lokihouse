@@ -312,6 +312,15 @@
   border-bottom: 3px solid var(--md-accent-fg-color);
   display: inline-block;
 }
+.md-typeset .lh-hero h1 .lh-ipa {
+  font-family: var(--md-text-font-family);
+  font-size: 0.38em;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--md-default-fg-color--light);
+  white-space: nowrap;
+  margin-left: 0.4em;
+}
 .lh-tagline {
   font-size: 1.2em;
   line-height: 1.4;
