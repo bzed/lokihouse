@@ -20,6 +20,7 @@ for arch in amd64 arm64; do
 		runakefli_*.deb) ;;
 		*) continue ;;
 		esac
-		curl -fsS --proto '=https' -o "$out/$(basename "$file")" "$url/$file"
+		# a literal + in a URL path is read as a space by S3-backed hosts; apt sends %2B
+		curl -fsS --proto '=https' -o "$out/$(basename "$file")" "$url/$(printf '%s' "$file" | sed 's/+/%2B/g')"
 	done
 done

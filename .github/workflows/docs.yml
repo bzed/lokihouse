@@ -205,8 +205,12 @@ jobs:
           # `s3cmd sync`: it copies files with identical content (the font
           # licences) server-side, and that copy request is signed with the V2
           # scheme, which Backblaze rejects with a 400.
+          # The packages go up before the indexes that list them, so a client
+          # never sees an index that names a package which is not there yet.
           s3cmd -c "$cfg" put --recursive --guess-mime-type --no-mime-magic \
-            site/ "s3://$S3_BUCKET/"
+            site/apt/pool/ "s3://$S3_BUCKET/apt/pool/"
+          s3cmd -c "$cfg" put --recursive --guess-mime-type --no-mime-magic \
+            --exclude 'apt/pool/*' site/ "s3://$S3_BUCKET/"
           s3cmd -c "$cfg" sync --skip-existing --no-mime-magic --delete-removed \
             site/ "s3://$S3_BUCKET/"
           rm -f "$cfg"
