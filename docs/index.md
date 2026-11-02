@@ -305,6 +305,13 @@ kind of thing. See [where the name comes from](#where-the-name-comes-from).
 stick or short piece of wood. On the command line, in package names and in
 paths it is spelled `runakefli`.
 
+How to say it: *ROO-nah-KEV-lee*. The *ú* is a long "oo" as in "moon", the
+stress falls on the first syllable with a lighter one on *kef*, and the *f*
+between the vowels is a *v*, as medieval Old Norse is usually reconstructed.
+In modern Icelandic the *fl* is pronounced like *pl*, so an Icelander would say
+something closer to *ROO-nah-KEP-lee*. Either is fine, and so is reading
+`runakefli` on the command line the same way.
+
 In medieval Scandinavia, writing was not reserved for kings, monks and poets.
 Runes were an everyday script. They are made of straight strokes that are easy
 to cut with a knife, and a stick of wood was the most ordinary notebook there
