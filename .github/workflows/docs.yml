@@ -10,6 +10,8 @@
 # Needs, once: Settings > Pages > Source: "GitHub Actions", the secret
 # APT_GPG_PRIVATE_KEY (docs/development.md, "The apt repository and its key"), and
 # a deployment rule on the github-pages environment that allows main and v* tags.
+# The secrets S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are
+# those of the S3 bucket the s3 job mirrors the site to.
 # The optional secret GOOGLE_SITE_VERIFICATION (the verification file's name) makes the
 # deploy job add that file to the site root; it is not kept in the repository.
 #
@@ -31,6 +33,14 @@ on:
       APT_GPG_PRIVATE_KEY:
         required: true
       GOOGLE_SITE_VERIFICATION:
+        required: false
+      S3_ENDPOINT:
+        required: false
+      S3_BUCKET:
+        required: false
+      S3_ACCESS_KEY_ID:
+        required: false
+      S3_SECRET_ACCESS_KEY:
         required: false
 
 permissions:
@@ -143,9 +153,55 @@ jobs:
           # the value becomes a file name: accept nothing but google<hex>.html
           printf '%s' "$GOOGLE_SITE_VERIFICATION" | grep -Eq '^google[0-9a-f]+\.html$' || { echo "GOOGLE_SITE_VERIFICATION is not a google<hex>.html file name" >&2; exit 1; }
           printf 'google-site-verification: %s\n' "$GOOGLE_SITE_VERIFICATION" > "site/$GOOGLE_SITE_VERIFICATION"
+      # the finished site, for the s3 job
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: site
+          path: site
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  # Mirror the site (exactly what deploy publishes) to S3 and delete what is no
+  # longer part of it. For now every run does this; later only releases:
+  # `if: ${{ inputs.release }}` instead of the condition below.
+  s3:
+    needs: deploy
+    if: ${{ !cancelled() && needs.deploy.result == 'success' }}
+    runs-on: ubuntu-24.04
+    env:
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: site
+          path: site
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends s3cmd
+      - name: Sync the site to the bucket
+        run: |
+          set -eu
+          for v in S3_ENDPOINT S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
+            eval "[ -n \"\${$v}\" ]" || { echo "secret $v is not set" >&2; exit 1; }
+          done
+          # an empty or broken site must never wipe the bucket
+          [ -s site/index.html ] || { echo "site/index.html is missing" >&2; exit 1; }
+          umask 077
+          cfg="$RUNNER_TEMP/s3cfg"
+          cat > "$cfg" <<EOF
+          [default]
+          access_key = $S3_ACCESS_KEY_ID
+          secret_key = $S3_SECRET_ACCESS_KEY
+          host_base = $S3_ENDPOINT
+          host_bucket = %(bucket)s.$S3_ENDPOINT
+          use_https = True
+          EOF
+          # upload first, delete the stale objects afterwards
+          s3cmd -c "$cfg" sync --guess-mime-type --no-mime-magic --delete-after --delete-removed \
+            site/ "s3://$S3_BUCKET/"
+          rm -f "$cfg"

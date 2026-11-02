@@ -26,7 +26,10 @@ Pages → Source "GitHub Actions"; the `github-pages` environment must allow
 deployments from `main` and from `v*` tags; the secret `APT_GPG_PRIVATE_KEY`;
 the optional secret `GOOGLE_SITE_VERIFICATION` (the file name Google Search Console
 gives, `google<hex>.html`; `docs.yml` writes that file to the site root, it is not in
-the repository);
+the repository); the secrets `S3_ENDPOINT` (host only), `S3_BUCKET`,
+`S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` (`docs.yml` mirrors the site to that
+S3 bucket and deletes stale objects; for now on every push to `main`, later only
+for releases);
 branch protection requiring `checks`, `test`, `build`, `docs`, `deb` and the
 `docker` image job.
 
