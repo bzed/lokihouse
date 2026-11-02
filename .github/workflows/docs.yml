@@ -15,7 +15,7 @@
 # The optional secret GOOGLE_SITE_VERIFICATION (the verification file's name) makes the
 # deploy job add that file to the site root; it is not kept in the repository.
 #
-# Site URL: https://bzed.github.io/lokihouse/
+# Site URL: https://lokihouse.dev/
 
 name: docs
 
@@ -51,7 +51,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SITE_URL: https://bzed.github.io/lokihouse
+  SITE_URL: https://lokihouse.dev
 
 jobs:
   build:

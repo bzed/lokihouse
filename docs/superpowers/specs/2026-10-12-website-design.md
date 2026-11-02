@@ -387,7 +387,7 @@ These are settled by the builder, not left open. If any of them is wrong,
 the cost of fixing it is small (a link target, a validation flag, or a
 paragraph of prose).
 
-- **Site URL:** `https://bzed.github.io/lokihouse/` (GitHub Pages default
+- **Site URL:** `https://lokihouse.dev/` (originally the GitHub Pages default
   for a repo site). Used in internal links and the build-info / health-check
   examples.
 - **mkdocs strictness:** `strict: true`, internal link validation on,

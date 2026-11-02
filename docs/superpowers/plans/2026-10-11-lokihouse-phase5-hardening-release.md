@@ -1923,7 +1923,7 @@ command line.
 
 # SEE ALSO
 
-Documentation: <https://bzed.github.io/lokihouse/>; Loki configuration
+Documentation: <https://lokihouse.dev/>; Loki configuration
 reference for the *ruler*, *ruler_storage* and *limits_config* blocks:
 <https://grafana.com/docs/loki/latest/configure/>.
 ```
@@ -1977,7 +1977,7 @@ mkdocs-material==9.7.7
 ```yaml
 site_name: lokihouse
 site_description: Loki-compatible log store on ClickHouse
-site_url: https://bzed.github.io/lokihouse/
+site_url: https://lokihouse.dev/
 repo_url: https://github.com/bzed/lokihouse
 edit_uri: edit/main/docs/
 docs_dir: docs
@@ -2113,7 +2113,7 @@ Run: expected FAIL (file missing).
 ```yaml
 # lokihouse configuration (Debian package). All options:
 #   man lokihouse, /usr/share/doc/lokihouse/examples/lokihouse.example.yaml,
-#   https://bzed.github.io/lokihouse/configuration/
+#   https://lokihouse.dev/configuration/
 # The service runs with -config.expand-env, so ${VAR} is expanded.
 auth_enabled: false              # true: clients must send X-Scope-OrgID
 server:
@@ -2138,7 +2138,7 @@ Run the Step 2 test. Expected: PASS.
 ```ini
 [Unit]
 Description=lokihouse - Loki-compatible log store on ClickHouse
-Documentation=man:lokihouse(1) https://bzed.github.io/lokihouse/
+Documentation=man:lokihouse(1) https://lokihouse.dev/
 Wants=network-online.target
 After=network-online.target
 

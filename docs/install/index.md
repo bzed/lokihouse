@@ -22,12 +22,12 @@ Packages are built for amd64 and arm64.
 ```sh
 sudo install -d -m 0755 /etc/apt/keyrings
 sudo curl -fsSLo /etc/apt/keyrings/lokihouse-archive-keyring.asc \
-    https://bzed.github.io/lokihouse/apt/lokihouse-archive-keyring.asc
+    https://lokihouse.dev/apt/lokihouse-archive-keyring.asc
 # compare the fingerprint with the one below
 gpg --show-keys --with-fingerprint /etc/apt/keyrings/lokihouse-archive-keyring.asc
 sudo tee /etc/apt/sources.list.d/lokihouse.sources <<'EOF'
 Types: deb
-URIs: https://bzed.github.io/lokihouse/apt
+URIs: https://lokihouse.dev/apt
 Suites: trixie
 Components: main
 Signed-By: /etc/apt/keyrings/lokihouse-archive-keyring.asc

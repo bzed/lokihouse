@@ -4,7 +4,7 @@
 # uncommented lines are what the package runs with. A commented option shows
 # its default value; uncomment it to change it. Unknown keys are an error.
 #
-# Reference: man lokihouse, https://bzed.github.io/lokihouse/reference/configuration/
+# Reference: man lokihouse, https://lokihouse.dev/reference/configuration/
 #
 # The service runs with -config.expand-env, so ${VAR} and ${VAR:-default} are
 # expanded before the file is parsed. Durations take Loki's syntax (30s, 5m,

@@ -7,7 +7,7 @@
   [![CI](https://github.com/bzed/lokihouse/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bzed/lokihouse/actions/workflows/ci.yml)
   [![codecov](https://codecov.io/gh/bzed/lokihouse/branch/main/graph/badge.svg)](https://codecov.io/gh/bzed/lokihouse)
   [![Go Reference](https://pkg.go.dev/badge/github.com/bzed/lokihouse.svg)](https://pkg.go.dev/github.com/bzed/lokihouse)
-  [![Docs](https://img.shields.io/badge/docs-bzed.github.io%2Flokihouse-blue)](https://bzed.github.io/lokihouse/)
+  [![Docs](https://img.shields.io/badge/docs-lokihouse.dev-blue)](https://lokihouse.dev/)
   [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
   [![Status: release candidate](https://img.shields.io/badge/status-release%20candidate-yellowgreen)](docs/roadmap.md)
 </div>
@@ -93,10 +93,10 @@ Method, environment and caveats: [`docs/benchmark.md`](docs/benchmark.md).
 
 ```console
 $ sudo install -d -m 0755 /etc/apt/keyrings
-$ sudo curl -fsSLo /etc/apt/keyrings/lokihouse-archive-keyring.asc https://bzed.github.io/lokihouse/apt/lokihouse-archive-keyring.asc
+$ sudo curl -fsSLo /etc/apt/keyrings/lokihouse-archive-keyring.asc https://lokihouse.dev/apt/lokihouse-archive-keyring.asc
 $ sudo tee /etc/apt/sources.list.d/lokihouse.sources <<'EOF'
 Types: deb
-URIs: https://bzed.github.io/lokihouse/apt
+URIs: https://lokihouse.dev/apt
 Suites: trixie
 Components: main
 Signed-By: /etc/apt/keyrings/lokihouse-archive-keyring.asc
@@ -117,7 +117,7 @@ $ podman run -d -p 3100:3100 -e LOKIHOUSE_CLICKHOUSE_ADDR=clickhouse.example.org
 ClickHouse credentials: `-e LOKIHOUSE_CLICKHOUSE_USER=...` and either
 `-e LOKIHOUSE_CLICKHOUSE_PASSWORD=...` or, preferably, a mounted file named by
 `-e LOKIHOUSE_CLICKHOUSE_PASSWORD_FILE=...`
-([details](https://bzed.github.io/lokihouse/install/#clickhouse-password)).
+([details](https://lokihouse.dev/install/#clickhouse-password)).
 
 **From source** (a ClickHouse server 26.9 or later and a recent Go toolchain, see `go.mod`):
 
@@ -142,7 +142,7 @@ details, including systemd.
 
 ## Documentation
 
-Full documentation: **<https://bzed.github.io/lokihouse/>**
+Full documentation: **<https://lokihouse.dev/>**
 
 - [Installation](docs/install/index.md) and [migrating from Loki](docs/migrating.md)
 - [Configuration](docs/reference/configuration.md) and [HTTP API](docs/reference/http-api.md)

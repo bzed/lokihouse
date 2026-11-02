@@ -6,6 +6,10 @@ changelog (`debian/changelog`) carries the same releases.
 
 ## [Unreleased]
 
+### Changed
+
+- The documentation and the apt repository moved to <https://lokihouse.dev/> (README, man page, systemd unit, install instructions, example configs); the apt URI changes from `https://bzed.github.io/lokihouse/apt` to `https://lokihouse.dev/apt`, so existing installs must update their `lokihouse.sources`.
+
 ### Added
 
 - CI: the `docs` workflow mirrors the published site (docs and apt repository) to an S3 bucket and deletes stale objects (secrets `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`).

@@ -83,6 +83,6 @@ command line.
 
 # SEE ALSO
 
-Documentation: <https://bzed.github.io/lokihouse/>; Loki configuration
+Documentation: <https://lokihouse.dev/>; Loki configuration
 reference for the *ruler*, *ruler_storage* and *limits_config* blocks:
 <https://grafana.com/docs/loki/latest/configure/>.

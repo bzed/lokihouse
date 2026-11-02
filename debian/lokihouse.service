@@ -1,6 +1,6 @@
 [Unit]
 Description=lokihouse - Loki-compatible log store on ClickHouse
-Documentation=man:lokihouse(1) https://bzed.github.io/lokihouse/
+Documentation=man:lokihouse(1) https://lokihouse.dev/
 Wants=network-online.target
 After=network-online.target
 
