@@ -9,7 +9,7 @@ changelog (`debian/changelog`) carries the same releases.
 ### Added
 
 - CI: the `docs` workflow mirrors the published site (docs and apt repository) to an S3 bucket and deletes stale objects (secrets `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`).
-- The Debian package `runakefli` breaks, conflicts with and replaces the old `lokihouse` package.
+- The Debian package `runakefli` breaks, conflicts with and replaces the old `lokihouse` package. The apt repository no longer carries the old package: the `trixie` suite holds `runakefli` packages only, so it stays empty until the first release under the new name.
 
 ### Changed
 

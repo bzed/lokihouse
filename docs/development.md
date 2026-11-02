@@ -55,6 +55,9 @@ One-time repository settings (maintainer, not the implementer):
 arm64), suite `trixie-snapshot` the latest build of `main`. A run of
 `docs.yml` rebuilds both: the one it does not build is carried over (`trixie`
 from the latest GitHub release, `trixie-snapshot` from the published site).
+Only `runakefli_*.deb` files are carried over: releases up to 0.14.0 contain the
+old `lokihouse` package and are skipped, so `trixie` stays empty until the first
+release under the new name.
 
 The signing key is an Ed25519 key without a passphrase. The private key lives
 only in the secret `APT_GPG_PRIVATE_KEY` (ASCII-armoured); the public key is
